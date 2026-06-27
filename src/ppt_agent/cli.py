@@ -11,6 +11,7 @@ from ppt_agent.export import write_model_json
 from ppt_agent.generation import DeckGenerationRequest, generate_deck_with_quality_gate
 from ppt_agent.load import load_deck, load_patch, load_theme
 from ppt_agent.patch import apply_patch
+from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
 from ppt_agent.qa import analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
 
@@ -91,52 +92,34 @@ def _cmd_build(args: argparse.Namespace) -> int:
     if not _require_openai_api_key("build"):
         return 1
 
-    theme = load_theme(args.theme)
-    result = _run_generation(args, theme)
-    if result is None:
+    model = _make_chat_model(args)
+    if model is None:
         return 1
 
-    output_dir = Path(args.output_dir)
-    deck_path = write_model_json(result.deck, output_dir / "generated_deck_ir.json")
-    qa_path = write_model_json(result.qa_report, output_dir / "generated_qa_report.json")
-    attempts_path = write_model_json(result, output_dir / "generated_attempts.json")
-    pptx_path = render_deck_to_pptx(
-        result.deck,
-        theme,
-        output_dir / "generated_deck.pptx",
-        assets_dir=args.assets_dir,
+    request = BuildPipelineRequest(
+        generation_request=DeckGenerationRequest(
+            topic=args.topic,
+            audience=args.audience,
+            slide_count=args.slides,
+            style=args.style,
+            language=args.language,
+            key_points=args.key_point,
+        ),
+        theme_path=Path(args.theme),
+        output_dir=Path(args.output_dir),
+        min_qa_score=args.min_qa_score,
+        max_attempts=args.max_attempts,
+        assets_dir=Path(args.assets_dir) if args.assets_dir else None,
+        patch_path=Path(args.patch) if args.patch else None,
     )
+    result = run_build_pipeline(model, request)
 
-    print(deck_path)
-    print(qa_path)
-    print(attempts_path)
-    print(pptx_path)
-    status = 0
-    if not result.accepted:
-        print(
-            f"Build completed, but generated Deck IR did not meet the QA score gate: "
-            f"{result.qa_report.score} < {args.min_qa_score}"
-        )
-        status = 2
+    for artifact in result.artifacts:
+        print(artifact.path)
+    for message in result.messages:
+        print(message)
 
-    if args.patch:
-        patch_result = apply_patch(result.deck, load_patch(args.patch))
-        patched_deck_path = write_model_json(patch_result.deck, output_dir / "patched_deck_ir.json")
-        patch_result_path = write_model_json(patch_result, output_dir / "patch_result.json")
-        patched_pptx_path = render_deck_to_pptx(
-            patch_result.deck,
-            theme,
-            output_dir / "patched_deck.pptx",
-            assets_dir=args.assets_dir,
-        )
-        print(patched_deck_path)
-        print(patch_result_path)
-        print(patched_pptx_path)
-        if patch_result.issues:
-            print(f"Patch completed with {len(patch_result.issues)} issue(s). See {patch_result_path}.")
-            status = 2
-
-    return status
+    return result.status_code
 
 
 def _cmd_render(args: argparse.Namespace) -> int:

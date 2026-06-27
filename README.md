@@ -166,6 +166,10 @@ This helper writes example QA, patch, and PPTX artifacts under `examples/output/
 - Prefer structured Patch Edit over natural-language mutation
 - Keep generation, QA, patching, and rendering separable
 
+## Architecture Note
+
+The product build flow lives in `ppt_agent.pipeline.run_build_pipeline`. The CLI parses arguments, checks credentials, creates the model, calls the pipeline service, and prints artifact paths. This keeps the build pipeline reusable for a future job backend while leaving the current product surface unchanged.
+
 ## Roadmap
 
 - M1.4 GitHub demo showcase

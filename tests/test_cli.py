@@ -6,6 +6,7 @@ from pathlib import Path
 from pptx import Presentation
 
 import ppt_agent.cli as cli
+import ppt_agent.pipeline as pipeline
 from ppt_agent.cli import main
 from ppt_agent.generation import GenerationAttempt, GenerationResult
 from ppt_agent.load import load_deck
@@ -262,7 +263,7 @@ def test_build_cli_accepted_outputs_all_files(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     _install_fake_openai(monkeypatch)
-    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
 
     status = main(_build_args(tmp_path))
 
@@ -281,7 +282,7 @@ def test_build_cli_with_patch_outputs_original_and_patched_files(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     _install_fake_openai(monkeypatch)
-    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
 
     status = main(_build_args(tmp_path) + ["--patch", str(EXAMPLES_DIR / "sample_patch.json")])
 
@@ -301,7 +302,7 @@ def test_build_cli_with_patch_issue_outputs_files_and_returns_2(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     _install_fake_openai(monkeypatch)
-    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
     patch_path = tmp_path / "bad_patch.json"
     patch_path.write_text(
         json.dumps(
@@ -339,7 +340,7 @@ def test_build_cli_rejected_outputs_all_files_and_returns_2(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     _install_fake_openai(monkeypatch)
-    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(False))
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(False))
 
     status = main(_build_args(tmp_path))
 
