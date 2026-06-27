@@ -38,12 +38,13 @@ Included:
 - Structured JSON Patch Edit
 - Editable `.pptx` rendering with `python-pptx`
 - Product CLI for `generate`, `qa`, `render`, `patch`, and `build`
+- Private beta FastAPI backend for local job creation, status checks, artifact listing, and downloads
 
 Not included yet:
 
 - LangGraph workflow orchestration
-- FastAPI or frontend code
-- Databases, RAG, or document grounding
+- Frontend code
+- External databases, RAG, or document grounding
 - Natural-language editing
 - image-to-PPT or image-to-editable-PPT
 - HTML/SVG preview, Playwright, or LibreOffice
@@ -147,6 +148,41 @@ uv run ppt-agent patch examples/sample_slide_ir.json \
 
 Patch Edit accepts structured JSON operations such as `update_text`, `move_element`, `resize_element`, and `update_shape_style`. It does not parse natural language and does not call an LLM.
 
+## API Usage
+
+The API is a private beta local backend for creating build jobs, checking status, listing artifacts, and downloading generated files. It reads `OPENAI_API_KEY` and optional `OPENAI_MODEL` from the server environment.
+
+Start the local API:
+
+```bash
+uv run uvicorn ppt_agent.api:app --reload
+```
+
+Create a job:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "AI in Education",
+    "audience": "university students",
+    "slides": 8,
+    "theme_path": "examples/theme.json",
+    "min_qa_score": 80,
+    "max_attempts": 2
+  }'
+```
+
+Check status and artifacts:
+
+```bash
+curl http://127.0.0.1:8000/api/jobs/<job_id>
+curl http://127.0.0.1:8000/api/jobs/<job_id>/artifacts
+curl -L http://127.0.0.1:8000/api/artifacts/<artifact_id> --output artifact.bin
+```
+
+Job data and files are stored locally under `data/jobs/`. This API is intended for local private beta use, not production hosting.
+
 ## End-to-End Demo Helper
 
 The scripts in `scripts/` are demo/helper entry points. The CLI above is the main product interface.
@@ -168,7 +204,7 @@ This helper writes example QA, patch, and PPTX artifacts under `examples/output/
 
 ## Architecture Note
 
-The product build flow lives in `ppt_agent.pipeline.run_build_pipeline`. The CLI parses arguments, checks credentials, creates the model, calls the pipeline service, and prints artifact paths. This keeps the build pipeline reusable for a future job backend while leaving the current product surface unchanged.
+The product build flow lives in `ppt_agent.pipeline.run_build_pipeline`. The CLI parses arguments, checks credentials, creates the model, calls the pipeline service, and prints artifact paths. The local job backend reuses the same service so CLI and API builds share one core path.
 
 ## Roadmap
 

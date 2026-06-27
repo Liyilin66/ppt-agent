@@ -9,10 +9,12 @@ description = "A minimal first milestone for an AI Presentation Agent."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.124,<1",
     "langchain-core>=1.4,<2",
     "langchain-openai>=1.1,<2",
     "pydantic>=2.7,<3",
     "python-pptx>=1.0,<2",
+    "uvicorn>=0.38,<1",
 ]
 
 [project.scripts]
@@ -20,6 +22,7 @@ ppt-agent = "ppt_agent.cli:main"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28,<1",
     "pytest>=8,<9",
 ]
 
