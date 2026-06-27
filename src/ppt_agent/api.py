@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import Field
 
 from ppt_agent.generation import DeckGenerationRequest
@@ -18,6 +18,268 @@ from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODEL = "gpt-5.5"
+
+
+INDEX_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ppt-agent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #172033;
+        background: #f5f7fb;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #506078;
+      }
+
+      form, section {
+        background: #ffffff;
+        border: 1px solid #d9e0ec;
+        border-radius: 8px;
+        padding: 20px;
+        margin-top: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-weight: 600;
+      }
+
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        border: 1px solid #b9c4d4;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      button {
+        margin-top: 18px;
+        border: 0;
+        border-radius: 6px;
+        background: #2457c5;
+        color: #ffffff;
+        padding: 11px 16px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      #jobStatus {
+        font-weight: 700;
+      }
+
+      #errorMessage {
+        color: #9d2f2f;
+        white-space: pre-wrap;
+      }
+
+      #artifacts {
+        display: grid;
+        gap: 10px;
+        padding-left: 0;
+        list-style: none;
+      }
+
+      #artifacts a {
+        color: #2457c5;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ppt-agent</h1>
+      <p>Create a local private beta PPT build job and download the generated artifacts.</p>
+
+      <form id="jobForm">
+        <div class="grid">
+          <label>
+            Topic
+            <input id="topic" name="topic" required placeholder="AI in Education">
+          </label>
+          <label>
+            Audience
+            <input id="audience" name="audience" required placeholder="university students">
+          </label>
+          <label>
+            Slides
+            <input id="slides" name="slides" type="number" min="1" max="10" value="8" required>
+          </label>
+          <label>
+            Minimum QA score
+            <input id="min_qa_score" name="min_qa_score" type="number" min="0" max="100" value="80" required>
+          </label>
+          <label>
+            Maximum attempts
+            <input id="max_attempts" name="max_attempts" type="number" min="1" value="2" required>
+          </label>
+          <label>
+            Patch path
+            <input id="patch_path" name="patch_path" placeholder="examples/sample_patch.json">
+          </label>
+        </div>
+        <button id="generateButton" type="submit">Generate</button>
+      </form>
+
+      <section>
+        <h2>Job Status</h2>
+        <p>Job ID: <span id="jobId">None</span></p>
+        <p>Status: <span id="jobStatus">Idle</span></p>
+        <p id="errorMessage"></p>
+      </section>
+
+      <section>
+        <h2>Artifacts</h2>
+        <ul id="artifacts"></ul>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("jobForm");
+      const button = document.getElementById("generateButton");
+      const jobId = document.getElementById("jobId");
+      const jobStatus = document.getElementById("jobStatus");
+      const errorMessage = document.getElementById("errorMessage");
+      const artifacts = document.getElementById("artifacts");
+      let pollTimer = null;
+
+      function setBusy(isBusy) {
+        button.disabled = isBusy;
+      }
+
+      function setStatus(status) {
+        jobStatus.textContent = status;
+      }
+
+      function clearArtifacts() {
+        artifacts.replaceChildren();
+      }
+
+      function buildPayload() {
+        const patchPath = document.getElementById("patch_path").value.trim();
+        const payload = {
+          topic: document.getElementById("topic").value.trim(),
+          audience: document.getElementById("audience").value.trim(),
+          slides: Number(document.getElementById("slides").value),
+          min_qa_score: Number(document.getElementById("min_qa_score").value),
+          max_attempts: Number(document.getElementById("max_attempts").value)
+        };
+        if (patchPath) {
+          payload.patch_path = patchPath;
+        }
+        return payload;
+      }
+
+      async function requestJson(url, options) {
+        const response = await fetch(url, options);
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.detail || "Request failed");
+        }
+        return body;
+      }
+
+      async function loadArtifacts(id) {
+        const body = await requestJson(`/api/jobs/${id}/artifacts`);
+        clearArtifacts();
+        for (const artifact of body.artifacts) {
+          const item = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = artifact.download_url;
+          link.textContent = `${artifact.name}.${artifact.kind}`;
+          item.appendChild(link);
+          artifacts.appendChild(item);
+        }
+      }
+
+      async function pollJob(id) {
+        const job = await requestJson(`/api/jobs/${id}`);
+        setStatus(job.status);
+        if (job.error_message) {
+          errorMessage.textContent = job.error_message;
+        }
+        if (job.status === "succeeded" || job.status === "failed") {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          setBusy(false);
+          await loadArtifacts(id);
+          return true;
+        }
+        return false;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (pollTimer) {
+          clearInterval(pollTimer);
+        }
+        setBusy(true);
+        setStatus("Submitting");
+        errorMessage.textContent = "";
+        clearArtifacts();
+
+        try {
+          const job = await requestJson("/api/jobs", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(buildPayload())
+          });
+          jobId.textContent = job.job_id;
+          setStatus(job.status);
+          const finished = await pollJob(job.job_id);
+          if (!finished) {
+            pollTimer = setInterval(() => pollJob(job.job_id).catch((error) => {
+              errorMessage.textContent = error.message;
+              setBusy(false);
+              clearInterval(pollTimer);
+            }), 2000);
+          }
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          setStatus("Failed");
+          setBusy(false);
+        }
+      });
+    </script>
+  </body>
+</html>
+"""
 
 
 class CreateJobRequest(StrictModel):
@@ -126,6 +388,10 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
     app.state.job_store = store or JobStore(root / "jobs.sqlite3")
     app.state.jobs_root = jobs_root
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> HTMLResponse:
+        return HTMLResponse(INDEX_HTML)
 
     @app.get("/health")
     def health() -> dict[str, str]:

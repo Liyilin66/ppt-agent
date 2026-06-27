@@ -158,6 +158,14 @@ Start the local API:
 uv run uvicorn ppt_agent.api:app --reload
 ```
 
+Open the simple HTML private beta:
+
+```text
+http://127.0.0.1:8000
+```
+
+The page submits build jobs, polls status, and shows artifact download links. It is a small local browser entry point, not a complete product UI.
+
 Create a job:
 
 ```bash

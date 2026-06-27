@@ -92,6 +92,22 @@ def test_health_endpoint(tmp_path: Path) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_index_page_returns_html_with_generate_button(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert ">Generate</button>" in response.text
+
+
+def test_index_page_contains_required_job_fields(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    for field_name in ["topic", "audience", "slides", "min_qa_score", "max_attempts", "patch_path"]:
+        assert f'name="{field_name}"' in response.text
+
+
 def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
