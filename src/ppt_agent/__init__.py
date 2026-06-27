@@ -1,6 +1,7 @@
 """Core package for ppt-agent milestones."""
 
 from ppt_agent.export import write_model_json
+from ppt_agent.generation import DeckGenerationRequest, build_generation_prompt, generate_deck_with_model
 from ppt_agent.load import load_deck, load_patch, load_theme
 from ppt_agent.models import (
     BBox,
@@ -35,6 +36,9 @@ __all__ = [
     "PatchResult",
     "apply_patch",
     "write_model_json",
+    "DeckGenerationRequest",
+    "build_generation_prompt",
+    "generate_deck_with_model",
     "QAIssue",
     "QAReport",
     "analyze_deck",

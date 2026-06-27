@@ -1,14 +1,26 @@
 import json
+import importlib.util
 from pathlib import Path
 
 from pptx import Presentation
 
-from scripts.run_demo_pipeline import run_demo_pipeline
+
+def _load_run_demo_pipeline():
+    repo_root = Path(__file__).resolve().parents[1]
+    script_path = repo_root / "scripts" / "run_demo_pipeline.py"
+    spec = importlib.util.spec_from_file_location("run_demo_pipeline", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load demo pipeline script from {script_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_demo_pipeline
 
 
 def test_run_demo_pipeline_generates_expected_outputs(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     examples_dir = repo_root / "examples"
+    run_demo_pipeline = _load_run_demo_pipeline()
 
     outputs = run_demo_pipeline(output_dir=tmp_path, examples_dir=examples_dir)
 
