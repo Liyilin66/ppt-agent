@@ -180,3 +180,115 @@ def test_generate_cli_returns_failure_when_quality_gate_rejects(
     assert status == 2
     assert output_path.exists()
     assert "did not meet the QA score gate" in captured.out
+
+
+def _generation_result(accepted: bool) -> GenerationResult:
+    deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
+    qa_report = analyze_deck(deck)
+    return GenerationResult(
+        deck=deck,
+        qa_report=qa_report,
+        attempts=[
+            GenerationAttempt(
+                attempt_index=1,
+                deck=deck,
+                qa_report=qa_report,
+                accepted=accepted,
+            )
+        ],
+        accepted=accepted,
+    )
+
+
+def _install_fake_openai(monkeypatch) -> None:
+    fake_module = types.ModuleType("langchain_openai")
+    fake_module.ChatOpenAI = lambda model: object()
+    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+
+def _build_args(output_dir: Path) -> list[str]:
+    return [
+        "build",
+        "--topic",
+        "AI in Education",
+        "--audience",
+        "university students",
+        "--slides",
+        "3",
+        "--theme",
+        str(EXAMPLES_DIR / "theme.json"),
+        "--output-dir",
+        str(output_dir),
+        "--min-qa-score",
+        "80",
+        "--max-attempts",
+        "2",
+    ]
+
+
+def test_build_cli_help_includes_build_options(capsys) -> None:
+    try:
+        main(["build", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    captured = capsys.readouterr()
+    assert "--topic" in captured.out
+    assert "--audience" in captured.out
+    assert "--slides" in captured.out
+    assert "--output-dir" in captured.out
+    assert "--assets-dir" in captured.out
+
+
+def test_build_cli_without_api_key_exits_with_clear_message(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    status = main(_build_args(tmp_path))
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert "OPENAI_API_KEY is not set" in captured.out
+    assert not (tmp_path / "generated_deck_ir.json").exists()
+
+
+def test_build_cli_accepted_outputs_all_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+
+    status = main(_build_args(tmp_path))
+
+    assert status == 0
+    assert (tmp_path / "generated_deck_ir.json").exists()
+    assert (tmp_path / "generated_qa_report.json").exists()
+    assert (tmp_path / "generated_attempts.json").exists()
+    pptx_path = tmp_path / "generated_deck.pptx"
+    assert pptx_path.exists()
+    assert len(Presentation(pptx_path).slides) == 3
+
+
+def test_build_cli_rejected_outputs_all_files_and_returns_2(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(False))
+
+    status = main(_build_args(tmp_path))
+
+    captured = capsys.readouterr()
+    assert status == 2
+    assert (tmp_path / "generated_deck_ir.json").exists()
+    assert (tmp_path / "generated_qa_report.json").exists()
+    assert (tmp_path / "generated_attempts.json").exists()
+    assert (tmp_path / "generated_deck.pptx").exists()
+    assert "did not meet the QA score gate" in captured.out

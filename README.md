@@ -41,6 +41,26 @@ uv run pytest
 
 The primary product entry point is the `ppt-agent` CLI.
 
+Recommended one-step AI deck build:
+
+```bash
+uv run ppt-agent build \
+  --topic "AI in Education" \
+  --audience "university students" \
+  --slides 8 \
+  --theme examples/theme.json \
+  --output-dir examples/output
+```
+
+The build command runs structured-output Deck IR generation, deterministic QA, and deterministic PPTX rendering. The LLM only generates Slide IR; `generated_deck.pptx` is still produced by the `python-pptx` renderer.
+
+Build outputs:
+
+- `generated_deck_ir.json`
+- `generated_qa_report.json`
+- `generated_attempts.json`
+- `generated_deck.pptx`
+
 Generate Deck IR with optional LangChain structured output and QA-gated retry:
 
 ```bash
@@ -119,6 +139,8 @@ Patch Edit accepts structured JSON operations such as `update_text`, `move_eleme
 ## LLM Deck Generation
 
 LLM deck generation is optional and requires `OPENAI_API_KEY`. The `generate` command uses LangChain structured output to create Deck IR, runs deterministic QA, and can retry with QA feedback when the score is below the gate.
+
+For most AI deck builds, use `ppt-agent build` as the one-step command. Use `ppt-agent generate` when you only want the Deck IR JSON.
 
 ```bash
 uv run ppt-agent generate \

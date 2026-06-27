@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 from typing import Sequence
 
 from ppt_agent.export import write_model_json
@@ -17,35 +18,57 @@ def _add_theme_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--theme", required=True, help="Path to a theme JSON file.")
 
 
-def _cmd_generate(args: argparse.Namespace) -> int:
+def _require_openai_api_key(command: str) -> bool:
     if not os.getenv("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY is not set. Set it to run ppt-agent generate.")
-        return 1
+        print(f"OPENAI_API_KEY is not set. Set it to run ppt-agent {command}.")
+        return False
+    return True
 
+
+def _make_chat_model(args: argparse.Namespace):
     try:
         from langchain_openai import ChatOpenAI
     except ImportError:
         print("langchain-openai is not installed. Run: uv sync")
-        return 1
+        return None
 
-    theme = load_theme(args.theme)
-    request = DeckGenerationRequest(
+    return ChatOpenAI(model=args.model)
+
+
+def _generation_request(args: argparse.Namespace, theme_name: str) -> DeckGenerationRequest:
+    return DeckGenerationRequest(
         topic=args.topic,
         audience=args.audience,
         slide_count=args.slides,
-        style=args.style or theme.name,
+        style=args.style or theme_name,
         language=args.language,
         key_points=args.key_point,
     )
 
-    model = ChatOpenAI(model=args.model)
-    result = generate_deck_with_quality_gate(
+
+def _run_generation(args: argparse.Namespace, theme):
+    model = _make_chat_model(args)
+    if model is None:
+        return None
+
+    return generate_deck_with_quality_gate(
         model,
-        request,
+        _generation_request(args, theme.name),
         theme=theme,
         min_score=args.min_qa_score,
         max_attempts=args.max_attempts,
     )
+
+
+def _cmd_generate(args: argparse.Namespace) -> int:
+    if not _require_openai_api_key("generate"):
+        return 1
+
+    theme = load_theme(args.theme)
+    result = _run_generation(args, theme)
+    if result is None:
+        return 1
+
     output_path = write_model_json(result.deck, args.output)
     if args.qa_output:
         write_model_json(result.qa_report, args.qa_output)
@@ -56,6 +79,40 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if not result.accepted:
         print(
             f"Generated Deck IR did not meet the QA score gate: "
+            f"{result.qa_report.score} < {args.min_qa_score}"
+        )
+        return 2
+
+    return 0
+
+
+def _cmd_build(args: argparse.Namespace) -> int:
+    if not _require_openai_api_key("build"):
+        return 1
+
+    theme = load_theme(args.theme)
+    result = _run_generation(args, theme)
+    if result is None:
+        return 1
+
+    output_dir = Path(args.output_dir)
+    deck_path = write_model_json(result.deck, output_dir / "generated_deck_ir.json")
+    qa_path = write_model_json(result.qa_report, output_dir / "generated_qa_report.json")
+    attempts_path = write_model_json(result, output_dir / "generated_attempts.json")
+    pptx_path = render_deck_to_pptx(
+        result.deck,
+        theme,
+        output_dir / "generated_deck.pptx",
+        assets_dir=args.assets_dir,
+    )
+
+    print(deck_path)
+    print(qa_path)
+    print(attempts_path)
+    print(pptx_path)
+    if not result.accepted:
+        print(
+            f"Build completed, but generated Deck IR did not meet the QA score gate: "
             f"{result.qa_report.score} < {args.min_qa_score}"
         )
         return 2
@@ -130,6 +187,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path for the full generation attempts summary JSON.",
     )
     generate.set_defaults(func=_cmd_generate)
+
+    build = subparsers.add_parser("build", help="Generate, QA, and render an editable PPTX.")
+    build.add_argument("--topic", required=True, help="Presentation topic.")
+    build.add_argument("--audience", required=True, help="Target audience.")
+    build.add_argument("--slides", required=True, type=int, help="Slide count, from 1 to 10.")
+    _add_theme_argument(build)
+    build.add_argument("--output-dir", required=True, help="Directory for generated JSON and PPTX outputs.")
+    build.add_argument("--style", default=None, help="Optional style label. Defaults to theme name.")
+    build.add_argument("--language", default="en", help="Output language. Defaults to en.")
+    build.add_argument(
+        "--key-point",
+        action="append",
+        default=[],
+        help="Optional key point. Can be passed multiple times.",
+    )
+    build.add_argument(
+        "--model",
+        default=os.getenv("OPENAI_MODEL", "gpt-5.5"),
+        help="OpenAI model name. Defaults to OPENAI_MODEL or gpt-5.5.",
+    )
+    build.add_argument(
+        "--min-qa-score",
+        default=80,
+        type=_qa_score,
+        help="Minimum QA score for accepting generated Deck IR. Defaults to 80.",
+    )
+    build.add_argument(
+        "--max-attempts",
+        default=2,
+        type=int,
+        help="Maximum generation attempts before returning the last Deck IR. Defaults to 2.",
+    )
+    build.add_argument("--assets-dir", default=None, help="Optional image asset directory.")
+    build.set_defaults(func=_cmd_build)
 
     render = subparsers.add_parser("render", help="Render Deck IR JSON to editable PPTX.")
     render.add_argument("deck", help="Path to Deck IR JSON.")
