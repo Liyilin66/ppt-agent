@@ -1,0 +1,26 @@
+{
+  "name": "clean_business",
+  "description": "A restrained business theme for clean, readable presentations.",
+  "slide_size": {
+    "width_in": 13.333,
+    "height_in": 7.5
+  },
+  "colors": {
+    "background": "#FFFFFF",
+    "surface": "#F9FAFB",
+    "text": "#111827",
+    "muted_text": "#4B5563",
+    "primary": "#2563EB",
+    "secondary": "#0F766E",
+    "accent": "#F59E0B"
+  },
+  "fonts": {
+    "heading": "Aptos Display",
+    "body": "Aptos"
+  },
+  "default_text_style": {
+    "font_family": "Aptos",
+    "font_size_pt": 18,
+    "color": "#111827"
+  }
+}

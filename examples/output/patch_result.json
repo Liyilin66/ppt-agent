@@ -1,0 +1,187 @@
+{
+  "deck": {
+    "deck_id": "sample_clean_business_deck",
+    "title": "Clean Business Milestone Demo",
+    "theme_name": "clean_business",
+    "canvas_width_in": 13.333,
+    "canvas_height_in": 7.5,
+    "slides": [
+      {
+        "slide_id": "slide_001",
+        "title": "Q3 Operating Review",
+        "layout": "title",
+        "elements": [
+          {
+            "element_id": "s1_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.85,
+              "y": 1.2,
+              "width": 8.8,
+              "height": 0.8
+            },
+            "style": {
+              "font_family": "Aptos Display",
+              "font_size_pt": 34.0,
+              "color": "#1F2937",
+              "bold": true,
+              "italic": false
+            },
+            "text": "Updated Q3 Operating Review"
+          },
+          {
+            "element_id": "s1_subtitle",
+            "type": "text",
+            "bbox": {
+              "x": 0.9,
+              "y": 2.15,
+              "width": 7.4,
+              "height": 0.45
+            },
+            "style": {
+              "font_family": "Aptos",
+              "font_size_pt": 18.0,
+              "color": "#4B5563",
+              "bold": false,
+              "italic": false
+            },
+            "text": "A simple Slide IR sample for milestone one"
+          },
+          {
+            "element_id": "s1_accent_bar",
+            "type": "shape",
+            "bbox": {
+              "x": 1.15,
+              "y": 3.15,
+              "width": 3.2,
+              "height": 0.08
+            },
+            "style": {
+              "fill_color": "#2563EB",
+              "stroke_color": null,
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_002",
+        "title": "Agenda",
+        "layout": "section_list",
+        "elements": [
+          {
+            "element_id": "s2_heading",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.6,
+              "width": 5.5,
+              "height": 0.55
+            },
+            "style": {
+              "font_family": "Aptos Display",
+              "font_size_pt": 26.0,
+              "color": "#111827",
+              "bold": true,
+              "italic": false
+            },
+            "text": "Agenda"
+          },
+          {
+            "element_id": "s2_list",
+            "type": "text",
+            "bbox": {
+              "x": 1.0,
+              "y": 1.55,
+              "width": 6.8,
+              "height": 2.2
+            },
+            "style": {
+              "font_family": "Aptos",
+              "font_size_pt": 20.0,
+              "color": "#374151",
+              "bold": false,
+              "italic": false
+            },
+            "text": "1. Revenue snapshot\n2. Delivery health\n3. Next-quarter priorities"
+          },
+          {
+            "element_id": "s2_side_panel",
+            "type": "shape",
+            "bbox": {
+              "x": 9.1,
+              "y": 0.7,
+              "width": 3.2,
+              "height": 5.9
+            },
+            "style": {
+              "fill_color": "#ECFDF5",
+              "stroke_color": "#BFDBFE",
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_003",
+        "title": "Dashboard Placeholder",
+        "layout": "image_with_notes",
+        "elements": [
+          {
+            "element_id": "s3_heading",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.55,
+              "width": 7.2,
+              "height": 0.55
+            },
+            "style": {
+              "font_family": "Aptos Display",
+              "font_size_pt": 26.0,
+              "color": "#111827",
+              "bold": true,
+              "italic": false
+            },
+            "text": "Dashboard Placeholder"
+          },
+          {
+            "element_id": "s3_dashboard_image",
+            "type": "image",
+            "bbox": {
+              "x": 0.85,
+              "y": 1.45,
+              "width": 7.2,
+              "height": 4.5
+            },
+            "style": null,
+            "src": "images/dashboard-placeholder.png",
+            "alt_text": "Placeholder for a future dashboard screenshot"
+          },
+          {
+            "element_id": "s3_note",
+            "type": "text",
+            "bbox": {
+              "x": 8.55,
+              "y": 1.55,
+              "width": 3.8,
+              "height": 1.8
+            },
+            "style": {
+              "font_family": "Aptos",
+              "font_size_pt": 16.0,
+              "color": "#4B5563",
+              "bold": false,
+              "italic": false
+            },
+            "text": "Image references are only validated as IR fields in milestone one."
+          }
+        ]
+      }
+    ]
+  },
+  "applied_count": 3,
+  "issues": []
+}
