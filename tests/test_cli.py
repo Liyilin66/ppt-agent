@@ -1,9 +1,15 @@
 import json
+import sys
+import types
 from pathlib import Path
 
 from pptx import Presentation
 
+import ppt_agent.cli as cli
 from ppt_agent.cli import main
+from ppt_agent.generation import GenerationAttempt, GenerationResult
+from ppt_agent.load import load_deck
+from ppt_agent.qa import analyze_deck
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -70,6 +76,14 @@ def test_generate_cli_without_api_key_exits_with_clear_message(
             str(EXAMPLES_DIR / "theme.json"),
             "--output",
             str(output_path),
+            "--min-qa-score",
+            "85",
+            "--max-attempts",
+            "3",
+            "--qa-output",
+            str(tmp_path / "qa.json"),
+            "--attempts-output",
+            str(tmp_path / "attempts.json"),
         ]
     )
 
@@ -77,3 +91,92 @@ def test_generate_cli_without_api_key_exits_with_clear_message(
     assert status == 1
     assert "OPENAI_API_KEY is not set" in captured.out
     assert not output_path.exists()
+
+
+def test_generate_cli_help_includes_quality_gate_options(capsys) -> None:
+    try:
+        main(["generate", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    captured = capsys.readouterr()
+    assert "--min-qa-score" in captured.out
+    assert "--max-attempts" in captured.out
+    assert "--qa-output" in captured.out
+    assert "--attempts-output" in captured.out
+
+
+def test_generate_cli_rejects_invalid_min_qa_score() -> None:
+    try:
+        main(
+            [
+                "generate",
+                "--topic",
+                "AI in Education",
+                "--audience",
+                "university students",
+                "--slides",
+                "8",
+                "--theme",
+                str(EXAMPLES_DIR / "theme.json"),
+                "--output",
+                "/tmp/generated_deck.json",
+                "--min-qa-score",
+                "101",
+            ]
+        )
+    except SystemExit as exc:
+        assert exc.code == 2
+
+
+def test_generate_cli_returns_failure_when_quality_gate_rejects(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    fake_module = types.ModuleType("langchain_openai")
+    fake_module.ChatOpenAI = lambda model: object()
+    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+    deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
+    qa_report = analyze_deck(deck)
+
+    def fake_generate_deck_with_quality_gate(*args, **kwargs):
+        return GenerationResult(
+            deck=deck,
+            qa_report=qa_report,
+            attempts=[
+                GenerationAttempt(
+                    attempt_index=1,
+                    deck=deck,
+                    qa_report=qa_report,
+                    accepted=False,
+                )
+            ],
+            accepted=False,
+        )
+
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", fake_generate_deck_with_quality_gate)
+    output_path = tmp_path / "generated_deck.json"
+
+    status = main(
+        [
+            "generate",
+            "--topic",
+            "AI in Education",
+            "--audience",
+            "university students",
+            "--slides",
+            "3",
+            "--theme",
+            str(EXAMPLES_DIR / "theme.json"),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert status == 2
+    assert output_path.exists()
+    assert "did not meet the QA score gate" in captured.out

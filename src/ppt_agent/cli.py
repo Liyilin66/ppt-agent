@@ -7,7 +7,7 @@ import os
 from typing import Sequence
 
 from ppt_agent.export import write_model_json
-from ppt_agent.generation import DeckGenerationRequest, generate_deck_with_model
+from ppt_agent.generation import DeckGenerationRequest, generate_deck_with_quality_gate
 from ppt_agent.load import load_deck, load_theme
 from ppt_agent.qa import analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
@@ -39,9 +39,27 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     )
 
     model = ChatOpenAI(model=args.model)
-    deck = generate_deck_with_model(model, request)
-    output_path = write_model_json(deck, args.output)
+    result = generate_deck_with_quality_gate(
+        model,
+        request,
+        theme=theme,
+        min_score=args.min_qa_score,
+        max_attempts=args.max_attempts,
+    )
+    output_path = write_model_json(result.deck, args.output)
+    if args.qa_output:
+        write_model_json(result.qa_report, args.qa_output)
+    if args.attempts_output:
+        write_model_json(result, args.attempts_output)
+
     print(output_path)
+    if not result.accepted:
+        print(
+            f"Generated Deck IR did not meet the QA score gate: "
+            f"{result.qa_report.score} < {args.min_qa_score}"
+        )
+        return 2
+
     return 0
 
 
@@ -93,6 +111,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("OPENAI_MODEL", "gpt-5.5"),
         help="OpenAI model name. Defaults to OPENAI_MODEL or gpt-5.5.",
     )
+    generate.add_argument(
+        "--min-qa-score",
+        default=80,
+        type=_qa_score,
+        help="Minimum QA score for accepting generated Deck IR. Defaults to 80.",
+    )
+    generate.add_argument(
+        "--max-attempts",
+        default=2,
+        type=int,
+        help="Maximum generation attempts before returning the last Deck IR. Defaults to 2.",
+    )
+    generate.add_argument("--qa-output", default=None, help="Optional path for the final QA report JSON.")
+    generate.add_argument(
+        "--attempts-output",
+        default=None,
+        help="Optional path for the full generation attempts summary JSON.",
+    )
     generate.set_defaults(func=_cmd_generate)
 
     render = subparsers.add_parser("render", help="Render Deck IR JSON to editable PPTX.")
@@ -109,6 +145,13 @@ def build_parser() -> argparse.ArgumentParser:
     qa.set_defaults(func=_cmd_qa)
 
     return parser
+
+
+def _qa_score(value: str) -> int:
+    score = int(value)
+    if not 0 <= score <= 100:
+        raise argparse.ArgumentTypeError("must be between 0 and 100")
+    return score
 
 
 def main(argv: Sequence[str] | None = None) -> int:

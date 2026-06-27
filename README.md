@@ -41,7 +41,7 @@ uv run pytest
 
 The primary product entry point is the `ppt-agent` CLI.
 
-Generate Deck IR with optional LangChain structured output:
+Generate Deck IR with optional LangChain structured output and QA-gated retry:
 
 ```bash
 uv run ppt-agent generate \
@@ -49,10 +49,14 @@ uv run ppt-agent generate \
   --audience "university students" \
   --slides 8 \
   --theme examples/theme.json \
-  --output examples/output/generated_deck.json
+  --output examples/output/generated_deck.json \
+  --min-qa-score 80 \
+  --max-attempts 2 \
+  --qa-output examples/output/generated_qa_report.json \
+  --attempts-output examples/output/generated_attempts.json
 ```
 
-This command requires `OPENAI_API_KEY`. It only writes Slide IR JSON and does not generate PPTX directly.
+This command requires `OPENAI_API_KEY`. It only writes Slide IR JSON and optional generation QA metadata; it does not generate PPTX directly.
 
 Render Deck IR to editable PowerPoint:
 
@@ -114,7 +118,7 @@ Patch Edit accepts structured JSON operations such as `update_text`, `move_eleme
 
 ## LLM Deck Generation
 
-LLM deck generation is optional and requires `OPENAI_API_KEY`.
+LLM deck generation is optional and requires `OPENAI_API_KEY`. The `generate` command uses LangChain structured output to create Deck IR, runs deterministic QA, and can retry with QA feedback when the score is below the gate.
 
 ```bash
 uv run ppt-agent generate \
@@ -122,10 +126,19 @@ uv run ppt-agent generate \
   --audience "executive leadership team" \
   --slides 4 \
   --theme examples/theme.json \
-  --output examples/output/generated_deck_ir.json
+  --output examples/output/generated_deck_ir.json \
+  --qa-output examples/output/generated_qa_report.json \
+  --attempts-output examples/output/generated_attempts.json
 ```
 
-The LLM is only used to generate Slide IR that validates against the existing `Deck` Pydantic schema. It does not generate PPTX directly. PowerPoint files are still produced by the deterministic `python-pptx` renderer.
+The LLM is only used to generate Slide IR that validates against the existing `Deck` Pydantic schema. It does not generate PPTX directly. PowerPoint files are still produced by the deterministic `python-pptx` renderer through the `render` command.
+
+QA-gated generation options:
+
+- `--min-qa-score`: required QA score before accepting the generated Deck IR, defaults to `80`
+- `--max-attempts`: maximum structured-output attempts, defaults to `2`
+- `--qa-output`: optional final QA report JSON
+- `--attempts-output`: optional full generation attempts summary JSON
 
 Optional environment variables:
 
@@ -136,7 +149,7 @@ Optional environment variables:
 - `PPT_AGENT_STYLE`: style label
 - `PPT_AGENT_LANGUAGE`: output language
 
-The `generate` command writes only the Deck IR JSON. Use `ppt-agent qa` and `ppt-agent render` as separate deterministic steps to produce a QA report and editable PPTX.
+The `generate` command writes only the Deck IR JSON plus optional QA metadata. Use `ppt-agent qa` and `ppt-agent render` as separate deterministic steps to produce a QA report and editable PPTX.
 
 ## Examples
 
