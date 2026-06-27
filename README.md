@@ -49,10 +49,12 @@ uv run ppt-agent build \
   --audience "university students" \
   --slides 8 \
   --theme examples/theme.json \
-  --output-dir examples/output
+  --output-dir examples/output \
+  --patch examples/sample_patch.json
 ```
 
 The build command runs structured-output Deck IR generation, deterministic QA, and deterministic PPTX rendering. The LLM only generates Slide IR; `generated_deck.pptx` is still produced by the `python-pptx` renderer.
+If `--patch` is provided, build also applies structured Patch Edit to the generated Deck IR and renders the patched deck.
 
 Build outputs:
 
@@ -60,6 +62,9 @@ Build outputs:
 - `generated_qa_report.json`
 - `generated_attempts.json`
 - `generated_deck.pptx`
+- `patched_deck_ir.json` when `--patch` is provided
+- `patch_result.json` when `--patch` is provided
+- `patched_deck.pptx` when `--patch` is provided
 
 Generate Deck IR with optional LangChain structured output and QA-gated retry:
 
@@ -93,6 +98,17 @@ uv run ppt-agent qa examples/output/generated_deck.json \
   --theme examples/theme.json \
   --output examples/output/generated_qa_report.json
 ```
+
+Apply a structured JSON patch:
+
+```bash
+uv run ppt-agent patch examples/sample_slide_ir.json \
+  --patch examples/sample_patch.json \
+  --output examples/output/patched_deck_ir.json \
+  --result-output examples/output/patch_result.json
+```
+
+Patch Edit accepts structured JSON only. It is not natural-language editing.
 
 ## Run End-to-End Demo
 
@@ -135,6 +151,16 @@ result = apply_patch(deck, patch)
 ```
 
 Patch Edit accepts structured JSON operations such as `update_text`, `move_element`, `resize_element`, and `update_shape_style`. It does not parse natural language and does not call an LLM. Each successful operation returns a newly validated `Deck`; failed operations are reported as patch issues without mutating the original deck.
+
+The same patch system is available through the CLI:
+
+```bash
+uv run ppt-agent patch examples/sample_slide_ir.json \
+  --patch examples/sample_patch.json \
+  --output examples/output/patched_deck_ir.json
+```
+
+You can also pass `--patch examples/sample_patch.json` to `ppt-agent build` to produce both the generated and patched deck artifacts in one run.
 
 ## LLM Deck Generation
 

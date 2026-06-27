@@ -238,6 +238,7 @@ def test_build_cli_help_includes_build_options(capsys) -> None:
     assert "--slides" in captured.out
     assert "--output-dir" in captured.out
     assert "--assets-dir" in captured.out
+    assert "--patch" in captured.out
 
 
 def test_build_cli_without_api_key_exits_with_clear_message(
@@ -274,6 +275,63 @@ def test_build_cli_accepted_outputs_all_files(
     assert len(Presentation(pptx_path).slides) == 3
 
 
+def test_build_cli_with_patch_outputs_original_and_patched_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+
+    status = main(_build_args(tmp_path) + ["--patch", str(EXAMPLES_DIR / "sample_patch.json")])
+
+    assert status == 0
+    assert (tmp_path / "generated_deck_ir.json").exists()
+    assert (tmp_path / "generated_qa_report.json").exists()
+    assert (tmp_path / "generated_attempts.json").exists()
+    assert (tmp_path / "generated_deck.pptx").exists()
+    assert (tmp_path / "patched_deck_ir.json").exists()
+    assert (tmp_path / "patch_result.json").exists()
+    assert (tmp_path / "patched_deck.pptx").exists()
+
+
+def test_build_cli_with_patch_issue_outputs_files_and_returns_2(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    patch_path = tmp_path / "bad_patch.json"
+    patch_path.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "op": "update_text",
+                        "slide_id": "missing_slide",
+                        "element_id": "s1_title",
+                        "text": "No-op",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = main(_build_args(tmp_path) + ["--patch", str(patch_path)])
+
+    assert status == 2
+    assert (tmp_path / "generated_deck_ir.json").exists()
+    assert (tmp_path / "generated_qa_report.json").exists()
+    assert (tmp_path / "generated_attempts.json").exists()
+    assert (tmp_path / "generated_deck.pptx").exists()
+    assert (tmp_path / "patched_deck_ir.json").exists()
+    result = json.loads((tmp_path / "patch_result.json").read_text(encoding="utf-8"))
+    assert result["issues"][0]["code"] == "SLIDE_NOT_FOUND"
+    assert (tmp_path / "patched_deck.pptx").exists()
+
+
 def test_build_cli_rejected_outputs_all_files_and_returns_2(
     tmp_path: Path,
     monkeypatch,
@@ -292,3 +350,73 @@ def test_build_cli_rejected_outputs_all_files_and_returns_2(
     assert (tmp_path / "generated_attempts.json").exists()
     assert (tmp_path / "generated_deck.pptx").exists()
     assert "did not meet the QA score gate" in captured.out
+
+
+def test_patch_cli_help(capsys) -> None:
+    try:
+        main(["patch", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    captured = capsys.readouterr()
+    assert "--patch" in captured.out
+    assert "--output" in captured.out
+    assert "--result-output" in captured.out
+
+
+def test_patch_cli_success_outputs_patched_deck(tmp_path: Path) -> None:
+    output_path = tmp_path / "patched_deck_ir.json"
+
+    status = main(
+        [
+            "patch",
+            str(EXAMPLES_DIR / "sample_slide_ir.json"),
+            "--patch",
+            str(EXAMPLES_DIR / "sample_patch.json"),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    assert status == 0
+    patched = json.loads(output_path.read_text(encoding="utf-8"))
+    assert patched["slides"][0]["elements"][0]["text"] == "Updated Q3 Operating Review"
+
+
+def test_patch_cli_with_issue_returns_2_and_outputs_result(tmp_path: Path) -> None:
+    patch_path = tmp_path / "bad_patch.json"
+    patch_path.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "op": "update_text",
+                        "slide_id": "missing_slide",
+                        "element_id": "s1_title",
+                        "text": "No-op",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "patched_deck_ir.json"
+    result_path = tmp_path / "patch_result.json"
+
+    status = main(
+        [
+            "patch",
+            str(EXAMPLES_DIR / "sample_slide_ir.json"),
+            "--patch",
+            str(patch_path),
+            "--output",
+            str(output_path),
+            "--result-output",
+            str(result_path),
+        ]
+    )
+
+    assert status == 2
+    assert output_path.exists()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["issues"][0]["code"] == "SLIDE_NOT_FOUND"

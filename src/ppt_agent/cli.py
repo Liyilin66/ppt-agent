@@ -9,7 +9,8 @@ from typing import Sequence
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import DeckGenerationRequest, generate_deck_with_quality_gate
-from ppt_agent.load import load_deck, load_theme
+from ppt_agent.load import load_deck, load_patch, load_theme
+from ppt_agent.patch import apply_patch
 from ppt_agent.qa import analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
 
@@ -110,14 +111,32 @@ def _cmd_build(args: argparse.Namespace) -> int:
     print(qa_path)
     print(attempts_path)
     print(pptx_path)
+    status = 0
     if not result.accepted:
         print(
             f"Build completed, but generated Deck IR did not meet the QA score gate: "
             f"{result.qa_report.score} < {args.min_qa_score}"
         )
-        return 2
+        status = 2
 
-    return 0
+    if args.patch:
+        patch_result = apply_patch(result.deck, load_patch(args.patch))
+        patched_deck_path = write_model_json(patch_result.deck, output_dir / "patched_deck_ir.json")
+        patch_result_path = write_model_json(patch_result, output_dir / "patch_result.json")
+        patched_pptx_path = render_deck_to_pptx(
+            patch_result.deck,
+            theme,
+            output_dir / "patched_deck.pptx",
+            assets_dir=args.assets_dir,
+        )
+        print(patched_deck_path)
+        print(patch_result_path)
+        print(patched_pptx_path)
+        if patch_result.issues:
+            print(f"Patch completed with {len(patch_result.issues)} issue(s). See {patch_result_path}.")
+            status = 2
+
+    return status
 
 
 def _cmd_render(args: argparse.Namespace) -> int:
@@ -139,6 +158,24 @@ def _cmd_qa(args: argparse.Namespace) -> int:
     report = analyze_deck(deck, theme)
     output_path = write_model_json(report, args.output)
     print(output_path)
+    return 0
+
+
+def _cmd_patch(args: argparse.Namespace) -> int:
+    deck = load_deck(args.deck)
+    patch = load_patch(args.patch)
+    result = apply_patch(deck, patch)
+
+    output_path = write_model_json(result.deck, args.output)
+    print(output_path)
+    if args.result_output:
+        result_path = write_model_json(result, args.result_output)
+        print(result_path)
+
+    if result.issues:
+        print(f"Patch completed with {len(result.issues)} issue(s).")
+        return 2
+
     return 0
 
 
@@ -220,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum generation attempts before returning the last Deck IR. Defaults to 2.",
     )
     build.add_argument("--assets-dir", default=None, help="Optional image asset directory.")
+    build.add_argument("--patch", default=None, help="Optional structured patch JSON to apply after generation.")
     build.set_defaults(func=_cmd_build)
 
     render = subparsers.add_parser("render", help="Render Deck IR JSON to editable PPTX.")
@@ -234,6 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_theme_argument(qa)
     qa.add_argument("--output", required=True, help="Path for output QA report JSON.")
     qa.set_defaults(func=_cmd_qa)
+
+    patch = subparsers.add_parser("patch", help="Apply structured patch JSON to Deck IR.")
+    patch.add_argument("deck", help="Path to input Deck IR JSON.")
+    patch.add_argument("--patch", required=True, help="Path to structured patch JSON.")
+    patch.add_argument("--output", required=True, help="Path for patched Deck IR JSON.")
+    patch.add_argument("--result-output", default=None, help="Optional path for full patch result JSON.")
+    patch.set_defaults(func=_cmd_patch)
 
     return parser
 
