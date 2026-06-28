@@ -17,6 +17,39 @@ def _issue_codes(report: QAReport) -> list[str]:
     return [issue.code for issue in report.issues]
 
 
+def _deck_with_layouts(layouts: list[str], titles: list[str] | None = None) -> Deck:
+    slide_titles = titles or [f"Slide {index}" for index in range(1, len(layouts) + 1)]
+    return Deck.model_validate(
+        {
+            "deck_id": "qa_layout_test_deck",
+            "title": "QA Layout Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": f"slide_{index:03d}",
+                    "title": slide_titles[index - 1],
+                    "layout": layout,
+                    "elements": [
+                        {
+                            "element_id": f"s{index:03d}_title",
+                            "type": "text",
+                            "bbox": {
+                                "x": 0.8,
+                                "y": 1.0,
+                                "width": 7.2,
+                                "height": 1.2,
+                            },
+                            "text": slide_titles[index - 1],
+                        }
+                    ],
+                }
+                for index, layout in enumerate(layouts, start=1)
+            ],
+        }
+    )
+
+
 def test_sample_deck_generates_qa_report() -> None:
     deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
     theme = load_theme(EXAMPLES_DIR / "theme.json")
@@ -26,6 +59,7 @@ def test_sample_deck_generates_qa_report() -> None:
     assert report.deck_id == deck.deck_id
     assert 0 <= report.score <= 100
     assert isinstance(report.issues, list)
+    assert "layout_diversity_low" not in _issue_codes(report)
 
 
 def test_analyze_deck_warns_on_obvious_bbox_overlap() -> None:
@@ -120,3 +154,77 @@ def test_analyze_deck_marks_very_dense_slide_as_warning() -> None:
     report = analyze_deck(deck)
 
     assert "SLIDE_TOO_DENSE" in _issue_codes(report)
+
+
+def test_analyze_deck_warns_when_long_deck_layout_diversity_is_low() -> None:
+    deck = _deck_with_layouts(
+        [
+            "title_slide",
+            "two_column",
+            "two_column",
+            "two_column",
+            "two_column",
+            "two_column",
+            "two_column",
+            "closing_slide",
+        ],
+        [
+            "Opening",
+            "Market context",
+            "User needs",
+            "Workflow design",
+            "Evaluation metrics",
+            "Launch risks",
+            "Roadmap",
+            "Next steps",
+        ],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "layout_diversity_low"]
+    assert issues
+    assert issues[0].severity == "warning"
+    assert "two_column" in issues[0].message
+    assert "at least three content layouts" in issues[0].message
+    assert report.score < 100
+
+
+def test_analyze_deck_warns_on_three_consecutive_content_layouts() -> None:
+    deck = _deck_with_layouts(
+        ["title_slide", "four_cards", "four_cards", "four_cards", "closing_slide"],
+        ["Opening", "Capability map", "Risk map", "Action map", "Close"],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "layout_repetition_run"]
+    assert issues
+    assert issues[0].severity == "warning"
+    assert "four_cards" in issues[0].message
+    assert "consecutive content slides" in issues[0].message
+
+
+def test_analyze_deck_warns_on_adjacent_similar_titles() -> None:
+    deck = _deck_with_layouts(
+        ["title_slide", "two_column", "three_column", "closing_slide"],
+        ["AI 学习路线", "AI 学习效率提升", "AI 学习效率提升方法", "下一步"],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "adjacent_title_similarity"]
+    assert issues
+    assert issues[0].severity == "warning"
+    assert "AI 学习效率提升" in issues[0].message
+
+
+def test_analyze_deck_does_not_warn_short_deck_for_low_layout_diversity() -> None:
+    deck = _deck_with_layouts(
+        ["title_slide", "two_column", "closing_slide"],
+        ["Opening", "Main idea", "Close"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "layout_diversity_low" not in _issue_codes(report)

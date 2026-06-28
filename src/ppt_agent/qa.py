@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from itertools import combinations
+import re
 from typing import Literal
 
 from pydantic import Field
 
 from ppt_agent.models import BBox, Deck, StrictModel, TextElement
 from ppt_agent.theme import Theme
+
+
+CONTENT_LAYOUT_EXCLUSIONS = {"title_slide", "closing_slide"}
 
 
 class QAIssue(StrictModel):
@@ -51,11 +55,123 @@ def _score_for_issues(issues: list[QAIssue]) -> int:
     return max(0, 100 - penalty)
 
 
+def _content_layout(slide_layout: str) -> str | None:
+    if slide_layout in CONTENT_LAYOUT_EXCLUSIONS:
+        return None
+    return slide_layout
+
+
+def _append_layout_diversity_issue(deck: Deck, issues: list[QAIssue]) -> None:
+    if len(deck.slides) < 6:
+        return
+
+    content_layouts = [
+        layout
+        for slide in deck.slides
+        if (layout := _content_layout(slide.layout)) is not None
+    ]
+    unique_layouts = sorted(set(content_layouts))
+    if content_layouts and len(unique_layouts) < 3:
+        layout_summary = ", ".join(unique_layouts)
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=deck.deck_id,
+                code="layout_diversity_low",
+                message=(
+                    f"Deck uses only {len(unique_layouts)} unique content layout(s): "
+                    f"{layout_summary}. Use at least three content layouts across longer decks "
+                    "to create clearer structure and visual rhythm."
+                ),
+            )
+        )
+
+
+def _append_layout_repetition_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    run_layout: str | None = None
+    run_slide_ids: list[str] = []
+
+    def flush_run() -> None:
+        if run_layout is None or len(run_slide_ids) < 3:
+            return
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=run_slide_ids[0],
+                code="layout_repetition_run",
+                message=(
+                    f"Slides {', '.join(run_slide_ids)} repeat the '{run_layout}' layout "
+                    f"for {len(run_slide_ids)} consecutive content slides. Vary the layout "
+                    "to avoid a monotonous deck rhythm."
+                ),
+            )
+        )
+
+    for slide in deck.slides:
+        layout = _content_layout(slide.layout)
+        if layout is None:
+            flush_run()
+            run_layout = None
+            run_slide_ids = []
+            continue
+
+        if layout == run_layout:
+            run_slide_ids.append(slide.slide_id)
+        else:
+            flush_run()
+            run_layout = layout
+            run_slide_ids = [slide.slide_id]
+
+    flush_run()
+
+
+def _title_ngrams(title: str) -> set[str]:
+    normalized = re.sub(r"[\W_]+", "", title.lower(), flags=re.UNICODE)
+    if not normalized:
+        return set()
+    if len(normalized) == 1:
+        return {normalized}
+    return {normalized[index : index + 2] for index in range(len(normalized) - 1)}
+
+
+def _title_similarity(first: str, second: str) -> float:
+    first_ngrams = _title_ngrams(first)
+    second_ngrams = _title_ngrams(second)
+    if not first_ngrams or not second_ngrams:
+        return 0.0
+
+    return len(first_ngrams & second_ngrams) / len(first_ngrams | second_ngrams)
+
+
+def _append_adjacent_title_similarity_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for first, second in zip(deck.slides, deck.slides[1:]):
+        similarity = _title_similarity(first.title, second.title)
+        if similarity < 0.72:
+            continue
+
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=second.slide_id,
+                code="adjacent_title_similarity",
+                message=(
+                    f"Adjacent slide titles are too similar ({similarity:.0%} overlap): "
+                    f"'{first.title}' and '{second.title}'. Give neighboring slides distinct "
+                    "titles and key messages."
+                ),
+            )
+        )
+
+
 def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     """Analyze a validated deck with deterministic QA rules."""
 
     issues: list[QAIssue] = []
     slide_area = deck.canvas_width_in * deck.canvas_height_in
+
+    _append_layout_diversity_issue(deck, issues)
+    _append_layout_repetition_issues(deck, issues)
+    _append_adjacent_title_similarity_issues(deck, issues)
 
     for slide in deck.slides:
         total_element_area = sum(_bbox_area(element.bbox) for element in slide.elements)
