@@ -188,6 +188,18 @@ def _format_layout_contracts() -> str:
     return "\n".join(lines)
 
 
+def _format_role_layout_guidance() -> str:
+    return "\n".join(
+        [
+            "- comparison: prefer comparison_matrix for two-option, before/after, or normal AI vs Agent comparisons.",
+            "- process: prefer process_flow for workflows, pipelines, or step-by-step sequences with 3-5 steps.",
+            "- risk: prefer risk_matrix for risk / impact / mitigation or governance content with 3-4 risks.",
+            "- summary: prefer key_takeaway for strong conclusions, action checklists, or pre-closing summary pages.",
+            "- cover still uses title_slide; final thank-you pages can still use closing_slide.",
+        ]
+    )
+
+
 def build_deck_plan_prompt(brief: Any) -> str:
     """Build the planning prompt from a DeckBrief-like object."""
 
@@ -218,6 +230,9 @@ Default DesignSpec guidance:
 LayoutContract registry:
 {_format_layout_contracts()}
 
+SlideRole to layout guidance:
+{_format_role_layout_guidance()}
+
 Planning rules:
 - Return only structured data that validates as DeckPlan.
 - Plan exactly {slide_count} slides.
@@ -227,6 +242,7 @@ Planning rules:
 - Every slide needs a distinct slide_role, content_goal, and key_message.
 - recommended_layout must be one of the LayoutContract registry layout_name values only: {layout_names}.
 - Choose a recommended_layout that naturally matches the slide_role and content_goal.
+- If slide_role is comparison, process, risk, or summary, prefer the matching professional layout when the content fits.
 - Set content_items to the estimated number of major content blocks, excluding the slide title.
 - Do not let content_items exceed the selected layout max_items.
 - For 3-slide short decks, do not prioritize section_divider.

@@ -14,6 +14,14 @@ from ppt_agent.theme import Theme
 
 
 CONTENT_LAYOUT_EXCLUSIONS = {"title_slide", "closing_slide"}
+LOW_DENSITY_EXCLUSIONS = {"title_slide", "section_divider", "closing_slide"}
+LAYOUT_TEXT_LIMITS = {
+    "title_slide": 125,
+    "comparison_matrix": 95,
+    "process_flow": 72,
+    "risk_matrix": 78,
+    "key_takeaway": 110,
+}
 
 
 class QAIssue(StrictModel):
@@ -175,6 +183,8 @@ def _estimate_slide_content_items(slide) -> int:
     if text_elements:
         body_texts = text_elements[1:]
         estimate = len(body_texts) + image_count
+        if slide.layout == "comparison_matrix" and len(body_texts) >= 3:
+            estimate -= 1
     else:
         estimate = image_count
 
@@ -209,6 +219,118 @@ def _append_layout_contract_issues(deck: Deck, issues: list[QAIssue]) -> None:
         )
 
 
+def _text_elements(slide) -> list[TextElement]:
+    return [
+        element
+        for element in slide.elements
+        if isinstance(element, TextElement) and element.text.strip()
+    ]
+
+
+def _text_length_score(text: str) -> int:
+    cjk_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    non_cjk_chars = sum(1 for char in text if not char.isspace()) - cjk_chars
+    return cjk_chars + non_cjk_chars
+
+
+def _bullet_line_count(text: str) -> int:
+    return sum(
+        1
+        for line in text.splitlines()
+        if line.strip().startswith(("-", "*", "•")) or re.match(r"^\s*\d+[\).]", line)
+    )
+
+
+def _body_texts(slide) -> list[TextElement]:
+    text_elements = _text_elements(slide)
+    return text_elements[1:] if text_elements else []
+
+
+def _append_visual_preflight_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        body_texts = _body_texts(slide)
+        estimated_items = _estimate_slide_content_items(slide)
+        total_chars = sum(_text_length_score(element.text) for element in body_texts)
+        total_bullets = sum(_bullet_line_count(element.text) for element in body_texts)
+
+        if slide.layout not in LOW_DENSITY_EXCLUSIONS and estimated_items <= 1 and total_chars < 45:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="visual_density_too_low",
+                    message=(
+                        f"Slide '{slide.slide_id}' uses layout '{slide.layout}' but has only "
+                        f"{estimated_items} estimated content item(s) and {total_chars} body "
+                        "characters, so it may look empty."
+                    ),
+                )
+            )
+
+        if len(body_texts) > 6 or total_bullets > 12 or total_chars > 560:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="visual_density_too_high",
+                    message=(
+                        f"Slide '{slide.slide_id}' may be too dense: {len(body_texts)} body "
+                        f"text blocks, {total_bullets} bullet-like lines, {total_chars} "
+                        "body characters."
+                    ),
+                )
+            )
+
+        limit = LAYOUT_TEXT_LIMITS.get(slide.layout, 140)
+        for element in body_texts:
+            length_score = _text_length_score(element.text)
+            if length_score <= limit:
+                continue
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    element_id=element.element_id,
+                    code="text_overflow_risk",
+                    message=(
+                        f"Text element '{element.element_id}' on slide '{slide.slide_id}' "
+                        f"has length score {length_score}, above safe limit {limit} for "
+                        f"layout '{slide.layout}'."
+                    ),
+                )
+            )
+
+        title_length = _text_length_score(slide.title)
+        if slide.layout == "title_slide":
+            text_elements = _text_elements(slide)
+            rendered_title = text_elements[0].text if text_elements else slide.title
+            rendered_title_length = _text_length_score(rendered_title)
+            if title_length > 34 or rendered_title_length > 40:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="title_wrapping_risk",
+                        message=(
+                            f"Slide '{slide.slide_id}' title may wrap awkwardly on a cover: "
+                            f"title length score {max(title_length, rendered_title_length)}."
+                        ),
+                    )
+                )
+        elif title_length > 72 and slide.layout in {"comparison_matrix", "process_flow", "risk_matrix", "key_takeaway"}:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="title_wrapping_risk",
+                    message=(
+                        f"Slide '{slide.slide_id}' title may wrap awkwardly in layout "
+                        f"'{slide.layout}': title length score {title_length}."
+                    ),
+                )
+            )
+
+
 def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     """Analyze a validated deck with deterministic QA rules."""
 
@@ -219,6 +341,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_layout_repetition_issues(deck, issues)
     _append_adjacent_title_similarity_issues(deck, issues)
     _append_layout_contract_issues(deck, issues)
+    _append_visual_preflight_issues(deck, issues)
 
     for slide in deck.slides:
         total_element_area = sum(_bbox_area(element.bbox) for element in slide.elements)

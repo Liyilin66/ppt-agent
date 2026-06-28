@@ -137,6 +137,78 @@ SUPPORTED_LAYOUT_CONTRACTS: tuple[LayoutContract, ...] = (
             "more than three action items",
         ],
     ),
+    LayoutContract(
+        layout_name="comparison_matrix",
+        best_for=[
+            "comparing two options",
+            "before/after",
+            "normal AI vs Agent",
+            "tradeoff analysis",
+        ],
+        required_slots=["left_title", "left_points", "right_title", "right_points"],
+        optional_slots=["decision_rule"],
+        min_items=2,
+        max_items=2,
+        avoid_when=[
+            "three or more options",
+            "linear process steps",
+            "risk register content",
+        ],
+    ),
+    LayoutContract(
+        layout_name="process_flow",
+        best_for=[
+            "workflows",
+            "pipelines",
+            "step-by-step processes",
+            "implementation sequence",
+        ],
+        required_slots=["steps"],
+        optional_slots=["checkpoints"],
+        min_items=3,
+        max_items=5,
+        avoid_when=[
+            "binary comparisons",
+            "risk impact mitigation rows",
+            "single takeaway pages",
+        ],
+    ),
+    LayoutContract(
+        layout_name="risk_matrix",
+        best_for=[
+            "risks",
+            "impact",
+            "mitigation",
+            "governance",
+        ],
+        required_slots=["risks"],
+        optional_slots=["risk / impact / mitigation"],
+        min_items=3,
+        max_items=4,
+        avoid_when=[
+            "non-risk summaries",
+            "step-by-step process slides",
+            "two-option comparisons",
+        ],
+    ),
+    LayoutContract(
+        layout_name="key_takeaway",
+        best_for=[
+            "conclusion",
+            "summary",
+            "action checklist",
+            "pre-closing takeaway",
+        ],
+        required_slots=["takeaways"],
+        optional_slots=["next_actions"],
+        min_items=2,
+        max_items=4,
+        avoid_when=[
+            "new detailed evidence",
+            "dense metrics",
+            "more than four takeaways",
+        ],
+    ),
 )
 
 _LAYOUT_CONTRACTS_BY_NAME = {

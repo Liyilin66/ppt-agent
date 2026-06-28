@@ -273,6 +273,205 @@ def test_analyze_deck_warns_on_layout_contract_capacity_violation() -> None:
     assert "max_items=2" in issues[0].message
 
 
+def test_analyze_deck_warns_on_new_layout_capacity_violation() -> None:
+    elements = [
+        {
+            "element_id": "title",
+            "type": "text",
+            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+            "text": "Too many process steps",
+        }
+    ]
+    for index in range(1, 7):
+        elements.append(
+            {
+                "element_id": f"step_{index}",
+                "type": "text",
+                "bbox": {"x": 0.8, "y": 0.7 + index * 0.6, "width": 4.0, "height": 0.4},
+                "text": f"Step {index}\nDo the work",
+            }
+        )
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_new_layout_contract_test_deck",
+            "title": "QA New Layout Contract Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Too many process steps",
+                    "layout": "process_flow",
+                    "elements": elements,
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "layout_contract_violation"]
+    assert issues
+    assert issues[0].slide_id == "slide_001"
+    assert "layout 'process_flow'" in issues[0].message
+    assert "estimated_items=6" in issues[0].message
+    assert "max_items=5" in issues[0].message
+
+
+def test_visual_preflight_warns_on_low_density_content_slide() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_low_density_visual_test_deck",
+            "title": "QA Low Density Visual Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Sparse Comparison",
+                    "layout": "comparison_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "Sparse Comparison",
+                        },
+                        {
+                            "element_id": "body",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 5.0, "height": 0.5},
+                            "text": "Too little",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    assert "visual_density_too_low" in _issue_codes(report)
+
+
+def test_visual_preflight_warns_on_high_density_slide() -> None:
+    elements = [
+        {
+            "element_id": "title",
+            "type": "text",
+            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+            "text": "Dense Process",
+        }
+    ]
+    for index in range(1, 8):
+        elements.append(
+            {
+                "element_id": f"body_{index}",
+                "type": "text",
+                "bbox": {"x": 0.8, "y": 0.8 + index * 0.35, "width": 6.0, "height": 0.3},
+                "text": "- first bullet\n- second bullet\n- third bullet",
+            }
+        )
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_high_density_visual_test_deck",
+            "title": "QA High Density Visual Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Dense Process",
+                    "layout": "process_flow",
+                    "elements": elements,
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    assert "visual_density_too_high" in _issue_codes(report)
+
+
+def test_visual_preflight_warns_on_text_overflow_risk() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_text_overflow_visual_test_deck",
+            "title": "QA Text Overflow Visual Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Risk Matrix",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "Risk Matrix",
+                        },
+                        {
+                            "element_id": "risk_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 8.0, "height": 0.5},
+                            "text": (
+                                "模型输出可能在复杂场景中持续产生不可靠结论并误导用户判断，"
+                                "需要额外校验、人工复核、权限控制、日志追踪和异常回退机制共同保障，"
+                                "否则会在课堂展示、业务汇报和真实产品决策中造成连续误导。"
+                            ),
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "text_overflow_risk"]
+    assert issues
+    assert issues[0].element_id == "risk_1"
+
+
+def test_visual_preflight_warns_on_title_wrapping_risk() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_title_wrap_visual_test_deck",
+            "title": "QA Title Wrap Visual Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "AI 产品经理如何在复杂组织场景中设计可验证可治理的 Agent 工作流体验",
+                    "layout": "title_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "AI 产品经理如何在复杂组织场景中设计可验证可治理的 Agent 工作流体验",
+                        },
+                        {
+                            "element_id": "subtitle",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 8.0, "height": 0.5},
+                            "text": "课程汇报",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    assert "title_wrapping_risk" in _issue_codes(report)
+
+
 def test_analyze_deck_does_not_warn_short_deck_for_low_layout_diversity() -> None:
     deck = _deck_with_layouts(
         ["title_slide", "two_column", "closing_slide"],

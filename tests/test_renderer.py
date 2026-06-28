@@ -75,6 +75,28 @@ def _template_slide_payload(layout: str, index: int) -> dict:
         ],
         "metric_cards": ["Revenue\n$4.2M", "Growth\n18%", "Retention\n91%"],
         "closing_slide": ["Thank you. Questions and next steps."],
+        "comparison_matrix": [
+            "Normal AI\nResponds to direct prompts\nNeeds manual handoff",
+            "AI Agent\nPlans multi-step work\nUses tools with guardrails",
+            "Choose Agent when workflow ownership matters",
+        ],
+        "process_flow": [
+            "Discover\nMap user needs",
+            "Design\nDefine workflow",
+            "Build\nCreate prototype",
+            "Measure\nTrack quality",
+        ],
+        "risk_matrix": [
+            "Hallucination\nHigh user trust impact\nUse retrieval checks",
+            "Data leakage\nCompliance impact\nLimit sensitive inputs",
+            "Over-automation\nOperational impact\nKeep human review",
+        ],
+        "key_takeaway": [
+            "AI agents need product judgment\nStart from owned workflows, not model demos",
+            "Pick one high-value user journey",
+            "Add evals before scaling",
+            "Keep human checkpoints",
+        ],
     }[layout]
 
     elements = [
@@ -199,7 +221,7 @@ def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) 
     assert all(len(line) > 1 for text in visible_texts for line in text.splitlines() if line.strip())
 
 
-def test_title_slide_side_summary_uses_safe_short_phrase(tmp_path: Path) -> None:
+def test_title_slide_does_not_duplicate_subtitle_in_side_panel(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     subtitle = "Building practical fluency, ethical judgment, and responsible AI habits"
     deck = Deck.model_validate(
@@ -233,17 +255,15 @@ def test_title_slide_side_summary_uses_safe_short_phrase(tmp_path: Path) -> None
     )
 
     output_path = render_deck_to_pptx(deck, theme, tmp_path / "title_side_summary.pptx")
-    visible_texts = _visible_texts(Presentation(output_path))
-    summaries = [text for text in visible_texts if text.startswith("Building practical")]
+    rendered_slide = Presentation(output_path).slides[0]
+    subtitle_shapes = [
+        shape
+        for shape in rendered_slide.shapes
+        if getattr(shape, "has_text_frame", False) and shape.text.strip() == subtitle
+    ]
 
-    assert summaries
-    assert len(summaries[0]) <= 34
-    assert subtitle.startswith(summaries[0])
-    assert summaries[0] != "Building practical fluency, ethical judgme"
-    assert summaries[0].split()[-1].strip(" ,.;:!?") in {
-        word.strip(" ,.;:!?")
-        for word in subtitle.split()
-    }
+    assert len(subtitle_shapes) == 1
+    assert subtitle_shapes[0].left < Inches(8.0)
 
 
 def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) -> None:
@@ -446,3 +466,185 @@ def test_template_rendering_does_not_expose_internal_surface_terms(tmp_path: Pat
 
     for term in INTERNAL_SURFACE_TERMS:
         assert term not in visible_text
+
+
+def test_professional_layouts_render_distinct_editable_templates(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    professional_layouts = [
+        "comparison_matrix",
+        "process_flow",
+        "risk_matrix",
+        "key_takeaway",
+    ]
+    deck = Deck.model_validate(
+        {
+            "deck_id": "professional_layout_demo",
+            "title": "Professional Layout Demo",
+            "theme_name": "clean_business",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                _template_slide_payload(layout, index)
+                for index, layout in enumerate(professional_layouts, start=1)
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "professional_layouts.pptx")
+    presentation = Presentation(output_path)
+
+    assert len(presentation.slides) == 4
+    visible_texts = _visible_texts(presentation)
+    assert "Option A" in visible_texts
+    assert "Option B" in visible_texts
+    assert "01" in visible_texts
+    assert "Risk" in visible_texts
+    assert "Mitigation" in visible_texts
+    assert "Key Takeaway" in visible_texts
+    for layout in professional_layouts:
+        assert any(f"{layout} title" in text for text in visible_texts)
+
+
+@pytest.mark.parametrize("step_count", [3, 4, 5])
+def test_process_flow_renders_readable_step_counts(tmp_path: Path, step_count: int) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    elements = [
+        {
+            "element_id": "title",
+            "type": "text",
+            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+            "text": f"{step_count} Step Workflow",
+        }
+    ]
+    for index in range(1, step_count + 1):
+        elements.append(
+            {
+                "element_id": f"step_{index}",
+                "type": "text",
+                "bbox": {"x": 0.8, "y": 1.2 + index * 0.4, "width": 3.0, "height": 0.6},
+                "text": f"Step {index}\nComplete focused action {index} without excessive detail",
+            }
+        )
+    deck = Deck.model_validate(
+        {
+            "deck_id": f"process_flow_{step_count}_demo",
+            "title": "Process Flow Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Process Flow Demo",
+                    "layout": "process_flow",
+                    "elements": elements,
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / f"process_{step_count}.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+    visible_texts = _visible_texts(Presentation(output_path))
+    step_numbers = {f"{index:02d}" for index in range(1, step_count + 1)}
+    card_backgrounds = [
+        shape
+        for shape in rendered_slide.shapes
+        if not getattr(shape, "text", "").strip()
+        and shape.width >= Inches(3.5 if step_count >= 4 else 3.0)
+        and shape.height >= Inches(1.4)
+    ]
+
+    assert step_numbers <= set(visible_texts)
+    assert len(card_backgrounds) >= step_count
+
+
+def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "comparison_matrix_rows_demo",
+            "title": "Comparison Matrix Rows Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [_template_slide_payload("comparison_matrix", 1)],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "comparison_rows.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "Dimension" in visible_texts
+    assert "Input / Output" in visible_texts
+    assert "State" in visible_texts
+    assert "Option A" in visible_texts
+    assert "Option B" in visible_texts
+    assert any("workflow ownership" in text for text in visible_texts)
+
+
+@pytest.mark.parametrize("risk_count", [3, 4])
+def test_risk_matrix_renders_three_to_four_risks(tmp_path: Path, risk_count: int) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    slide_payload = _template_slide_payload("risk_matrix", 1)
+    slide_payload["elements"] = slide_payload["elements"][:1] + slide_payload["elements"][1 : risk_count + 1]
+    deck = Deck.model_validate(
+        {
+            "deck_id": f"risk_matrix_{risk_count}_demo",
+            "title": "Risk Matrix Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [slide_payload],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / f"risk_{risk_count}.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "Risk" in visible_texts
+    assert "Impact" in visible_texts
+    assert "Mitigation" in visible_texts
+    assert any("Hallucination" in text for text in visible_texts)
+
+
+def test_key_takeaway_renders_fallback_explanations(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "key_takeaway_fallback_demo",
+            "title": "Key Takeaway Fallback Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Key Takeaway Fallback Demo",
+                    "layout": "key_takeaway",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "Focus on workflow ownership",
+                        },
+                        {
+                            "element_id": "takeaway_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.6},
+                            "text": "Start with one journey\nUse evaluation before scaling",
+                        },
+                        {
+                            "element_id": "takeaway_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.0, "width": 5.0, "height": 0.6},
+                            "text": "Keep human checkpoints",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "key_takeaway_fallback.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "Keep human checkpoints" in visible_texts
+    assert "Turn this point into a concrete next action." in visible_texts

@@ -13,6 +13,10 @@ TemplateLayout = Literal[
     "four_cards",
     "metric_cards",
     "closing_slide",
+    "comparison_matrix",
+    "process_flow",
+    "risk_matrix",
+    "key_takeaway",
 ]
 
 
@@ -24,6 +28,10 @@ TEMPLATE_LAYOUTS: tuple[TemplateLayout, ...] = (
     "four_cards",
     "metric_cards",
     "closing_slide",
+    "comparison_matrix",
+    "process_flow",
+    "risk_matrix",
+    "key_takeaway",
 )
 
 

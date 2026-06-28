@@ -135,7 +135,14 @@ def _deck_payload_with_slide_count(slide_count: int) -> dict:
 
 def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
     slides = []
-    layouts = ["four_cards", "two_column", "three_column", "metric_cards"]
+    layouts = [
+        "four_cards",
+        "comparison_matrix",
+        "process_flow",
+        "risk_matrix",
+        "key_takeaway",
+        "metric_cards",
+    ]
     roles = ["framework", "comparison", "process", "metrics", "risk", "context"]
     content_items_by_layout = {
         "title_slide": 1,
@@ -145,6 +152,10 @@ def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
         "four_cards": 4,
         "metric_cards": 3,
         "closing_slide": 1,
+        "comparison_matrix": 2,
+        "process_flow": 4,
+        "risk_matrix": 3,
+        "key_takeaway": 3,
     }
     for index in range(1, slide_count + 1):
         if index == 1:
@@ -296,6 +307,10 @@ def test_build_deck_plan_prompt_contains_planning_constraints() -> None:
     assert "max_items" in prompt
     assert "slide_role to one of" in prompt
     assert "Do not let content_items exceed the selected layout max_items" in prompt
+    assert "prefer comparison_matrix" in prompt
+    assert "prefer process_flow" in prompt
+    assert "prefer risk_matrix" in prompt
+    assert "prefer key_takeaway" in prompt
     for layout in TEMPLATE_LAYOUTS:
         assert layout in prompt
 
@@ -350,6 +365,15 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "Card text should be short phrases" in prompt
     assert "Do not use section_divider by default in a short 3-slide deck" in prompt
     assert "Use four_cards for four parallel concepts" in prompt
+    assert "Use comparison_matrix for two-option comparisons" in prompt
+    assert "Use process_flow for workflows" in prompt
+    assert "Use risk_matrix for risk governance pages" in prompt
+    assert "Use key_takeaway for strong conclusion" in prompt
+    assert "Professional layouts must keep text short enough" in prompt
+    assert "Do not squeeze 5 process steps into one narrow row" in prompt
+    assert "every takeaway must include both a concise title and a one-sentence explanation" in prompt
+    assert "prefer aligned comparison rows over two sparse cards" in prompt
+    assert "keep each risk, impact, and mitigation cell concise" in prompt
     assert "title <= 9 words" in prompt
     assert "subtitle <= 16 words" in prompt
     assert "card heading <= 4 words" in prompt
@@ -723,6 +747,54 @@ def test_format_qa_feedback_for_generation_instructs_layout_contract_fix() -> No
     assert "[warning] layout_contract_violation (slide=slide_002)" in feedback
     assert "Use a layout whose capacity matches the number of content blocks" in feedback
     assert "reduce the number of major content items" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_visual_preflight_fixes_once() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=44,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_001",
+                code="visual_density_too_low",
+                message="Looks empty.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                code="visual_density_too_high",
+                message="Looks dense.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_003",
+                element_id="text_1",
+                code="text_overflow_risk",
+                message="Text is too long.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_004",
+                code="title_wrapping_risk",
+                message="Title may wrap.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_005",
+                code="text_overflow_risk",
+                message="Another long text block.",
+            ),
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "Add enough meaningful content" in feedback
+    assert "Reduce text density" in feedback
+    assert "Shorten long text blocks" in feedback
+    assert "Keep slide titles concise" in feedback
+    assert feedback.count("Shorten long text blocks") == 1
 
 
 def test_format_qa_feedback_for_generation_limits_issue_count() -> None:

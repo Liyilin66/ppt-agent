@@ -29,6 +29,19 @@ def test_layout_contract_registry_lists_current_template_layouts() -> None:
         assert contract.required_slots
 
 
+def test_layout_contract_registry_includes_professional_layouts() -> None:
+    contracts = {contract.layout_name: contract for contract in list_layout_contracts()}
+
+    assert contracts["comparison_matrix"].max_items == 2
+    assert "decision_rule" in contracts["comparison_matrix"].optional_slots
+    assert contracts["process_flow"].min_items == 3
+    assert contracts["process_flow"].max_items == 5
+    assert contracts["risk_matrix"].min_items == 3
+    assert contracts["risk_matrix"].max_items == 4
+    assert contracts["key_takeaway"].min_items == 2
+    assert contracts["key_takeaway"].max_items == 4
+
+
 def test_get_layout_contract_rejects_unsupported_layout_with_clear_error() -> None:
     with pytest.raises(ValueError) as exc_info:
         get_layout_contract("timeline")

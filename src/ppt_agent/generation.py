@@ -30,6 +30,19 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
         "Use a layout whose capacity matches the number of content blocks, or reduce "
         "the number of major content items."
     ),
+    "visual_density_too_low": (
+        "Add enough meaningful content or choose a layout that uses whitespace intentionally; "
+        "avoid pages that look empty."
+    ),
+    "visual_density_too_high": (
+        "Reduce text density, shorten bullets, or split content into a more suitable layout."
+    ),
+    "text_overflow_risk": (
+        "Shorten long text blocks and keep each card/table cell within safe reading length."
+    ),
+    "title_wrapping_risk": (
+        "Keep slide titles concise and avoid layouts that force titles into narrow vertical text areas."
+    ),
 }
 
 
@@ -97,6 +110,7 @@ class GenerationResult(StrictModel):
 
 def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
     issue_lines: list[str] = []
+    emitted_fix_codes: set[str] = set()
     limited_issues = qa_report.issues[:MAX_QA_FEEDBACK_ISSUES]
     for issue in limited_issues:
         location = f"slide={issue.slide_id}"
@@ -106,8 +120,9 @@ def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
             f"- [{issue.severity}] {issue.code} ({location}): {issue.message}"
         )
         fix_instruction = QA_FEEDBACK_FIX_INSTRUCTIONS.get(issue.code)
-        if fix_instruction is not None:
+        if fix_instruction is not None and issue.code not in emitted_fix_codes:
             issue_lines.append(f"  Fix: {fix_instruction}")
+            emitted_fix_codes.add(issue.code)
 
     if len(qa_report.issues) > MAX_QA_FEEDBACK_ISSUES:
         issue_lines.append(
@@ -287,11 +302,21 @@ Hard schema and layout rules:
 - Prefer this general sequence when it fits the requested deck: title_slide, two_column/three_column/four_cards/metric_cards, closing_slide.
 - For a 3-slide deck, prefer:
   slide 1: title_slide.
-  slide 2: two_column, three_column, four_cards, or metric_cards.
-  slide 3: closing_slide, two_column, or four_cards.
+  slide 2: comparison_matrix, process_flow, risk_matrix, key_takeaway, two_column, three_column, four_cards, or metric_cards.
+  slide 3: closing_slide, key_takeaway, two_column, or four_cards.
 - Do not use section_divider by default in a short 3-slide deck.
 - Use section_divider only for decks with 5 or more slides, or when the user explicitly asks for section divider pages.
 - Use four_cards for four parallel concepts, four steps, four capabilities, or four recommendations.
+- Use comparison_matrix for two-option comparisons, before/after views, or normal AI vs Agent; provide two major body text elements, one per side, and optionally one short decision_rule.
+- Use process_flow for workflows, pipelines, or step-by-step processes; provide 3-5 step text elements in order.
+- Use risk_matrix for risk governance pages; provide 3-4 risk text elements where each item includes risk, impact, and mitigation.
+- Use key_takeaway for strong conclusion or pre-closing summary pages; provide 2-4 takeaways or next actions.
+- Prefer these professional layouts over card variants when the slide role is comparison, process, risk, or summary and the content fits.
+- Professional layouts must keep text short enough for the chosen layout; do not rely on the renderer to hide long prose.
+- Do not squeeze 5 process steps into one narrow row; keep each process_flow step to a concise title plus one short description sentence.
+- For key_takeaway, every takeaway must include both a concise title and a one-sentence explanation.
+- For comparison_matrix, prefer aligned comparison rows over two sparse cards; put matching points in the same order on both sides.
+- For risk_matrix, keep each risk, impact, and mitigation cell concise.
 - Do not rely on freeform bbox placement for visual design. The renderer will apply deterministic template positions and styles.
 - Focus on semantic content: slide titles, concise section text, column content, metric labels/values, and closing message.
 - Match each slide's content to its chosen layout. Do not create empty cards or placeholder-only cards.
@@ -476,6 +501,24 @@ def _normalize_layout_alias(layout: Any, slide_index: int, slide_count: int) -> 
             "metrics": "metric_cards",
             "metric_card": "metric_cards",
             "kpi_cards": "metric_cards",
+            "comparison": "comparison_matrix",
+            "comparison_table": "comparison_matrix",
+            "matrix": "comparison_matrix",
+            "before_after": "comparison_matrix",
+            "ai_vs_agent": "comparison_matrix",
+            "process": "process_flow",
+            "workflow": "process_flow",
+            "pipeline": "process_flow",
+            "step_flow": "process_flow",
+            "steps": "process_flow",
+            "risk": "risk_matrix",
+            "risks": "risk_matrix",
+            "risk_table": "risk_matrix",
+            "governance": "risk_matrix",
+            "takeaway": "key_takeaway",
+            "key_takeaways": "key_takeaway",
+            "conclusion": "key_takeaway",
+            "action_checklist": "key_takeaway",
             "summary": "closing_slide",
             "closing": "closing_slide",
             "final": "closing_slide",
@@ -625,8 +668,9 @@ def _generate_deck_once(
 
 def _segment_instruction(start: int, count: int, total: int) -> str:
     end = start + count - 1
-    first_layout = "title_slide" if start == 1 else "two_column, three_column, four_cards, or metric_cards"
-    last_layout = "closing_slide" if end == total else "two_column, three_column, four_cards, or metric_cards"
+    content_layouts = "comparison_matrix, process_flow, risk_matrix, key_takeaway, two_column, three_column, four_cards, or metric_cards"
+    first_layout = "title_slide" if start == 1 else content_layouts
+    last_layout = "closing_slide or key_takeaway" if end == total else content_layouts
     return f"""
 
 Segmented generation rules:
