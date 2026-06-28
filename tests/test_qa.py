@@ -219,6 +219,60 @@ def test_analyze_deck_warns_on_adjacent_similar_titles() -> None:
     assert "AI 学习效率提升" in issues[0].message
 
 
+def test_analyze_deck_warns_on_layout_contract_capacity_violation() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_layout_contract_test_deck",
+            "title": "QA Layout Contract Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Too many comparison items",
+                    "layout": "two_column",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "Too many comparison items",
+                        },
+                        {
+                            "element_id": "item_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 3.0, "height": 0.5},
+                            "text": "First item",
+                        },
+                        {
+                            "element_id": "item_2",
+                            "type": "text",
+                            "bbox": {"x": 4.2, "y": 1.4, "width": 3.0, "height": 0.5},
+                            "text": "Second item",
+                        },
+                        {
+                            "element_id": "item_3",
+                            "type": "text",
+                            "bbox": {"x": 7.6, "y": 1.4, "width": 3.0, "height": 0.5},
+                            "text": "Third item",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "layout_contract_violation"]
+    assert issues
+    assert issues[0].severity == "warning"
+    assert issues[0].slide_id == "slide_001"
+    assert "layout 'two_column'" in issues[0].message
+    assert "estimated_items=3" in issues[0].message
+    assert "max_items=2" in issues[0].message
+
+
 def test_analyze_deck_does_not_warn_short_deck_for_low_layout_diversity() -> None:
     deck = _deck_with_layouts(
         ["title_slide", "two_column", "closing_slide"],

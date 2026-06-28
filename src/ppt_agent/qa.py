@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from ppt_agent.design import get_layout_contract
 from ppt_agent.models import BBox, Deck, StrictModel, TextElement
 from ppt_agent.theme import Theme
 
@@ -163,6 +164,51 @@ def _append_adjacent_title_similarity_issues(deck: Deck, issues: list[QAIssue]) 
         )
 
 
+def _estimate_slide_content_items(slide) -> int:
+    text_elements = [
+        element
+        for element in slide.elements
+        if isinstance(element, TextElement) and element.text.strip()
+    ]
+    image_count = sum(1 for element in slide.elements if element.type == "image")
+
+    if text_elements:
+        body_texts = text_elements[1:]
+        estimate = len(body_texts) + image_count
+    else:
+        estimate = image_count
+
+    if estimate == 0:
+        estimate = max(0, len(slide.elements) - 1)
+
+    return estimate
+
+
+def _append_layout_contract_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        try:
+            contract = get_layout_contract(slide.layout)
+        except ValueError:
+            continue
+
+        estimated_items = _estimate_slide_content_items(slide)
+        if estimated_items <= contract.max_items:
+            continue
+
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=slide.slide_id,
+                code="layout_contract_violation",
+                message=(
+                    f"Slide '{slide.slide_id}' uses layout '{contract.layout_name}' "
+                    f"with estimated_items={estimated_items}, above max_items="
+                    f"{contract.max_items}."
+                ),
+            )
+        )
+
+
 def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     """Analyze a validated deck with deterministic QA rules."""
 
@@ -172,6 +218,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_layout_diversity_issue(deck, issues)
     _append_layout_repetition_issues(deck, issues)
     _append_adjacent_title_similarity_issues(deck, issues)
+    _append_layout_contract_issues(deck, issues)
 
     for slide in deck.slides:
         total_element_area = sum(_bbox_area(element.bbox) for element in slide.elements)

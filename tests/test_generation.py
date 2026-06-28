@@ -16,6 +16,7 @@ from ppt_agent.generation import (
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck
 from ppt_agent.planning import (
+    DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA,
     DeckPlan,
     SlidePlan,
     build_deck_plan_prompt,
@@ -134,17 +135,27 @@ def _deck_payload_with_slide_count(slide_count: int) -> dict:
 
 def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
     slides = []
-    layouts = ["title_slide", "four_cards", "closing_slide"]
+    layouts = ["four_cards", "two_column", "three_column", "metric_cards"]
+    roles = ["framework", "comparison", "process", "metrics", "risk", "context"]
+    content_items_by_layout = {
+        "title_slide": 1,
+        "section_divider": 1,
+        "two_column": 2,
+        "three_column": 3,
+        "four_cards": 4,
+        "metric_cards": 3,
+        "closing_slide": 1,
+    }
     for index in range(1, slide_count + 1):
         if index == 1:
             layout = "title_slide"
-            role = "Opening"
+            role = "cover"
         elif index == slide_count:
             layout = "closing_slide"
-            role = "Close"
+            role = "summary"
         else:
-            layout = layouts[(index - 1) % len(layouts)]
-            role = f"Main point {index}"
+            layout = layouts[(index - 2) % len(layouts)]
+            role = roles[(index - 2) % len(roles)]
         slides.append(
             {
                 "slide_index": index,
@@ -152,6 +163,7 @@ def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
                 "key_message": f"Unique message {index}",
                 "content_goal": f"Explain point {index} without repeating prior slides.",
                 "recommended_layout": layout,
+                "content_items": content_items_by_layout[layout],
                 "must_not_repeat": [f"Unique message {previous}" for previous in range(1, index)],
             }
         )
@@ -211,6 +223,19 @@ def test_deck_plan_rejects_unsupported_layout() -> None:
         DeckPlan.model_validate(payload)
 
 
+def test_deck_plan_rejects_content_items_above_layout_capacity() -> None:
+    payload = _valid_deck_plan_payload(3)
+    payload["slides"][1]["recommended_layout"] = "title_slide"
+    payload["slides"][1]["content_items"] = 4
+
+    with pytest.raises(ValidationError) as exc_info:
+        DeckPlan.model_validate(payload)
+
+    message = str(exc_info.value)
+    assert "content_items=4" in message
+    assert "layout 'title_slide' capacity 1-2" in message
+
+
 def test_generate_deck_plan_with_fake_model_returns_plan() -> None:
     brief = DeckBrief(topic="AI 教育", audience="大学生", slide_count=3)
     model = FakeModel(_valid_deck_plan_payload(3))
@@ -218,9 +243,42 @@ def test_generate_deck_plan_with_fake_model_returns_plan() -> None:
     plan = generate_deck_plan_with_model(model, brief)
 
     assert isinstance(plan, DeckPlan)
-    assert model.schema is DeckPlan
+    assert model.schema == DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA
     assert "Create a DeckPlan" in model.structured_model.prompts[0]
     assert len(plan.slides) == 3
+
+
+def test_generate_deck_plan_unwraps_provider_deck_plan_wrapper() -> None:
+    brief = DeckBrief(topic="AI 产品经理", audience="IT 硕士学生", slide_count=3)
+    model = FakeModel({"deck_plan": _valid_deck_plan_payload(3)})
+
+    plan = generate_deck_plan_with_model(model, brief)
+
+    assert isinstance(plan, DeckPlan)
+    assert plan.slide_count == 3
+    assert [slide.slide_index for slide in plan.slides] == [1, 2, 3]
+
+
+def test_generate_deck_plan_normalizes_provider_extra_fields_and_slide_number() -> None:
+    brief = DeckBrief(topic="AI 产品经理", audience="IT 硕士学生", slide_count=3)
+    payload = _valid_deck_plan_payload(3)
+    payload["language"] = "zh-CN"
+    payload["purpose"] = "中文分享 PPT"
+    payload["tone"] = "技术产品分享"
+    payload["visual_style"] = "clean_business"
+    for slide in payload["slides"]:
+        slide["slide_number"] = slide.pop("slide_index")
+        slide["must_include"] = ["真实用户需求里的额外规划字段"]
+
+    model = FakeModel({"deck_plan": payload})
+
+    plan = generate_deck_plan_with_model(model, brief)
+
+    assert isinstance(plan, DeckPlan)
+    assert [slide.slide_index for slide in plan.slides] == [1, 2, 3]
+    assert not hasattr(plan, "language")
+    assert not hasattr(plan.slides[0], "slide_number")
+    assert not hasattr(plan.slides[0], "must_include")
 
 
 def test_build_deck_plan_prompt_contains_planning_constraints() -> None:
@@ -231,8 +289,13 @@ def test_build_deck_plan_prompt_contains_planning_constraints() -> None:
     assert "Plan exactly 8 slides" in prompt
     assert "unique key_message" in prompt
     assert "For 3-slide short decks, do not prioritize section_divider" in prompt
-    assert "For 8-slide decks, use layout diversity" in prompt
+    assert "For long decks, keep layout diversity" in prompt
     assert "recommended_layout must be one of" in prompt
+    assert "Default DesignSpec guidance" in prompt
+    assert "LayoutContract registry" in prompt
+    assert "max_items" in prompt
+    assert "slide_role to one of" in prompt
+    assert "Do not let content_items exceed the selected layout max_items" in prompt
     for layout in TEMPLATE_LAYOUTS:
         assert layout in prompt
 
@@ -246,6 +309,7 @@ def test_build_generation_prompt_includes_optional_deck_plan() -> None:
     assert "DeckPlan guidance" in prompt
     assert "key_message: Unique message 2" in prompt
     assert "recommended_layout: four_cards" in prompt
+    assert "content_items: 4" in prompt
     assert "must_not_repeat: Unique message 1" in prompt
     assert "must align with each slide's key_message" in prompt
 
@@ -638,6 +702,27 @@ def test_format_qa_feedback_for_generation_instructs_title_similarity_fix() -> N
 
     assert "[warning] adjacent_title_similarity (slide=slide_003)" in feedback
     assert "Make adjacent slide titles and key messages clearly distinct" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_layout_contract_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=84,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                code="layout_contract_violation",
+                message="Slide exceeds layout capacity.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "[warning] layout_contract_violation (slide=slide_002)" in feedback
+    assert "Use a layout whose capacity matches the number of content blocks" in feedback
+    assert "reduce the number of major content items" in feedback
 
 
 def test_format_qa_feedback_for_generation_limits_issue_count() -> None:

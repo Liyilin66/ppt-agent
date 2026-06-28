@@ -26,6 +26,10 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
     ),
     "layout_repetition_run": "Do not use the same content layout for 3 consecutive slides.",
     "adjacent_title_similarity": "Make adjacent slide titles and key messages clearly distinct.",
+    "layout_contract_violation": (
+        "Use a layout whose capacity matches the number of content blocks, or reduce "
+        "the number of major content items."
+    ),
 }
 
 
@@ -159,6 +163,7 @@ def _format_deck_plan(deck_plan: DeckPlan | None) -> str:
                     f"  key_message: {slide.key_message}",
                     f"  content_goal: {slide.content_goal}",
                     f"  recommended_layout: {slide.recommended_layout}",
+                    f"  content_items: {slide.content_items if slide.content_items is not None else 'Not specified'}",
                     f"  must_not_repeat: {must_not_repeat}",
                 ]
             )
