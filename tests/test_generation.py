@@ -522,15 +522,21 @@ def test_generate_deck_rejects_slide_count_mismatch() -> None:
 
 def test_quality_gate_retries_slide_count_mismatch_and_accepts_fixed_deck() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
-    model = FakeModel([_deck_payload_with_slide_count(4), _deck_payload_with_slide_count(3)])
+    model = FakeModel([
+        _valid_deck_plan_payload(3),
+        _deck_payload_with_slide_count(4),
+        _deck_payload_with_slide_count(3),
+    ])
 
     result = generate_deck_with_quality_gate(model, request, min_score=80, max_attempts=2)
 
     assert result.accepted is True
     assert len(result.deck.slides) == 3
-    assert len(model.structured_model.prompts) == 2
-    assert "Generated Deck has 4 slides" in model.structured_model.prompts[1]
-    assert "Regenerate exactly 3 slides" in model.structured_model.prompts[1]
+    assert result.deck_plan is not None
+    assert len(model.structured_model.prompts) == 3
+    assert "Create a DeckPlan" in model.structured_model.prompts[0]
+    assert "Generated Deck has 4 slides" in model.structured_model.prompts[2]
+    assert "Regenerate exactly 3 slides" in model.structured_model.prompts[2]
 
 
 def test_generate_deck_omits_zero_shape_stroke_width() -> None:
@@ -570,29 +576,70 @@ def test_build_generation_prompt_includes_qa_feedback() -> None:
     assert "Avoid repeating these QA problems" in prompt
 
 
+def test_quality_gate_generates_plan_before_deck_generation() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    model = FakeModel([
+        _valid_deck_plan_payload(2),
+        _valid_deck_payload(),
+    ])
+
+    result = generate_deck_with_quality_gate(model, request, min_score=80, max_attempts=1)
+
+    assert result.accepted is True
+    assert isinstance(result.deck_plan, DeckPlan)
+    assert len(model.structured_model.prompts) == 2
+    assert "Create a DeckPlan" in model.structured_model.prompts[0]
+    assert "DeckPlan guidance" in model.structured_model.prompts[1]
+    assert "key_message: Unique message 2" in model.structured_model.prompts[1]
+    assert "recommended_layout: closing_slide" in model.structured_model.prompts[1]
+    assert '"deck_plan"' in result.model_dump_json()
+
+
+def test_quality_gate_reports_deck_plan_generation_failure() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    model = FakeModel({"topic": "AI roadmap", "audience": "executives", "slide_count": 2, "slides": []})
+
+    with pytest.raises(ValueError, match="DeckPlan generation failed"):
+        generate_deck_with_quality_gate(model, request, min_score=80, max_attempts=1)
+
+
 def test_quality_gate_retries_and_accepts_second_attempt() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
-    model = FakeModel([_low_quality_deck_payload(), _valid_deck_payload()])
+    model = FakeModel([
+        _valid_deck_plan_payload(2),
+        _low_quality_deck_payload(),
+        _valid_deck_payload(),
+    ])
 
     result = generate_deck_with_quality_gate(model, request, min_score=99, max_attempts=2)
 
     assert result.accepted is True
+    assert result.deck_plan is not None
     assert result.deck.deck_id == "generated_demo_deck"
     assert result.qa_report.score >= 99
     assert len(result.attempts) == 2
     assert result.attempts[0].accepted is False
     assert result.attempts[1].accepted is True
-    assert "QA feedback from the previous attempt" in model.structured_model.prompts[1]
-    assert "SLIDE_TOO_EMPTY" in model.structured_model.prompts[1]
+    assert sum("Create a DeckPlan" in prompt for prompt in model.structured_model.prompts) == 1
+    assert "DeckPlan guidance" in model.structured_model.prompts[1]
+    assert "DeckPlan guidance" in model.structured_model.prompts[2]
+    assert "QA feedback from the previous attempt" in model.structured_model.prompts[2]
+    assert "SLIDE_TOO_EMPTY" in model.structured_model.prompts[2]
+    assert "key_message: Unique message 2" in model.structured_model.prompts[2]
 
 
 def test_quality_gate_returns_last_attempt_when_all_attempts_fail() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
-    model = FakeModel([_low_quality_deck_payload(), _low_quality_deck_payload()])
+    model = FakeModel([
+        _valid_deck_plan_payload(2),
+        _low_quality_deck_payload(),
+        _low_quality_deck_payload(),
+    ])
 
     result = generate_deck_with_quality_gate(model, request, min_score=100, max_attempts=2)
 
     assert result.accepted is False
+    assert result.deck_plan is not None
     assert result.deck.deck_id == "low_quality_deck"
     assert result.qa_report.score < 100
     assert len(result.attempts) == 2

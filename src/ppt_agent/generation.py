@@ -10,7 +10,7 @@ from pydantic import Field
 
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
-from ppt_agent.planning import DeckPlan
+from ppt_agent.planning import DeckPlan, generate_deck_plan_with_model
 from ppt_agent.qa import QAReport, analyze_deck
 from ppt_agent.theme import Theme
 
@@ -78,6 +78,7 @@ class GenerationResult(StrictModel):
     qa_report: QAReport
     attempts: list[GenerationAttempt] = Field(..., min_length=1)
     accepted: bool
+    deck_plan: DeckPlan | None = None
 
 
 def _format_qa_feedback(qa_feedback: QAReport | None) -> str:
@@ -561,6 +562,7 @@ def _generate_deck_once(
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
     segment_instruction: str | None = None,
+    deck_plan: DeckPlan | None = None,
     slide_index_offset: int = 0,
     total_slide_count: int | None = None,
     force_slide_ids: bool = False,
@@ -570,6 +572,7 @@ def _generate_deck_once(
         qa_feedback=qa_feedback,
         generation_feedback=generation_feedback,
         segment_instruction=segment_instruction,
+        deck_plan=deck_plan,
     )
     structured_model = model.with_structured_output(Deck)
     response = _unwrap_structured_response(structured_model.invoke(prompt))
@@ -644,6 +647,7 @@ def _generate_deck_in_chunks(
     request: DeckGenerationRequest,
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
+    deck_plan: DeckPlan | None = None,
 ) -> Deck:
     chunks: list[Deck] = []
     start = 1
@@ -656,6 +660,7 @@ def _generate_deck_in_chunks(
             qa_feedback=qa_feedback,
             generation_feedback=generation_feedback,
             segment_instruction=_segment_instruction(start, count, request.slide_count),
+            deck_plan=deck_plan,
             slide_index_offset=start - 1,
             total_slide_count=request.slide_count,
             force_slide_ids=True,
@@ -671,6 +676,7 @@ def generate_deck_with_model(
     request: DeckGenerationRequest,
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
+    deck_plan: DeckPlan | None = None,
 ) -> Deck:
     """Generate a Deck using a LangChain chat model with structured output."""
 
@@ -681,6 +687,7 @@ def generate_deck_with_model(
             request,
             qa_feedback=qa_feedback,
             generation_feedback=generation_feedback,
+            deck_plan=deck_plan,
         )
 
     return _generate_deck_once(
@@ -688,6 +695,7 @@ def generate_deck_with_model(
         request,
         qa_feedback=qa_feedback,
         generation_feedback=generation_feedback,
+        deck_plan=deck_plan,
     )
 
 
@@ -709,6 +717,10 @@ def generate_deck_with_quality_gate(
     qa_feedback: QAReport | None = None
     generation_feedback: str | None = None
     request = _request_with_brief(model, request)
+    try:
+        deck_plan = generate_deck_plan_with_model(model, _brief_from_request(request))
+    except Exception as exc:
+        raise ValueError(f"DeckPlan generation failed: {exc}") from exc
 
     for attempt_index in range(1, max_attempts + 1):
         try:
@@ -717,6 +729,7 @@ def generate_deck_with_quality_gate(
                 request,
                 qa_feedback=qa_feedback,
                 generation_feedback=generation_feedback,
+                deck_plan=deck_plan,
             )
         except ValueError as exc:
             generation_feedback = str(exc)
@@ -744,6 +757,7 @@ def generate_deck_with_quality_gate(
                 qa_report=qa_report,
                 attempts=attempts,
                 accepted=True,
+                deck_plan=deck_plan,
             )
 
         qa_feedback = qa_report
@@ -755,4 +769,5 @@ def generate_deck_with_quality_gate(
         qa_report=last_attempt.qa_report,
         attempts=attempts,
         accepted=False,
+        deck_plan=deck_plan,
     )
