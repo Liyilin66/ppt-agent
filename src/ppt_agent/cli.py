@@ -45,6 +45,7 @@ def _generation_request(args: argparse.Namespace, theme_name: str) -> DeckGenera
         style=args.style or theme_name,
         language=args.language,
         key_points=args.key_point,
+        user_requirements=args.user_requirements,
     )
 
 
@@ -104,6 +105,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
             style=args.style,
             language=args.language,
             key_points=args.key_point,
+            user_requirements=args.user_requirements,
         ),
         theme_path=Path(args.theme),
         output_dir=Path(args.output_dir),
@@ -176,7 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_theme_argument(generate)
     generate.add_argument("--output", required=True, help="Path for generated Deck IR JSON.")
     generate.add_argument("--style", default=None, help="Optional style label. Defaults to theme name.")
-    generate.add_argument("--language", default="en", help="Output language. Defaults to en.")
+    generate.add_argument("--language", default="zh-CN", help="Output language. Defaults to zh-CN.")
+    generate.add_argument(
+        "--requirements",
+        "--prompt",
+        dest="user_requirements",
+        default=None,
+        help="Detailed user requirements for the deck.",
+    )
     generate.add_argument(
         "--key-point",
         action="append",
@@ -215,7 +224,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_theme_argument(build)
     build.add_argument("--output-dir", required=True, help="Directory for generated JSON and PPTX outputs.")
     build.add_argument("--style", default=None, help="Optional style label. Defaults to theme name.")
-    build.add_argument("--language", default="en", help="Output language. Defaults to en.")
+    build.add_argument("--language", default="zh-CN", help="Output language. Defaults to zh-CN.")
+    build.add_argument(
+        "--requirements",
+        "--prompt",
+        dest="user_requirements",
+        default=None,
+        help="Detailed user requirements for the deck.",
+    )
     build.add_argument(
         "--key-point",
         action="append",

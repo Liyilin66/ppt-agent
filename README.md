@@ -7,6 +7,7 @@ AI Presentation Agent that generates validated Slide IR, runs QA, applies struct
 ## What It Does
 
 - Optionally generates Deck IR with LangChain structured output
+- Accepts detailed user requirements and defaults generation to Chinese unless English is requested
 - Validates Slide IR with Pydantic models
 - Runs deterministic rule-based QA before accepting generated decks
 - Applies structured JSON Patch Edit operations
@@ -61,15 +62,16 @@ Recommended one-step AI deck build:
 
 ```bash
 uv run ppt-agent build \
-  --topic "AI in Education" \
-  --audience "university students" \
+  --topic "AI 教育应用" \
+  --audience "大学生" \
   --slides 8 \
   --theme examples/theme.json \
   --output-dir examples/output \
+  --requirements "做一份中文课堂展示，风格简洁现代，重点讲 AI 如何帮助学习，但要提醒学术诚信风险。" \
   --patch examples/sample_patch.json
 ```
 
-The build command runs structured-output Deck IR generation, deterministic QA, optional structured patching, and deterministic PPTX rendering. The LLM only generates Slide IR; PowerPoint files are produced by the `python-pptx` renderer.
+The build command runs structured-output Deck IR generation, deterministic QA, optional structured patching, and deterministic PPTX rendering. The LLM only generates Slide IR; PowerPoint files are produced by the `python-pptx` renderer. Generation is Chinese-first by default; pass `--language en` or state English in the detailed requirements when an English deck is desired.
 
 ## Demo Artifacts
 
@@ -109,18 +111,19 @@ Generate Deck IR with QA-gated retry:
 
 ```bash
 uv run ppt-agent generate \
-  --topic "AI in Education" \
-  --audience "university students" \
+  --topic "AI 教育应用" \
+  --audience "大学生" \
   --slides 8 \
   --theme examples/theme.json \
   --output examples/output/generated_deck_ir.json \
+  --requirements "做一份给大学课堂展示的中文 PPT，风格简洁现代，重点讲 AI 如何帮助学习，但要提醒学术诚信风险。" \
   --min-qa-score 80 \
   --max-attempts 2 \
   --qa-output examples/output/generated_qa_report.json \
   --attempts-output examples/output/generated_attempts.json
 ```
 
-This command requires `OPENAI_API_KEY`. It writes Slide IR JSON and optional QA metadata; it does not generate PPTX directly.
+This command requires `OPENAI_API_KEY`. It writes Slide IR JSON and optional QA metadata; it does not generate PPTX directly. `--requirements` and its alias `--prompt` accept detailed natural-language generation requirements; they do not apply natural-language edits to an existing deck.
 
 Render Deck IR to editable PowerPoint:
 
@@ -173,10 +176,11 @@ Create a job:
 curl -X POST http://127.0.0.1:8000/api/jobs \
   -H "Content-Type: application/json" \
   -d '{
-    "topic": "AI in Education",
-    "audience": "university students",
+    "topic": "AI 教育应用",
+    "audience": "大学生",
     "slides": 8,
     "theme_path": "examples/theme.json",
+    "user_requirements": "做一份中文课堂展示，风格简洁现代，提醒学术诚信风险。",
     "min_qa_score": 80,
     "max_attempts": 2
   }'

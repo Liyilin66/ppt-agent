@@ -4,7 +4,9 @@ import pytest
 from pydantic import ValidationError
 
 from ppt_agent.generation import (
+    DeckBrief,
     DeckGenerationRequest,
+    build_brief_from_user_prompt,
     build_generation_prompt,
     generate_deck_with_model,
     generate_deck_with_quality_gate,
@@ -125,8 +127,16 @@ def _deck_payload_with_slide_count(slide_count: int) -> dict:
 def test_deck_generation_request_validates_slide_count() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
 
-    assert request.language == "en"
+    assert request.language == "zh-CN"
     assert request.key_points == []
+
+
+def test_deck_brief_defaults_to_chinese() -> None:
+    brief = DeckBrief(topic="AI 教育", audience="大学生", slide_count=3)
+
+    assert brief.language == "zh-CN"
+    assert brief.must_include == []
+    assert brief.must_avoid == []
 
 
 @pytest.mark.parametrize("slide_count", [0, 11])
@@ -170,8 +180,87 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "card heading <= 4 words" in prompt
     assert "card body <= 18 words" in prompt
     assert "Heading\n  Short body sentence" in prompt
+    assert "Default to Simplified Chinese" in prompt
+    assert "generate all user-visible slide text in natural Chinese" in prompt
     for layout in TEMPLATE_LAYOUTS:
         assert layout in prompt
+
+
+def test_build_generation_prompt_includes_user_brief_constraints() -> None:
+    brief = DeckBrief(
+        topic="AI 如何帮助学习",
+        audience="大学课堂学生",
+        slide_count=3,
+        purpose="课堂展示",
+        tone="清晰、克制",
+        visual_style="简洁现代",
+        content_focus="学习效率与学术诚信风险",
+        must_include=["AI 辅助学习", "学术诚信"],
+        must_avoid=["夸大 AI 能力"],
+        user_requirements_raw="做一份中文 PPT，提醒风险。",
+    )
+    request = DeckGenerationRequest(
+        topic="AI 教育",
+        audience="大学生",
+        slide_count=3,
+        brief=brief,
+    )
+
+    prompt = build_generation_prompt(request)
+
+    assert "DeckBrief" in prompt
+    assert "课堂展示" in prompt
+    assert "简洁现代" in prompt
+    assert "AI 辅助学习" in prompt
+    assert "夸大 AI 能力" in prompt
+    assert "Default to Simplified Chinese" in prompt
+
+
+def test_build_generation_prompt_respects_explicit_english() -> None:
+    request = DeckGenerationRequest(
+        topic="AI education",
+        audience="students",
+        slide_count=3,
+        language="en",
+    )
+
+    prompt = build_generation_prompt(request)
+
+    assert "The user explicitly requested English" in prompt
+    assert "concise English" in prompt
+
+
+def test_build_brief_from_user_prompt_with_fake_model() -> None:
+    response = {
+        "topic": "AI 如何帮助学习",
+        "audience": "大学生",
+        "slide_count": 3,
+        "language": "zh-CN",
+        "purpose": "课堂展示",
+        "tone": "简洁、可信",
+        "visual_style": "现代商务",
+        "content_focus": "学习效率与学术诚信",
+        "must_include": ["学习场景", "诚信风险"],
+        "must_avoid": ["过度承诺"],
+        "user_requirements_raw": "placeholder",
+    }
+    model = FakeModel(response)
+    requirements = "我要做一份给大学课堂展示的中文 PPT，重点讲 AI 如何帮助学习。"
+
+    brief = build_brief_from_user_prompt(
+        model,
+        requirements,
+        topic="AI 教育",
+        audience="大学生",
+        slide_count=3,
+    )
+
+    assert model.schema is DeckBrief
+    assert brief.topic == "AI 如何帮助学习"
+    assert brief.language == "zh-CN"
+    assert brief.slide_count == 3
+    assert brief.user_requirements_raw == requirements
+    assert "Default language to zh-CN" in model.structured_model.prompts[0]
 
 
 def test_generate_deck_with_fake_model_returns_deck() -> None:
@@ -184,6 +273,36 @@ def test_generate_deck_with_fake_model_returns_deck() -> None:
     assert model.schema is Deck
     assert "AI roadmap" in model.structured_model.prompts[0]
     assert len(deck.slides) == 2
+
+
+def test_generate_deck_with_user_requirements_builds_brief_first() -> None:
+    brief_response = {
+        "topic": "AI 如何帮助学习",
+        "audience": "大学生",
+        "slide_count": 2,
+        "language": "zh-CN",
+        "purpose": "课堂展示",
+        "tone": "简洁",
+        "visual_style": "现代",
+        "content_focus": "学习效率",
+        "must_include": ["诚信风险"],
+        "must_avoid": [],
+        "user_requirements_raw": "placeholder",
+    }
+    request = DeckGenerationRequest(
+        topic="AI 教育",
+        audience="大学生",
+        slide_count=2,
+        user_requirements="做中文 PPT，提醒学术诚信风险。",
+    )
+    model = FakeModel([brief_response, _valid_deck_payload()])
+
+    deck = generate_deck_with_model(model, request)
+
+    assert isinstance(deck, Deck)
+    assert len(model.structured_model.prompts) == 2
+    assert "Extract a DeckBrief" in model.structured_model.prompts[0]
+    assert "诚信风险" in model.structured_model.prompts[1]
 
 
 def test_generate_deck_with_fake_model_accepts_deck_instance() -> None:

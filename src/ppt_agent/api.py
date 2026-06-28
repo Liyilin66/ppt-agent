@@ -74,13 +74,22 @@ INDEX_HTML = """<!doctype html>
         font-weight: 600;
       }
 
-      input {
+      input, textarea {
         box-sizing: border-box;
         width: 100%;
         border: 1px solid #b9c4d4;
         border-radius: 6px;
         padding: 10px 12px;
         font: inherit;
+      }
+
+      textarea {
+        min-height: 104px;
+        resize: vertical;
+      }
+
+      .full {
+        margin-top: 16px;
       }
 
       button {
@@ -154,6 +163,10 @@ INDEX_HTML = """<!doctype html>
             <input id="patch_path" name="patch_path" placeholder="examples/sample_patch.json">
           </label>
         </div>
+        <label class="full">
+          详细要求
+          <textarea id="user_requirements" name="user_requirements" placeholder="例如：我要做一份给大学课堂展示的中文 PPT，风格简洁现代，重点讲 AI 如何帮助学习，但要提醒学术诚信风险。"></textarea>
+        </label>
         <button id="generateButton" type="submit">生成 PPT</button>
       </form>
 
@@ -202,6 +215,7 @@ INDEX_HTML = """<!doctype html>
 
       function buildPayload() {
         const patchPath = document.getElementById("patch_path").value.trim();
+        const userRequirements = document.getElementById("user_requirements").value.trim();
         const payload = {
           topic: document.getElementById("topic").value.trim(),
           audience: document.getElementById("audience").value.trim(),
@@ -211,6 +225,9 @@ INDEX_HTML = """<!doctype html>
         };
         if (patchPath) {
           payload.patch_path = patchPath;
+        }
+        if (userRequirements) {
+          payload.user_requirements = userRequirements;
         }
         return payload;
       }
@@ -297,8 +314,9 @@ class CreateJobRequest(StrictModel):
     slides: int = Field(..., ge=1, le=10)
     theme_path: str = Field(default="examples/theme.json", min_length=1)
     style: str | None = Field(default=None, min_length=1)
-    language: str = Field(default="en", min_length=1)
+    language: str = Field(default="zh-CN", min_length=1)
     key_points: list[str] = Field(default_factory=list)
+    user_requirements: str | None = Field(default=None, min_length=1)
     min_qa_score: int = Field(default=80, ge=0, le=100)
     max_attempts: int = Field(default=2, ge=1)
     patch_path: str | None = Field(default=None, min_length=1)
@@ -366,6 +384,7 @@ def _run_job(
                 style=payload.style,
                 language=payload.language,
                 key_points=payload.key_points,
+                user_requirements=payload.user_requirements,
             ),
             theme_path=Path(payload.theme_path),
             output_dir=output_dir,

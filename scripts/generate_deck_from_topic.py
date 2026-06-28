@@ -29,7 +29,7 @@ def main() -> int:
         audience=os.getenv("PPT_AGENT_AUDIENCE", "executive leadership team"),
         slide_count=int(os.getenv("PPT_AGENT_SLIDE_COUNT", "4")),
         style=os.getenv("PPT_AGENT_STYLE", "clean_business"),
-        language=os.getenv("PPT_AGENT_LANGUAGE", "en"),
+        language=os.getenv("PPT_AGENT_LANGUAGE", "zh-CN"),
         key_points=[
             "current-state assessment",
             "highest-value use cases",

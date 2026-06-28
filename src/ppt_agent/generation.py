@@ -14,13 +14,32 @@ from ppt_agent.qa import QAReport, analyze_deck
 from ppt_agent.theme import Theme
 
 
+DEFAULT_LANGUAGE = "zh-CN"
+
+
+class DeckBrief(StrictModel):
+    topic: str = Field(..., min_length=1)
+    audience: str = Field(..., min_length=1)
+    slide_count: int = Field(..., ge=1, le=10)
+    language: str = Field(default=DEFAULT_LANGUAGE, min_length=1)
+    purpose: str = ""
+    tone: str = ""
+    visual_style: str = ""
+    content_focus: str = ""
+    must_include: list[str] = Field(default_factory=list)
+    must_avoid: list[str] = Field(default_factory=list)
+    user_requirements_raw: str | None = Field(default=None, min_length=1)
+
+
 class DeckGenerationRequest(StrictModel):
     topic: str = Field(..., min_length=1)
     audience: str = Field(..., min_length=1)
     slide_count: int = Field(..., ge=1, le=10)
     style: str | None = Field(default=None, min_length=1)
-    language: str = Field(default="en", min_length=1)
+    language: str = Field(default=DEFAULT_LANGUAGE, min_length=1)
     key_points: list[str] = Field(default_factory=list)
+    user_requirements: str | None = Field(default=None, min_length=1)
+    brief: DeckBrief | None = None
 
 
 class GenerationAttempt(StrictModel):
@@ -71,6 +90,39 @@ Regenerate the Deck IR and fix this issue before optimizing style.
 """
 
 
+def _brief_from_request(request: DeckGenerationRequest) -> DeckBrief:
+    return request.brief or DeckBrief(
+        topic=request.topic,
+        audience=request.audience,
+        slide_count=request.slide_count,
+        language=request.language,
+        visual_style=request.style or "",
+        content_focus="\n".join(request.key_points),
+        must_include=list(request.key_points),
+        user_requirements_raw=request.user_requirements,
+    )
+
+
+def _format_brief_items(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items) or "- None provided"
+
+
+def _language_instruction(language: str) -> str:
+    normalized = language.strip().lower()
+    if normalized.startswith("en") or "english" in normalized:
+        return (
+            "The user explicitly requested English. Generate all user-visible slide text "
+            "in concise English."
+        )
+
+    return (
+        "Default to Simplified Chinese. Unless the user explicitly requested English, "
+        "generate all user-visible slide text in natural Chinese, including deck title, "
+        "slide titles, body text, card headings, metric labels, and closing slide. "
+        "Do not mix meaningless English template words into the deck."
+    )
+
+
 def build_generation_prompt(
     request: DeckGenerationRequest,
     qa_feedback: QAReport | None = None,
@@ -79,6 +131,7 @@ def build_generation_prompt(
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
     layouts = ", ".join(TEMPLATE_LAYOUTS)
+    brief = _brief_from_request(request)
 
     return f"""Generate a Slide IR deck as structured data that exactly matches the Deck Pydantic schema.
 
@@ -91,9 +144,25 @@ Request:
 - Key points:
 {key_points}
 
+DeckBrief:
+- Topic: {brief.topic}
+- Audience: {brief.audience}
+- Slide count: {brief.slide_count} exactly
+- Language: {brief.language}
+- Purpose: {brief.purpose or "Not specified"}
+- Tone: {brief.tone or "Not specified"}
+- Visual style: {brief.visual_style or style}
+- Content focus: {brief.content_focus or "Not specified"}
+- Must include:
+{_format_brief_items(brief.must_include)}
+- Must avoid:
+{_format_brief_items(brief.must_avoid)}
+- Raw user requirements: {brief.user_requirements_raw or "None provided"}
+
 Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
 - Do not generate Markdown, prose, speaker notes, PPTX, HTML, SVG, or images.
+- {_language_instruction(brief.language)}
 - Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
 - The slides array length must be exactly {request.slide_count}. Do not generate more or fewer slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
@@ -149,6 +218,77 @@ def _unwrap_structured_response(response: Any) -> Any:
     if isinstance(response, dict) and "structured_response" in response:
         return response["structured_response"]
     return response
+
+
+def build_brief_from_user_prompt(
+    model: Any,
+    user_requirements: str,
+    *,
+    topic: str,
+    audience: str,
+    slide_count: int,
+    style: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
+    key_points: list[str] | None = None,
+) -> DeckBrief:
+    """Extract a structured DeckBrief from detailed user requirements."""
+
+    key_points_text = _format_brief_items(key_points or [])
+    prompt = f"""Extract a DeckBrief for an AI presentation generation request.
+
+Base fields:
+- topic: {topic}
+- audience: {audience}
+- slide_count: {slide_count}
+- style: {style or "Not specified"}
+- requested_language: {language}
+- key_points:
+{key_points_text}
+
+Detailed user requirements:
+{user_requirements}
+
+Rules:
+- Return only structured data matching DeckBrief.
+- Keep slide_count exactly {slide_count}; it is the product request value.
+- Default language to zh-CN unless the detailed requirements explicitly ask for English.
+- If the detailed requirements ask for English, set language to en.
+- Extract purpose, tone, visual_style, content_focus, must_include, and must_avoid when present.
+- Preserve the raw detailed request in user_requirements_raw.
+"""
+    structured_model = model.with_structured_output(DeckBrief)
+    response = _unwrap_structured_response(structured_model.invoke(prompt))
+    brief = DeckBrief.model_validate(response)
+    return brief.model_copy(
+        update={
+            "slide_count": slide_count,
+            "user_requirements_raw": user_requirements,
+        }
+    )
+
+
+def _request_with_brief(model: Any, request: DeckGenerationRequest) -> DeckGenerationRequest:
+    if request.brief is not None or not request.user_requirements:
+        return request
+
+    brief = build_brief_from_user_prompt(
+        model,
+        request.user_requirements,
+        topic=request.topic,
+        audience=request.audience,
+        slide_count=request.slide_count,
+        style=request.style,
+        language=request.language,
+        key_points=request.key_points,
+    )
+    return request.model_copy(
+        update={
+            "brief": brief,
+            "topic": brief.topic,
+            "audience": brief.audience,
+            "language": brief.language,
+        }
+    )
 
 
 def _identifier_from_text(value: str, prefix: str) -> str:
@@ -272,6 +412,7 @@ def generate_deck_with_model(
 ) -> Deck:
     """Generate a Deck using a LangChain chat model with structured output."""
 
+    request = _request_with_brief(model, request)
     prompt = build_generation_prompt(
         request,
         qa_feedback=qa_feedback,
@@ -301,6 +442,7 @@ def generate_deck_with_quality_gate(
     attempts: list[GenerationAttempt] = []
     qa_feedback: QAReport | None = None
     generation_feedback: str | None = None
+    request = _request_with_brief(model, request)
 
     for attempt_index in range(1, max_attempts + 1):
         try:

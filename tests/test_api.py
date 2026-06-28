@@ -108,6 +108,7 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
         "演示主题",
         "目标观众",
         "页数",
+        "详细要求",
         "最低 QA 分数",
         "最大尝试次数",
         "Patch 文件路径",
@@ -121,7 +122,15 @@ def test_index_page_keeps_required_job_field_names(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/")
 
     assert response.status_code == 200
-    for field_name in ["topic", "audience", "slides", "min_qa_score", "max_attempts", "patch_path"]:
+    for field_name in [
+        "topic",
+        "audience",
+        "slides",
+        "min_qa_score",
+        "max_attempts",
+        "patch_path",
+        "user_requirements",
+    ]:
         assert f'name="{field_name}"' in response.text
 
 
@@ -143,6 +152,29 @@ def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
     body = response.json()
     assert body["job_id"]
     assert body["status"] == "pending"
+
+
+def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+    captured_request = {}
+
+    def fake_run_build_pipeline(model, request):
+        captured_request["request"] = request
+        return _fake_pipeline_result(request.output_dir, accepted=True)
+
+    monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
+    payload = {
+        **_job_payload(),
+        "user_requirements": "做一份中文课堂展示，提醒学术诚信风险。",
+    }
+
+    response = _client(tmp_path).post("/api/jobs", json=payload)
+
+    assert response.status_code == 202
+    generation_request = captured_request["request"].generation_request
+    assert generation_request.language == "zh-CN"
+    assert generation_request.user_requirements == "做一份中文课堂展示，提醒学术诚信风险。"
 
 
 def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:

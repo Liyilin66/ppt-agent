@@ -249,6 +249,25 @@ def _body_lines(body_texts: list[str]) -> list[str]:
     ]
 
 
+def _is_english_language(deck: Deck) -> bool:
+    marker = f"{deck.title} {deck.theme_name or ''}".lower()
+    if "lang:en" in marker or "language:en" in marker:
+        return True
+
+    deck_text = " ".join(
+        element.text
+        for slide in deck.slides
+        for element in slide.elements
+        if isinstance(element, TextElement)
+    )
+    has_cjk_text = any("\u4e00" <= char <= "\u9fff" for char in deck_text)
+    return not has_cjk_text
+
+
+def _surface_label(deck: Deck, english: str, chinese: str) -> str:
+    return english if _is_english_language(deck) else chinese
+
+
 def _render_heading_body_card(
     slide,
     *,
@@ -466,7 +485,7 @@ def _render_column_template(slide, deck_slide, deck: Deck, theme: Theme, column_
             theme=theme,
             accent_color=theme.colors.primary if index % 2 == 0 else theme.colors.secondary,
             number=index + 1,
-            label="Insight",
+            label=_surface_label(deck, "Insight", "洞察"),
             heading_size_pt=18,
             body_size_pt=13.5,
         )
@@ -507,7 +526,7 @@ def _render_four_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -> 
             theme=theme,
             accent_color=accents[index],
             number=index + 1,
-            label="Action",
+            label=_surface_label(deck, "Action", "行动"),
             heading_size_pt=17,
             body_size_pt=12.8,
         )
@@ -543,7 +562,7 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -
             theme=theme,
             accent_color=theme.colors.primary,
             number=index + 1,
-            label="Priority",
+            label=_surface_label(deck, "Priority", "重点"),
             heading_size_pt=18,
             body_size_pt=14,
         )
@@ -569,23 +588,23 @@ def _render_closing_slide_template(slide, deck_slide, deck: Deck, theme: Theme) 
                 slide,
                 x=2.55,
                 y=y + 0.02,
-                width=0.48,
+                width=0.58,
                 height=0.3,
                 fill_color=theme.colors.surface,
                 stroke_color=theme.colors.surface,
             )
             _add_textbox(
                 slide,
-                x=2.64,
+                x=2.62,
                 y=y + 0.06,
-                width=0.3,
+                width=0.44,
                 height=0.18,
                 text=f"{index:02d}",
-                style=_theme_text_style(theme, font_size_pt=8.5, color=theme.colors.primary, bold=True),
+                style=_theme_text_style(theme, font_size_pt=7.5, color=theme.colors.primary, bold=True),
             )
             _add_textbox(
                 slide,
-                x=3.18,
+                x=3.24,
                 y=y - 0.01,
                 width=deck.canvas_width_in - 6.1,
                 height=0.38,

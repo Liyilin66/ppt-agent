@@ -275,6 +275,54 @@ def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) ->
     assert "Choose high-value work" in editable_texts
 
 
+def test_chinese_deck_uses_chinese_card_labels(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "chinese_labels_demo",
+            "title": "AI 学习应用",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "AI 学习应用",
+                    "layout": "four_cards",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "AI 学习应用",
+                        },
+                        {
+                            "element_id": "card_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 3.0, "height": 1.0},
+                            "text": "预习\n快速理解背景",
+                        },
+                        {
+                            "element_id": "card_2",
+                            "type": "text",
+                            "bbox": {"x": 4.0, "y": 1.5, "width": 3.0, "height": 1.0},
+                            "text": "练习\n获得即时反馈",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "chinese_labels.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "行动" in visible_texts
+    assert "Action" not in visible_texts
+    assert "Insight" not in visible_texts
+    assert "Priority" not in visible_texts
+    assert "Step" not in visible_texts
+
+
 def test_sparse_two_column_layout_uses_compact_cards(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     deck = Deck.model_validate(
@@ -360,11 +408,19 @@ def test_closing_slide_renders_multiple_next_steps_as_editable_text(tmp_path: Pa
     )
 
     output_path = render_deck_to_pptx(deck, theme, tmp_path / "closing_actions.pptx")
-    editable_texts = _visible_texts(Presentation(output_path))
+    rendered_slide = Presentation(output_path).slides[0]
+    editable_texts = [
+        shape.text.strip()
+        for shape in rendered_slide.shapes
+        if getattr(shape, "has_text_frame", False) and shape.text.strip()
+    ]
 
     assert "01" in editable_texts
     assert "02" in editable_texts
     assert "03" in editable_texts
+    for number in ["01", "02", "03"]:
+        number_shape = _shape_with_text(rendered_slide, number)
+        assert number_shape.width >= Inches(0.4)
     assert "Pilot the workflow" in editable_texts
     assert "Gather feedback" in editable_texts
     assert "Scale the pattern" in editable_texts

@@ -2,9 +2,11 @@
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
+    DeckBrief,
     DeckGenerationRequest,
     GenerationAttempt,
     GenerationResult,
+    build_brief_from_user_prompt,
     build_generation_prompt,
     generate_deck_with_model,
     generate_deck_with_quality_gate,
@@ -43,9 +45,11 @@ __all__ = [
     "PatchResult",
     "apply_patch",
     "write_model_json",
+    "DeckBrief",
     "DeckGenerationRequest",
     "GenerationAttempt",
     "GenerationResult",
+    "build_brief_from_user_prompt",
     "build_generation_prompt",
     "generate_deck_with_model",
     "generate_deck_with_quality_gate",

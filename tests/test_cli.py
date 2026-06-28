@@ -105,6 +105,8 @@ def test_generate_cli_help_includes_quality_gate_options(capsys) -> None:
     assert "--max-attempts" in captured.out
     assert "--qa-output" in captured.out
     assert "--attempts-output" in captured.out
+    assert "--requirements" in captured.out
+    assert "--prompt" in captured.out
 
 
 def test_generate_cli_rejects_invalid_min_qa_score() -> None:
@@ -183,6 +185,58 @@ def test_generate_cli_returns_failure_when_quality_gate_rejects(
     assert "did not meet the QA score gate" in captured.out
 
 
+def test_generate_cli_passes_user_requirements(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
+    qa_report = analyze_deck(deck)
+    captured_request = {}
+
+    def fake_generate_deck_with_quality_gate(model, request, **kwargs):
+        captured_request["request"] = request
+        return GenerationResult(
+            deck=deck,
+            qa_report=qa_report,
+            attempts=[
+                GenerationAttempt(
+                    attempt_index=1,
+                    deck=deck,
+                    qa_report=qa_report,
+                    accepted=True,
+                )
+            ],
+            accepted=True,
+        )
+
+    monkeypatch.setattr(cli, "generate_deck_with_quality_gate", fake_generate_deck_with_quality_gate)
+    output_path = tmp_path / "generated_deck.json"
+
+    status = main(
+        [
+            "generate",
+            "--topic",
+            "AI 教育",
+            "--audience",
+            "大学生",
+            "--slides",
+            "3",
+            "--theme",
+            str(EXAMPLES_DIR / "theme.json"),
+            "--output",
+            str(output_path),
+            "--requirements",
+            "做一份中文课堂展示，提醒学术诚信风险。",
+        ]
+    )
+
+    assert status == 0
+    assert captured_request["request"].language == "zh-CN"
+    assert captured_request["request"].user_requirements == "做一份中文课堂展示，提醒学术诚信风险。"
+
+
 def _generation_result(accepted: bool) -> GenerationResult:
     deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
     qa_report = analyze_deck(deck)
@@ -240,6 +294,36 @@ def test_build_cli_help_includes_build_options(capsys) -> None:
     assert "--output-dir" in captured.out
     assert "--assets-dir" in captured.out
     assert "--patch" in captured.out
+    assert "--requirements" in captured.out
+    assert "--prompt" in captured.out
+
+
+def test_build_cli_passes_user_requirements_to_pipeline(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _install_fake_openai(monkeypatch)
+    captured_request = {}
+
+    def fake_run_build_pipeline(model, request):
+        captured_request["request"] = request
+        return pipeline.BuildPipelineResult(
+            generation_result=_generation_result(True),
+            artifacts=[],
+            accepted=True,
+            status_code=0,
+            messages=[],
+        )
+
+    monkeypatch.setattr(cli, "run_build_pipeline", fake_run_build_pipeline)
+
+    status = main(_build_args(tmp_path) + ["--prompt", "中文课堂展示，突出 AI 学习应用。"])
+
+    assert status == 0
+    generation_request = captured_request["request"].generation_request
+    assert generation_request.language == "zh-CN"
+    assert generation_request.user_requirements == "中文课堂展示，突出 AI 学习应用。"
 
 
 def test_build_cli_without_api_key_exits_with_clear_message(
