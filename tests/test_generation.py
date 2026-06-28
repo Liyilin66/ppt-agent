@@ -3,11 +3,13 @@ import copy
 import pytest
 from pydantic import ValidationError
 
+import ppt_agent.generation as generation
 from ppt_agent.generation import (
     DeckBrief,
     DeckGenerationRequest,
     build_brief_from_user_prompt,
     build_generation_prompt,
+    format_qa_feedback_for_generation,
     generate_deck_with_model,
     generate_deck_with_quality_gate,
 )
@@ -19,7 +21,7 @@ from ppt_agent.planning import (
     build_deck_plan_prompt,
     generate_deck_plan_with_model,
 )
-from ppt_agent.qa import QAReport, analyze_deck
+from ppt_agent.qa import QAIssue, QAReport, analyze_deck
 
 
 class FakeStructuredModel:
@@ -576,6 +578,90 @@ def test_build_generation_prompt_includes_qa_feedback() -> None:
     assert "Avoid repeating these QA problems" in prompt
 
 
+def test_format_qa_feedback_for_generation_instructs_layout_diversity_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=72,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="deck",
+                code="layout_diversity_low",
+                message="Deck uses only two_column across content slides.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "Previous QA score: 72" in feedback
+    assert "[warning] layout_diversity_low (slide=deck)" in feedback
+    assert "Use at least 3 different content layouts across long decks" in feedback
+    assert "avoid relying only on card layouts" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_layout_repetition_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=84,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                code="layout_repetition_run",
+                message="Slides repeat four_cards for three consecutive content slides.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "[warning] layout_repetition_run (slide=slide_002)" in feedback
+    assert "Do not use the same content layout for 3 consecutive slides" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_title_similarity_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=84,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_003",
+                code="adjacent_title_similarity",
+                message="Adjacent slide titles are too similar.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "[warning] adjacent_title_similarity (slide=slide_003)" in feedback
+    assert "Make adjacent slide titles and key messages clearly distinct" in feedback
+
+
+def test_format_qa_feedback_for_generation_limits_issue_count() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=20,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id=f"slide_{index:03d}",
+                code=f"issue_{index}",
+                message=f"Issue {index}",
+            )
+            for index in range(1, 11)
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "issue_8" in feedback
+    assert "issue_9" not in feedback
+    assert "Showing first 8 of 10 QA issues" in feedback
+
+
 def test_quality_gate_generates_plan_before_deck_generation() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
     model = FakeModel([
@@ -626,6 +712,57 @@ def test_quality_gate_retries_and_accepts_second_attempt() -> None:
     assert "QA feedback from the previous attempt" in model.structured_model.prompts[2]
     assert "SLIDE_TOO_EMPTY" in model.structured_model.prompts[2]
     assert "key_message: Unique message 2" in model.structured_model.prompts[2]
+
+
+def test_quality_gate_retry_prompt_includes_actionable_layout_feedback(monkeypatch) -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    model = FakeModel([
+        _valid_deck_plan_payload(2),
+        _valid_deck_payload(),
+        _valid_deck_payload(),
+    ])
+    reports = [
+        QAReport(
+            deck_id="generated_demo_deck",
+            score=50,
+            issues=[
+                QAIssue(
+                    severity="warning",
+                    slide_id="generated_demo_deck",
+                    code="layout_diversity_low",
+                    message="Deck uses only one content layout.",
+                ),
+                QAIssue(
+                    severity="warning",
+                    slide_id="slide_002",
+                    code="layout_repetition_run",
+                    message="Three consecutive content slides use the same layout.",
+                ),
+                QAIssue(
+                    severity="warning",
+                    slide_id="slide_003",
+                    code="adjacent_title_similarity",
+                    message="Adjacent titles are too similar.",
+                ),
+            ],
+        ),
+        QAReport(deck_id="generated_demo_deck", score=100, issues=[]),
+    ]
+
+    def fake_analyze_deck(deck, theme=None):
+        return reports.pop(0)
+
+    monkeypatch.setattr(generation, "analyze_deck", fake_analyze_deck)
+
+    result = generate_deck_with_quality_gate(model, request, min_score=80, max_attempts=2)
+
+    retry_prompt = model.structured_model.prompts[2]
+    assert result.accepted is True
+    assert "DeckPlan guidance" in retry_prompt
+    assert "QA feedback from the previous attempt" in retry_prompt
+    assert "Use at least 3 different content layouts across long decks" in retry_prompt
+    assert "Do not use the same content layout for 3 consecutive slides" in retry_prompt
+    assert "Make adjacent slide titles and key messages clearly distinct" in retry_prompt
 
 
 def test_quality_gate_returns_last_attempt_when_all_attempts_fail() -> None:

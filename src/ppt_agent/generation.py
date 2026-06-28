@@ -17,6 +17,16 @@ from ppt_agent.theme import Theme
 
 DEFAULT_LANGUAGE = "zh-CN"
 MAX_SINGLE_GENERATION_SLIDES = 4
+MAX_QA_FEEDBACK_ISSUES = 8
+
+
+QA_FEEDBACK_FIX_INSTRUCTIONS = {
+    "layout_diversity_low": (
+        "Use at least 3 different content layouts across long decks; avoid relying only on card layouts."
+    ),
+    "layout_repetition_run": "Do not use the same content layout for 3 consecutive slides.",
+    "adjacent_title_similarity": "Make adjacent slide titles and key messages clearly distinct.",
+}
 
 
 class DeckBrief(StrictModel):
@@ -81,22 +91,41 @@ class GenerationResult(StrictModel):
     deck_plan: DeckPlan | None = None
 
 
+def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
+    issue_lines: list[str] = []
+    limited_issues = qa_report.issues[:MAX_QA_FEEDBACK_ISSUES]
+    for issue in limited_issues:
+        location = f"slide={issue.slide_id}"
+        if issue.element_id is not None:
+            location = f"{location}, element={issue.element_id}"
+        issue_lines.append(
+            f"- [{issue.severity}] {issue.code} ({location}): {issue.message}"
+        )
+        fix_instruction = QA_FEEDBACK_FIX_INSTRUCTIONS.get(issue.code)
+        if fix_instruction is not None:
+            issue_lines.append(f"  Fix: {fix_instruction}")
+
+    if len(qa_report.issues) > MAX_QA_FEEDBACK_ISSUES:
+        issue_lines.append(
+            f"- Showing first {MAX_QA_FEEDBACK_ISSUES} of {len(qa_report.issues)} QA issues. "
+            "Fix these first before making cosmetic changes."
+        )
+
+    issues = "\n".join(issue_lines) or "- No specific issues were reported, but improve the deck quality."
+
+    return f"""- Previous QA score: {qa_report.score}
+- Issues:
+{issues}"""
+
+
 def _format_qa_feedback(qa_feedback: QAReport | None) -> str:
     if qa_feedback is None:
         return ""
 
-    issue_lines = [
-        f"- {issue.code}: {issue.message}"
-        for issue in qa_feedback.issues
-    ]
-    issues = "\n".join(issue_lines) or "- No specific issues were reported, but improve the deck quality."
-
     return f"""
 
 QA feedback from the previous attempt:
-- Previous QA score: {qa_feedback.score}
-- Issues:
-{issues}
+{format_qa_feedback_for_generation(qa_feedback)}
 
 Avoid repeating these QA problems in the next Deck IR. Improve layout quality while keeping all schema and bbox rules valid.
 """
