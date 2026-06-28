@@ -10,6 +10,7 @@ TemplateLayout = Literal[
     "section_divider",
     "two_column",
     "three_column",
+    "four_cards",
     "metric_cards",
     "closing_slide",
 ]
@@ -20,6 +21,7 @@ TEMPLATE_LAYOUTS: tuple[TemplateLayout, ...] = (
     "section_divider",
     "two_column",
     "three_column",
+    "four_cards",
     "metric_cards",
     "closing_slide",
 )

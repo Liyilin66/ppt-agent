@@ -66,6 +66,12 @@ def _template_slide_payload(layout: str, index: int) -> dict:
         "section_divider": ["This section frames the next part of the story."],
         "two_column": ["Left column content\n- Point A\n- Point B", "Right column content\n- Point C\n- Point D"],
         "three_column": ["First pillar", "Second pillar", "Third pillar"],
+        "four_cards": [
+            "Discover\nMap user needs",
+            "Prioritize\nChoose high-value work",
+            "Prototype\nBuild the first flow",
+            "Measure\nTrack quality signals",
+        ],
         "metric_cards": ["Revenue\n$4.2M", "Growth\n18%", "Retention\n91%"],
         "closing_slide": ["Thank you. Questions and next steps."],
     }[layout]
@@ -125,3 +131,80 @@ def test_template_layouts_render_to_editable_powerpoint(tmp_path: Path) -> None:
         ]
         assert editable_text_shapes
         assert any(f"{layout} title" in shape.text for shape in editable_text_shapes)
+
+
+def _shape_with_text(slide, text: str):
+    for shape in slide.shapes:
+        if getattr(shape, "has_text_frame", False) and shape.text.strip() == text:
+            return shape
+    raise AssertionError(f"Could not find editable text shape: {text}")
+
+
+def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    long_title = "Template Guided Presentations Improve Visual Quality for Complex Business Audiences"
+    subtitle = "A short subtitle stays below the wrapped title"
+    deck = Deck.model_validate(
+        {
+            "deck_id": "title_spacing_demo",
+            "title": "Title Spacing Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Title Spacing Demo",
+                    "layout": "title_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": long_title,
+                        },
+                        {
+                            "element_id": "subtitle",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 1.3, "width": 6.0, "height": 0.5},
+                            "text": subtitle,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "title_spacing.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+    title_shape = _shape_with_text(rendered_slide, long_title)
+    subtitle_shape = _shape_with_text(rendered_slide, subtitle)
+
+    assert subtitle_shape.top >= title_shape.top + title_shape.height + Inches(0.25)
+
+
+def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "four_cards_demo",
+            "title": "Four Cards Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [_template_slide_payload("four_cards", 1)],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "four_cards.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+    editable_texts = [
+        shape.text.strip()
+        for shape in rendered_slide.shapes
+        if getattr(shape, "has_text_frame", False) and shape.text.strip()
+    ]
+
+    assert "Discover" in editable_texts
+    assert "Map user needs" in editable_texts
+    assert "01" in editable_texts
+    assert "CARD" in editable_texts
+    assert "Prioritize" in editable_texts
+    assert "Choose high-value work" in editable_texts

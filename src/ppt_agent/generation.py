@@ -58,7 +58,24 @@ Avoid repeating these QA problems in the next Deck IR. Improve layout quality wh
 """
 
 
-def build_generation_prompt(request: DeckGenerationRequest, qa_feedback: QAReport | None = None) -> str:
+def _format_generation_feedback(generation_feedback: str | None) -> str:
+    if generation_feedback is None:
+        return ""
+
+    return f"""
+
+Generation feedback from the previous attempt:
+- {generation_feedback}
+
+Regenerate the Deck IR and fix this issue before optimizing style.
+"""
+
+
+def build_generation_prompt(
+    request: DeckGenerationRequest,
+    qa_feedback: QAReport | None = None,
+    generation_feedback: str | None = None,
+) -> str:
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
     layouts = ", ".join(TEMPLATE_LAYOUTS)
@@ -68,7 +85,7 @@ def build_generation_prompt(request: DeckGenerationRequest, qa_feedback: QARepor
 Request:
 - Topic: {request.topic}
 - Audience: {request.audience}
-- Slide count: {request.slide_count}
+- Slide count: {request.slide_count} exactly
 - Style: {style}
 - Language: {request.language}
 - Key points:
@@ -78,12 +95,22 @@ Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
 - Do not generate Markdown, prose, speaker notes, PPTX, HTML, SVG, or images.
 - Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
+- The slides array length must be exactly {request.slide_count}. Do not generate more or fewer slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
 - Use bbox coordinates and sizes in PowerPoint-style inches, not pixels.
 - Choose each slide.layout from these controlled layouts only: {layouts}.
-- Prefer this sequence when it fits the requested deck: title_slide, section_divider, two_column or three_column, metric_cards, closing_slide.
+- Prefer this general sequence when it fits the requested deck: title_slide, two_column/three_column/four_cards/metric_cards, closing_slide.
+- For a 3-slide deck, prefer:
+  slide 1: title_slide.
+  slide 2: two_column, three_column, four_cards, or metric_cards.
+  slide 3: closing_slide, two_column, or four_cards.
+- Do not use section_divider by default in a short 3-slide deck.
+- Use section_divider only for decks with 5 or more slides, or when the user explicitly asks for section divider pages.
+- Use four_cards for four parallel concepts, four steps, four capabilities, or four recommendations.
 - Do not rely on freeform bbox placement for visual design. The renderer will apply deterministic template positions and styles.
 - Focus on semantic content: slide titles, concise section text, column content, metric labels/values, and closing message.
+- Match each slide's content to its chosen layout. Do not create empty cards or placeholder-only cards.
+- Card text should be short phrases or compact sentences, not long paragraphs.
 - Still include valid bbox values for schema compatibility, but keep them simple and inside the canvas; template rendering may ignore the exact bbox.
 - Every slide must include slide_id, title, layout, and at least one element.
 - slide_id values must be unique across the deck.
@@ -91,6 +118,15 @@ Hard schema and layout rules:
 - element_id values must be unique within each slide.
 - Supported element types are text, shape, and image.
 - For template-guided slides, make the first text element the primary slide title and subsequent text elements the body/columns/cards in reading order.
+- Keep generated text compact:
+  title <= 9 words.
+  subtitle <= 16 words.
+  card heading <= 4 words.
+  card body <= 18 words.
+- Avoid paragraph-style body text. Prefer phrases, short sentences, and short bullets.
+- For card content, use this format whenever possible:
+  Heading
+  Short body sentence.
 - For text elements, include text and optional TextStyle with these exact fields only: font_family, font_size_pt, color, bold, italic.
 - For shape elements, include shape as rectangle, ellipse, or line, plus optional ShapeStyle with these exact fields only: fill_color, stroke_color, stroke_width_pt.
 - For shape stroke_width_pt, omit the field when there is no stroke. If present, stroke_width_pt must be greater than 0; never use 0.
@@ -105,6 +141,7 @@ Hard schema and layout rules:
 - Prefer readable business-style layouts with clear titles and generous whitespace.
 - Generate exactly {request.slide_count} slides.
 {_format_qa_feedback(qa_feedback)}
+{_format_generation_feedback(generation_feedback)}
 """
 
 
@@ -133,6 +170,11 @@ def _normalize_layout_alias(layout: Any, slide_index: int, slide_count: int) -> 
             "two_col": "two_column",
             "three_columns": "three_column",
             "three_col": "three_column",
+            "four_card": "four_cards",
+            "four_cards": "four_cards",
+            "four_column": "four_cards",
+            "four_columns": "four_cards",
+            "four_steps": "four_cards",
             "metrics": "metric_cards",
             "metric_card": "metric_cards",
             "kpi_cards": "metric_cards",
@@ -212,18 +254,34 @@ def _normalize_deck_payload(response: Any, request: DeckGenerationRequest) -> An
     return payload
 
 
+def _ensure_slide_count(deck: Deck, request: DeckGenerationRequest) -> Deck:
+    actual_count = len(deck.slides)
+    if actual_count != request.slide_count:
+        raise ValueError(
+            f"Generated Deck has {actual_count} slides, but request.slide_count is {request.slide_count}. "
+            f"Regenerate exactly {request.slide_count} slides."
+        )
+    return deck
+
+
 def generate_deck_with_model(
     model: Any,
     request: DeckGenerationRequest,
     qa_feedback: QAReport | None = None,
+    generation_feedback: str | None = None,
 ) -> Deck:
     """Generate a Deck using a LangChain chat model with structured output."""
 
-    prompt = build_generation_prompt(request, qa_feedback=qa_feedback)
+    prompt = build_generation_prompt(
+        request,
+        qa_feedback=qa_feedback,
+        generation_feedback=generation_feedback,
+    )
     structured_model = model.with_structured_output(Deck)
     response = _unwrap_structured_response(structured_model.invoke(prompt))
 
-    return Deck.model_validate(_normalize_deck_payload(response, request))
+    deck = Deck.model_validate(_normalize_deck_payload(response, request))
+    return _ensure_slide_count(deck, request)
 
 
 def generate_deck_with_quality_gate(
@@ -242,9 +300,25 @@ def generate_deck_with_quality_gate(
 
     attempts: list[GenerationAttempt] = []
     qa_feedback: QAReport | None = None
+    generation_feedback: str | None = None
 
     for attempt_index in range(1, max_attempts + 1):
-        deck = generate_deck_with_model(model, request, qa_feedback=qa_feedback)
+        try:
+            deck = generate_deck_with_model(
+                model,
+                request,
+                qa_feedback=qa_feedback,
+                generation_feedback=generation_feedback,
+            )
+        except ValueError as exc:
+            generation_feedback = str(exc)
+            qa_feedback = None
+            if attempt_index == max_attempts:
+                raise ValueError(
+                    f"Deck generation failed after {max_attempts} attempt(s): {generation_feedback}"
+                ) from exc
+            continue
+
         qa_report = analyze_deck(deck, theme)
         accepted = qa_report.score >= min_score
         attempts.append(
@@ -265,6 +339,7 @@ def generate_deck_with_quality_gate(
             )
 
         qa_feedback = qa_report
+        generation_feedback = None
 
     last_attempt = attempts[-1]
     return GenerationResult(

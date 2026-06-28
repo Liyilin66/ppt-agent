@@ -139,9 +139,10 @@ def _add_textbox(
     height: float,
     text: str,
     style: TextStyle,
-) -> None:
+):
     shape = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(width), Inches(height))
     _write_text_to_shape(shape, text, style)
+    return shape
 
 
 def _add_rect(
@@ -187,10 +188,128 @@ def _slot_texts(body_texts: list[str], slot_count: int, fallback: str = "") -> l
     return slots
 
 
+def _title_slide_title_metrics(title: str) -> tuple[float, float]:
+    word_count = len(title.split())
+    char_count = len(title)
+
+    if word_count > 12 or char_count > 82:
+        return 26, 1.65
+    if word_count > 9 or char_count > 58:
+        return 30, 1.32
+    return 36, 0.9
+
+
+def _split_heading_body(text: str) -> tuple[str, str]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return "", ""
+    if len(lines) == 1:
+        return lines[0], ""
+    return lines[0], "\n".join(lines[1:])
+
+
+def _keyword_from_title(title: str) -> str:
+    words = [word.strip(" .,:;!?") for word in title.split() if word.strip(" .,:;!?")]
+    if not words:
+        return "PPT"
+    return " ".join(words[:2]).upper()
+
+
+def _render_heading_body_card(
+    slide,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    text: str,
+    theme: Theme,
+    accent_color: str | None = None,
+    number: int | None = None,
+    label: str = "KEY POINT",
+    heading_size_pt: float = 18,
+    body_size_pt: float = 13.5,
+) -> None:
+    heading, body = _split_heading_body(text)
+    accent = accent_color or theme.colors.primary
+    padding_x = 0.24
+
+    _add_rect(
+        slide,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        fill_color=theme.colors.background,
+        stroke_color=theme.colors.surface,
+        stroke_width_pt=1.0,
+    )
+    _add_rect(slide, x=x, y=y, width=width, height=0.08, fill_color=accent)
+
+    if number is not None:
+        chip_width = 0.62
+        chip_height = 0.28
+        chip_x = x + width - padding_x - chip_width
+        chip_y = y + 0.24
+        _add_rect(
+            slide,
+            x=chip_x,
+            y=chip_y,
+            width=chip_width,
+            height=chip_height,
+            fill_color=theme.colors.surface,
+            stroke_color=theme.colors.surface,
+        )
+        _add_textbox(
+            slide,
+            x=chip_x + 0.08,
+            y=chip_y + 0.03,
+            width=chip_width - 0.16,
+            height=0.18,
+            text=f"{number:02d}",
+            style=_theme_text_style(theme, font_size_pt=8.5, color=accent, bold=True),
+        )
+
+        _add_textbox(
+            slide,
+            x=x + padding_x,
+            y=y + 0.22,
+            width=max(0.7, width - padding_x * 2 - chip_width - 0.12),
+            height=0.22,
+            text=label,
+            style=_theme_text_style(theme, font_size_pt=7.5, color=accent, bold=True),
+        )
+
+    _add_textbox(
+        slide,
+        x=x + padding_x,
+        y=y + 0.58,
+        width=width - padding_x * 2,
+        height=0.45,
+        text=heading,
+        style=_theme_text_style(theme, font_size_pt=heading_size_pt, color=theme.colors.text, bold=True),
+    )
+    if body:
+        _add_textbox(
+            slide,
+            x=x + padding_x,
+            y=y + 1.16,
+            width=width - padding_x * 2,
+            height=max(0.4, height - 1.38),
+            text=body,
+            style=_theme_text_style(theme, font_size_pt=body_size_pt, color=theme.colors.muted_text),
+        )
+
+
 def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
     subtitle = body[0] if body else deck_slide.title
     margin = 0.8
+    title_y = 1.18
+    title_font_size, title_height = _title_slide_title_metrics(title)
+    subtitle_y = title_y + title_height + 0.35
+    subtitle_height = 0.62
+    accent_y = subtitle_y + subtitle_height + 0.28
 
     _add_rect(
         slide,
@@ -201,22 +320,50 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         fill_color=theme.colors.surface,
         stroke_color=theme.colors.surface,
     )
-    _add_rect(slide, x=margin, y=3.1, width=3.4, height=0.08, fill_color=theme.colors.primary)
+    _add_textbox(
+        slide,
+        x=deck.canvas_width_in - 3.75,
+        y=1.0,
+        width=3.0,
+        height=0.35,
+        text="TEMPLATE-GUIDED",
+        style=_theme_text_style(theme, font_size_pt=10, color=theme.colors.primary, bold=True),
+    )
+    _add_textbox(
+        slide,
+        x=deck.canvas_width_in - 3.75,
+        y=1.55,
+        width=3.05,
+        height=1.35,
+        text=_keyword_from_title(title),
+        style=_theme_text_style(theme, font_size_pt=34, color=theme.colors.muted_text, bold=True, font_family=theme.fonts.heading),
+    )
+    _add_rect(slide, x=deck.canvas_width_in - 3.75, y=3.16, width=1.05, height=0.08, fill_color=theme.colors.accent)
+    _add_textbox(
+        slide,
+        x=deck.canvas_width_in - 3.75,
+        y=3.55,
+        width=3.0,
+        height=0.42,
+        text="Editable PPTX",
+        style=_theme_text_style(theme, font_size_pt=14, color=theme.colors.text, bold=True),
+    )
+    _add_rect(slide, x=margin, y=accent_y, width=3.4, height=0.08, fill_color=theme.colors.primary)
     _add_textbox(
         slide,
         x=margin,
-        y=1.45,
+        y=title_y,
         width=deck.canvas_width_in - 5.3,
-        height=0.9,
+        height=title_height,
         text=title,
-        style=_theme_text_style(theme, font_size_pt=36, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
+        style=_theme_text_style(theme, font_size_pt=title_font_size, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
     )
     _add_textbox(
         slide,
         x=margin,
-        y=2.45,
+        y=subtitle_y,
         width=deck.canvas_width_in - 5.6,
-        height=0.55,
+        height=subtitle_height,
         text=subtitle,
         style=_theme_text_style(theme, font_size_pt=18, color=theme.colors.muted_text),
     )
@@ -250,8 +397,8 @@ def _render_column_template(slide, deck_slide, deck: Deck, theme: Theme, column_
     title, body = _title_and_body_texts(deck_slide)
     margin = 0.65
     gutter = 0.28
-    top = 1.55
-    card_height = 4.95
+    top = 1.62
+    card_height = 3.95 if column_count == 2 else 3.65
     column_width = (deck.canvas_width_in - (margin * 2) - gutter * (column_count - 1)) / column_count
     slots = _slot_texts(body, column_count, fallback=" ")
 
@@ -268,23 +415,60 @@ def _render_column_template(slide, deck_slide, deck: Deck, theme: Theme, column_
 
     for index, text in enumerate(slots):
         x = margin + index * (column_width + gutter)
-        _add_rect(
+        _render_heading_body_card(
             slide,
             x=x,
             y=top,
             width=column_width,
             height=card_height,
-            fill_color=theme.colors.surface,
-            stroke_color=theme.colors.surface,
-        )
-        _add_textbox(
-            slide,
-            x=x + 0.24,
-            y=top + 0.32,
-            width=column_width - 0.48,
-            height=card_height - 0.64,
             text=text,
-            style=_theme_text_style(theme, font_size_pt=16, color=theme.colors.text),
+            theme=theme,
+            accent_color=theme.colors.primary if index % 2 == 0 else theme.colors.secondary,
+            number=index + 1,
+            label="COLUMN",
+            heading_size_pt=18,
+            body_size_pt=13.5,
+        )
+
+
+def _render_four_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
+    title, body = _title_and_body_texts(deck_slide)
+    margin = 0.72
+    gutter_x = 0.34
+    gutter_y = 0.34
+    card_width = (deck.canvas_width_in - margin * 2 - gutter_x) / 2
+    card_height = 1.9
+    top = 1.48
+    slots = _slot_texts(body, 4, fallback=" ")
+
+    _add_textbox(
+        slide,
+        x=margin,
+        y=0.48,
+        width=deck.canvas_width_in - margin * 2,
+        height=0.55,
+        text=title,
+        style=_theme_text_style(theme, font_size_pt=26, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
+    )
+    _add_rect(slide, x=margin, y=1.16, width=2.2, height=0.06, fill_color=theme.colors.primary)
+
+    accents = [theme.colors.primary, theme.colors.secondary, theme.colors.accent, theme.colors.primary]
+    for index, text in enumerate(slots):
+        row = index // 2
+        column = index % 2
+        _render_heading_body_card(
+            slide,
+            x=margin + column * (card_width + gutter_x),
+            y=top + row * (card_height + gutter_y),
+            width=card_width,
+            height=card_height,
+            text=text,
+            theme=theme,
+            accent_color=accents[index],
+            number=index + 1,
+            label="CARD",
+            heading_size_pt=17,
+            body_size_pt=12.8,
         )
 
 
@@ -308,25 +492,19 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -
 
     for index, text in enumerate(slots):
         x = margin + index * (card_width + gutter)
-        _add_rect(
-            slide,
-            x=x,
-            y=1.75,
-            width=card_width,
-            height=3.4,
-            fill_color=theme.colors.surface,
-            stroke_color=theme.colors.secondary,
-            stroke_width_pt=1.2,
-        )
-        _add_rect(slide, x=x, y=1.75, width=card_width, height=0.12, fill_color=theme.colors.primary)
-        _add_textbox(
+        _render_heading_body_card(
             slide,
             x=x + 0.28,
-            y=2.18,
+            y=1.68,
             width=card_width - 0.56,
-            height=2.15,
+            height=2.75,
             text=text,
-            style=_theme_text_style(theme, font_size_pt=18, color=theme.colors.text, bold=True),
+            theme=theme,
+            accent_color=theme.colors.primary,
+            number=index + 1,
+            label="METRIC",
+            heading_size_pt=18,
+            body_size_pt=14,
         )
 
 
@@ -364,6 +542,8 @@ def _render_template_slide(slide, deck_slide, deck: Deck, theme: Theme) -> None:
         _render_column_template(slide, deck_slide, deck, theme, column_count=2)
     elif deck_slide.layout == "three_column":
         _render_column_template(slide, deck_slide, deck, theme, column_count=3)
+    elif deck_slide.layout == "four_cards":
+        _render_four_cards_template(slide, deck_slide, deck, theme)
     elif deck_slide.layout == "metric_cards":
         _render_metric_cards_template(slide, deck_slide, deck, theme)
     elif deck_slide.layout == "closing_slide":

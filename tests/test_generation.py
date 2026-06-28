@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 from pydantic import ValidationError
 
@@ -102,6 +104,24 @@ def _low_quality_deck_payload() -> dict:
     return payload
 
 
+def _deck_payload_with_slide_count(slide_count: int) -> dict:
+    payload = _valid_deck_payload()
+    base_slide = copy.deepcopy(payload["slides"][1])
+    slides = []
+
+    for index in range(1, slide_count + 1):
+        slide = copy.deepcopy(payload["slides"][0] if index == 1 else base_slide)
+        slide["slide_id"] = f"slide_{index:03d}"
+        slide["title"] = f"Slide {index}"
+        slide["layout"] = "title_slide" if index == 1 else ("closing_slide" if index == slide_count else "two_column")
+        for element_index, element in enumerate(slide["elements"], start=1):
+            element["element_id"] = f"s{index}_e{element_index}"
+        slides.append(slide)
+
+    payload["slides"] = slides
+    return payload
+
+
 def test_deck_generation_request_validates_slide_count() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
 
@@ -141,6 +161,15 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "stroke_width_pt must be greater than 0; never use 0" in prompt
     assert "Choose each slide.layout from these controlled layouts only" in prompt
     assert "Do not rely on freeform bbox placement for visual design" in prompt
+    assert "Do not create empty cards" in prompt
+    assert "Card text should be short phrases" in prompt
+    assert "Do not use section_divider by default in a short 3-slide deck" in prompt
+    assert "Use four_cards for four parallel concepts" in prompt
+    assert "title <= 9 words" in prompt
+    assert "subtitle <= 16 words" in prompt
+    assert "card heading <= 4 words" in prompt
+    assert "card body <= 18 words" in prompt
+    assert "Heading\n  Short body sentence" in prompt
     for layout in TEMPLATE_LAYOUTS:
         assert layout in prompt
 
@@ -192,6 +221,37 @@ def test_generate_deck_normalizes_common_provider_schema_drift() -> None:
     assert deck.slides[1].layout == "closing_slide"
     assert deck.slides[0].elements[0].style.font_size_pt == 32
     assert deck.slides[0].elements[1].style.stroke_color == "#111827"
+
+
+def test_generate_deck_normalizes_four_card_layout_alias() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    payload = _valid_deck_payload()
+    payload["slides"][1]["layout"] = "four steps"
+
+    deck = generate_deck_with_model(FakeModel(payload), request)
+
+    assert deck.slides[1].layout == "four_cards"
+
+
+def test_generate_deck_rejects_slide_count_mismatch() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
+    model = FakeModel(_deck_payload_with_slide_count(4))
+
+    with pytest.raises(ValueError, match="Generated Deck has 4 slides"):
+        generate_deck_with_model(model, request)
+
+
+def test_quality_gate_retries_slide_count_mismatch_and_accepts_fixed_deck() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
+    model = FakeModel([_deck_payload_with_slide_count(4), _deck_payload_with_slide_count(3)])
+
+    result = generate_deck_with_quality_gate(model, request, min_score=80, max_attempts=2)
+
+    assert result.accepted is True
+    assert len(result.deck.slides) == 3
+    assert len(model.structured_model.prompts) == 2
+    assert "Generated Deck has 4 slides" in model.structured_model.prompts[1]
+    assert "Regenerate exactly 3 slides" in model.structured_model.prompts[1]
 
 
 def test_generate_deck_omits_zero_shape_stroke_width() -> None:

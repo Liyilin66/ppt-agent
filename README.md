@@ -212,7 +212,7 @@ This helper writes example QA, patch, and PPTX artifacts under `examples/output/
 - Prefer structured Patch Edit over natural-language mutation
 - Keep generation, QA, patching, and rendering separable
 
-The current renderer supports controlled layouts such as `title_slide`, `section_divider`, `two_column`, `three_column`, `metric_cards`, and `closing_slide`. This is inspired by template-guided presentation generation, but `ppt-agent` does not integrate or depend on ppt-master at runtime.
+The current renderer supports controlled layouts such as `title_slide`, `section_divider`, `two_column`, `three_column`, `four_cards`, `metric_cards`, and `closing_slide`. Card layouts render newline-separated content as editable heading/body text shapes. This is inspired by template-guided presentation generation, but `ppt-agent` does not integrate or depend on ppt-master at runtime.
 
 ## Architecture Note
 
