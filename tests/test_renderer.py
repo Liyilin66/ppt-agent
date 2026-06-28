@@ -11,6 +11,7 @@ from ppt_agent.renderer import render_deck_to_pptx
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+INTERNAL_SURFACE_TERMS = {"TEMPLATE-GUIDED", "Editable PPTX", "COLUMN", "CARD"}
 
 
 def test_render_deck_to_pptx_generates_editable_powerpoint(tmp_path: Path) -> None:
@@ -140,6 +141,15 @@ def _shape_with_text(slide, text: str):
     raise AssertionError(f"Could not find editable text shape: {text}")
 
 
+def _visible_texts(presentation: Presentation) -> list[str]:
+    return [
+        shape.text.strip()
+        for slide in presentation.slides
+        for shape in slide.shapes
+        if getattr(shape, "has_text_frame", False) and shape.text.strip()
+    ]
+
+
 def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     long_title = "Template Guided Presentations Improve Visual Quality for Complex Business Audiences"
@@ -178,8 +188,15 @@ def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) 
     rendered_slide = Presentation(output_path).slides[0]
     title_shape = _shape_with_text(rendered_slide, long_title)
     subtitle_shape = _shape_with_text(rendered_slide, subtitle)
+    visible_texts = [
+        shape.text.strip()
+        for shape in rendered_slide.shapes
+        if getattr(shape, "has_text_frame", False) and shape.text.strip()
+    ]
 
     assert subtitle_shape.top >= title_shape.top + title_shape.height + Inches(0.25)
+    assert any(text == "Template\nGuided\nPresentations" for text in visible_texts)
+    assert all(len(line) > 1 for text in visible_texts for line in text.splitlines() if line.strip())
 
 
 def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) -> None:
@@ -205,6 +222,29 @@ def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) ->
     assert "Discover" in editable_texts
     assert "Map user needs" in editable_texts
     assert "01" in editable_texts
-    assert "CARD" in editable_texts
+    assert "Action" in editable_texts
+    assert not (INTERNAL_SURFACE_TERMS & set(editable_texts))
     assert "Prioritize" in editable_texts
     assert "Choose high-value work" in editable_texts
+
+
+def test_template_rendering_does_not_expose_internal_surface_terms(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "surface_cleanup_demo",
+            "title": "Surface Cleanup Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                _template_slide_payload(layout, index)
+                for index, layout in enumerate(TEMPLATE_LAYOUTS, start=1)
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "surface_cleanup.pptx")
+    visible_text = "\n".join(_visible_texts(Presentation(output_path)))
+
+    for term in INTERNAL_SURFACE_TERMS:
+        assert term not in visible_text

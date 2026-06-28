@@ -208,11 +208,15 @@ def _split_heading_body(text: str) -> tuple[str, str]:
     return lines[0], "\n".join(lines[1:])
 
 
-def _keyword_from_title(title: str) -> str:
-    words = [word.strip(" .,:;!?") for word in title.split() if word.strip(" .,:;!?")]
-    if not words:
-        return "PPT"
-    return " ".join(words[:2]).upper()
+def _keywords_from_title(title: str) -> list[str]:
+    stop_words = {"a", "an", "and", "for", "how", "in", "of", "the", "to", "with"}
+    words = [
+        word.strip(" .,:;!?")
+        for word in title.split()
+        if word.strip(" .,:;!?") and word.strip(" .,:;!?").lower() not in stop_words
+    ]
+    keywords = [word[:18] for word in words[:3]]
+    return keywords or ["Overview"]
 
 
 def _render_heading_body_card(
@@ -226,7 +230,7 @@ def _render_heading_body_card(
     theme: Theme,
     accent_color: str | None = None,
     number: int | None = None,
-    label: str = "KEY POINT",
+    label: str | None = None,
     heading_size_pt: float = 18,
     body_size_pt: float = 13.5,
 ) -> None:
@@ -270,15 +274,16 @@ def _render_heading_body_card(
             style=_theme_text_style(theme, font_size_pt=8.5, color=accent, bold=True),
         )
 
-        _add_textbox(
-            slide,
-            x=x + padding_x,
-            y=y + 0.22,
-            width=max(0.7, width - padding_x * 2 - chip_width - 0.12),
-            height=0.22,
-            text=label,
-            style=_theme_text_style(theme, font_size_pt=7.5, color=accent, bold=True),
-        )
+        if label:
+            _add_textbox(
+                slide,
+                x=x + padding_x,
+                y=y + 0.22,
+                width=max(0.7, width - padding_x * 2 - chip_width - 0.12),
+                height=0.22,
+                text=label,
+                style=_theme_text_style(theme, font_size_pt=7.5, color=accent, bold=True),
+            )
 
     _add_textbox(
         slide,
@@ -304,6 +309,7 @@ def _render_heading_body_card(
 def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
     subtitle = body[0] if body else deck_slide.title
+    keywords = _keywords_from_title(title)
     margin = 0.8
     title_y = 1.18
     title_font_size, title_height = _title_slide_title_metrics(title)
@@ -326,7 +332,7 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         y=1.0,
         width=3.0,
         height=0.35,
-        text="TEMPLATE-GUIDED",
+        text="Focus",
         style=_theme_text_style(theme, font_size_pt=10, color=theme.colors.primary, bold=True),
     )
     _add_textbox(
@@ -335,8 +341,8 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         y=1.55,
         width=3.05,
         height=1.35,
-        text=_keyword_from_title(title),
-        style=_theme_text_style(theme, font_size_pt=34, color=theme.colors.muted_text, bold=True, font_family=theme.fonts.heading),
+        text="\n".join(keywords),
+        style=_theme_text_style(theme, font_size_pt=26 if len(keywords) >= 3 else 30, color=theme.colors.muted_text, bold=True, font_family=theme.fonts.heading),
     )
     _add_rect(slide, x=deck.canvas_width_in - 3.75, y=3.16, width=1.05, height=0.08, fill_color=theme.colors.accent)
     _add_textbox(
@@ -345,7 +351,7 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         y=3.55,
         width=3.0,
         height=0.42,
-        text="Editable PPTX",
+        text=subtitle[:42],
         style=_theme_text_style(theme, font_size_pt=14, color=theme.colors.text, bold=True),
     )
     _add_rect(slide, x=margin, y=accent_y, width=3.4, height=0.08, fill_color=theme.colors.primary)
@@ -425,7 +431,7 @@ def _render_column_template(slide, deck_slide, deck: Deck, theme: Theme, column_
             theme=theme,
             accent_color=theme.colors.primary if index % 2 == 0 else theme.colors.secondary,
             number=index + 1,
-            label="COLUMN",
+            label="Insight",
             heading_size_pt=18,
             body_size_pt=13.5,
         )
@@ -466,7 +472,7 @@ def _render_four_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -> 
             theme=theme,
             accent_color=accents[index],
             number=index + 1,
-            label="CARD",
+            label="Action",
             heading_size_pt=17,
             body_size_pt=12.8,
         )
@@ -502,7 +508,7 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -
             theme=theme,
             accent_color=theme.colors.primary,
             number=index + 1,
-            label="METRIC",
+            label="Priority",
             heading_size_pt=18,
             body_size_pt=14,
         )
