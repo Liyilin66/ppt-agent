@@ -10,6 +10,7 @@ from pydantic import Field
 
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
+from ppt_agent.planning import DeckPlan
 from ppt_agent.qa import QAReport, analyze_deck
 from ppt_agent.theme import Theme
 
@@ -113,6 +114,40 @@ Regenerate the Deck IR and fix this issue before optimizing style.
 """
 
 
+def _format_deck_plan(deck_plan: DeckPlan | None) -> str:
+    if deck_plan is None:
+        return ""
+
+    slide_lines: list[str] = []
+    for slide in deck_plan.slides:
+        must_not_repeat = ", ".join(slide.must_not_repeat) or "None"
+        slide_lines.append(
+            "\n".join(
+                [
+                    f"- Slide {slide.slide_index}:",
+                    f"  role: {slide.slide_role}",
+                    f"  key_message: {slide.key_message}",
+                    f"  content_goal: {slide.content_goal}",
+                    f"  recommended_layout: {slide.recommended_layout}",
+                    f"  must_not_repeat: {must_not_repeat}",
+                ]
+            )
+        )
+
+    slides_text = "\n".join(slide_lines)
+
+    return f"""
+
+DeckPlan guidance:
+- Follow this deck-level plan when generating Deck IR.
+- slide.title, slide.layout, and slide content must align with each slide's key_message and content_goal.
+- Use each slide's recommended_layout as the slide.layout unless schema repair is absolutely required.
+- Do not repeat any topic listed in must_not_repeat for that slide.
+- Preserve distinct slide roles so the deck does not repeat the same point.
+{slides_text}
+"""
+
+
 def _brief_from_request(request: DeckGenerationRequest) -> DeckBrief:
     return request.brief or DeckBrief(
         topic=request.topic,
@@ -171,6 +206,7 @@ def build_generation_prompt(
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
     segment_instruction: str | None = None,
+    deck_plan: DeckPlan | None = None,
 ) -> str:
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
@@ -202,6 +238,7 @@ DeckBrief:
 - Must avoid:
 {_format_brief_items(brief.must_avoid)}
 - Raw user requirements: {brief.user_requirements_raw or "None provided"}
+{_format_deck_plan(deck_plan)}
 
 Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.

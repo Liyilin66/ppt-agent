@@ -13,6 +13,12 @@ from ppt_agent.generation import (
 )
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck
+from ppt_agent.planning import (
+    DeckPlan,
+    SlidePlan,
+    build_deck_plan_prompt,
+    generate_deck_plan_with_model,
+)
 from ppt_agent.qa import QAReport, analyze_deck
 
 
@@ -124,6 +130,37 @@ def _deck_payload_with_slide_count(slide_count: int) -> dict:
     return payload
 
 
+def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
+    slides = []
+    layouts = ["title_slide", "four_cards", "closing_slide"]
+    for index in range(1, slide_count + 1):
+        if index == 1:
+            layout = "title_slide"
+            role = "Opening"
+        elif index == slide_count:
+            layout = "closing_slide"
+            role = "Close"
+        else:
+            layout = layouts[(index - 1) % len(layouts)]
+            role = f"Main point {index}"
+        slides.append(
+            {
+                "slide_index": index,
+                "slide_role": role,
+                "key_message": f"Unique message {index}",
+                "content_goal": f"Explain point {index} without repeating prior slides.",
+                "recommended_layout": layout,
+                "must_not_repeat": [f"Unique message {previous}" for previous in range(1, index)],
+            }
+        )
+    return {
+        "topic": "AI 教育",
+        "audience": "大学生",
+        "slide_count": slide_count,
+        "slides": slides,
+    }
+
+
 def test_deck_generation_request_validates_slide_count() -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=3)
 
@@ -137,6 +174,78 @@ def test_deck_brief_defaults_to_chinese() -> None:
     assert brief.language == "zh-CN"
     assert brief.must_include == []
     assert brief.must_avoid == []
+
+
+def test_deck_plan_schema_validates_successfully() -> None:
+    plan = DeckPlan.model_validate(_valid_deck_plan_payload(3))
+
+    assert plan.slide_count == 3
+    assert isinstance(plan.slides[0], SlidePlan)
+    assert [slide.slide_index for slide in plan.slides] == [1, 2, 3]
+    assert plan.slides[1].recommended_layout in TEMPLATE_LAYOUTS
+
+
+def test_deck_plan_rejects_slide_count_mismatch() -> None:
+    payload = _valid_deck_plan_payload(3)
+    payload["slides"] = payload["slides"][:2]
+
+    with pytest.raises(ValidationError):
+        DeckPlan.model_validate(payload)
+
+
+def test_deck_plan_rejects_non_consecutive_slide_indexes() -> None:
+    payload = _valid_deck_plan_payload(3)
+    payload["slides"][1]["slide_index"] = 3
+
+    with pytest.raises(ValidationError):
+        DeckPlan.model_validate(payload)
+
+
+def test_deck_plan_rejects_unsupported_layout() -> None:
+    payload = _valid_deck_plan_payload(3)
+    payload["slides"][1]["recommended_layout"] = "timeline"
+
+    with pytest.raises(ValidationError):
+        DeckPlan.model_validate(payload)
+
+
+def test_generate_deck_plan_with_fake_model_returns_plan() -> None:
+    brief = DeckBrief(topic="AI 教育", audience="大学生", slide_count=3)
+    model = FakeModel(_valid_deck_plan_payload(3))
+
+    plan = generate_deck_plan_with_model(model, brief)
+
+    assert isinstance(plan, DeckPlan)
+    assert model.schema is DeckPlan
+    assert "Create a DeckPlan" in model.structured_model.prompts[0]
+    assert len(plan.slides) == 3
+
+
+def test_build_deck_plan_prompt_contains_planning_constraints() -> None:
+    brief = DeckBrief(topic="AI Agent 产品经理", audience="IT 硕士学生", slide_count=8)
+
+    prompt = build_deck_plan_prompt(brief)
+
+    assert "Plan exactly 8 slides" in prompt
+    assert "unique key_message" in prompt
+    assert "For 3-slide short decks, do not prioritize section_divider" in prompt
+    assert "For 8-slide decks, use layout diversity" in prompt
+    assert "recommended_layout must be one of" in prompt
+    for layout in TEMPLATE_LAYOUTS:
+        assert layout in prompt
+
+
+def test_build_generation_prompt_includes_optional_deck_plan() -> None:
+    request = DeckGenerationRequest(topic="AI 教育", audience="大学生", slide_count=3)
+    deck_plan = DeckPlan.model_validate(_valid_deck_plan_payload(3))
+
+    prompt = build_generation_prompt(request, deck_plan=deck_plan)
+
+    assert "DeckPlan guidance" in prompt
+    assert "key_message: Unique message 2" in prompt
+    assert "recommended_layout: four_cards" in prompt
+    assert "must_not_repeat: Unique message 1" in prompt
+    assert "must align with each slide's key_message" in prompt
 
 
 @pytest.mark.parametrize("slide_count", [0, 11])

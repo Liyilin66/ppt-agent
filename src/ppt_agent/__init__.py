@@ -24,6 +24,12 @@ from ppt_agent.models import (
     TextStyle,
 )
 from ppt_agent.patch import PatchIssue, PatchOperation, PatchResult, SlidePatch, apply_patch
+from ppt_agent.planning import (
+    DeckPlan,
+    SlidePlan,
+    build_deck_plan_prompt,
+    generate_deck_plan_with_model,
+)
 from ppt_agent.qa import QAIssue, QAReport, analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
 from ppt_agent.theme import Theme
@@ -47,11 +53,15 @@ __all__ = [
     "write_model_json",
     "DeckBrief",
     "DeckGenerationRequest",
+    "DeckPlan",
     "GenerationAttempt",
     "GenerationResult",
+    "SlidePlan",
     "build_brief_from_user_prompt",
+    "build_deck_plan_prompt",
     "build_generation_prompt",
     "generate_deck_with_model",
+    "generate_deck_plan_with_model",
     "generate_deck_with_quality_gate",
     "QAIssue",
     "QAReport",
