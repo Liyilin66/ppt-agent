@@ -199,6 +199,53 @@ def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) 
     assert all(len(line) > 1 for text in visible_texts for line in text.splitlines() if line.strip())
 
 
+def test_title_slide_side_summary_uses_safe_short_phrase(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    subtitle = "Building practical fluency, ethical judgment, and responsible AI habits"
+    deck = Deck.model_validate(
+        {
+            "deck_id": "title_side_summary_demo",
+            "title": "Title Side Summary Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Title Side Summary Demo",
+                    "layout": "title_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "AI Education for Practical Student Readiness",
+                        },
+                        {
+                            "element_id": "subtitle",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 1.3, "width": 6.0, "height": 0.5},
+                            "text": subtitle,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "title_side_summary.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+    summaries = [text for text in visible_texts if text.startswith("Building practical")]
+
+    assert summaries
+    assert len(summaries[0]) <= 34
+    assert subtitle.startswith(summaries[0])
+    assert summaries[0] != "Building practical fluency, ethical judgme"
+    assert summaries[0].split()[-1].strip(" ,.;:!?") in {
+        word.strip(" ,.;:!?")
+        for word in subtitle.split()
+    }
+
+
 def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     deck = Deck.model_validate(
@@ -226,6 +273,101 @@ def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) ->
     assert not (INTERNAL_SURFACE_TERMS & set(editable_texts))
     assert "Prioritize" in editable_texts
     assert "Choose high-value work" in editable_texts
+
+
+def test_sparse_two_column_layout_uses_compact_cards(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "sparse_two_column_demo",
+            "title": "Sparse Two Column Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Sparse Two Column Demo",
+                    "layout": "two_column",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "Two Focus Areas",
+                        },
+                        {
+                            "element_id": "left",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 3.0, "height": 1.0},
+                            "text": "Practice\nBuild fluency",
+                        },
+                        {
+                            "element_id": "right",
+                            "type": "text",
+                            "bbox": {"x": 4.0, "y": 1.5, "width": 3.0, "height": 1.0},
+                            "text": "Reflect\nUse judgment",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "sparse_two_column.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+    card_backgrounds = [
+        shape
+        for shape in rendered_slide.shapes
+        if not getattr(shape, "text", "").strip()
+        and shape.width > Inches(5)
+        and shape.height > Inches(1)
+    ]
+
+    assert len(card_backgrounds) == 2
+    assert max(shape.height for shape in card_backgrounds) <= Inches(2.5)
+
+
+def test_closing_slide_renders_multiple_next_steps_as_editable_text(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "closing_actions_demo",
+            "title": "Closing Actions Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Closing Actions Demo",
+                    "layout": "closing_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "Next Steps",
+                        },
+                        {
+                            "element_id": "actions",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 5.0, "height": 1.0},
+                            "text": "Pilot the workflow\nGather feedback\nScale the pattern",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "closing_actions.pptx")
+    editable_texts = _visible_texts(Presentation(output_path))
+
+    assert "01" in editable_texts
+    assert "02" in editable_texts
+    assert "03" in editable_texts
+    assert "Pilot the workflow" in editable_texts
+    assert "Gather feedback" in editable_texts
+    assert "Scale the pattern" in editable_texts
 
 
 def test_template_rendering_does_not_expose_internal_surface_terms(tmp_path: Path) -> None:

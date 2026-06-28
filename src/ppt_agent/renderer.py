@@ -208,6 +208,21 @@ def _split_heading_body(text: str) -> tuple[str, str]:
     return lines[0], "\n".join(lines[1:])
 
 
+def _short_phrase(text: str, max_chars: int) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+
+    words: list[str] = []
+    for word in normalized.split():
+        candidate = " ".join([*words, word])
+        if len(candidate) > max_chars:
+            break
+        words.append(word)
+
+    return " ".join(words)
+
+
 def _keywords_from_title(title: str) -> list[str]:
     stop_words = {"a", "an", "and", "for", "how", "in", "of", "the", "to", "with"}
     words = [
@@ -215,8 +230,23 @@ def _keywords_from_title(title: str) -> list[str]:
         for word in title.split()
         if word.strip(" .,:;!?") and word.strip(" .,:;!?").lower() not in stop_words
     ]
-    keywords = [word[:18] for word in words[:3]]
+    keywords = [word for word in words if len(word) <= 14][:3]
     return keywords or ["Overview"]
+
+
+def _is_sparse_card_text(text: str) -> bool:
+    heading, body = _split_heading_body(text)
+    word_count = len(" ".join([heading, body]).split())
+    return word_count <= 7
+
+
+def _body_lines(body_texts: list[str]) -> list[str]:
+    return [
+        line.strip()
+        for text in body_texts
+        for line in text.splitlines()
+        if line.strip()
+    ]
 
 
 def _render_heading_body_card(
@@ -309,6 +339,7 @@ def _render_heading_body_card(
 def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
     subtitle = body[0] if body else deck_slide.title
+    side_summary = _short_phrase(subtitle, max_chars=34)
     keywords = _keywords_from_title(title)
     margin = 0.8
     title_y = 1.18
@@ -345,15 +376,16 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         style=_theme_text_style(theme, font_size_pt=26 if len(keywords) >= 3 else 30, color=theme.colors.muted_text, bold=True, font_family=theme.fonts.heading),
     )
     _add_rect(slide, x=deck.canvas_width_in - 3.75, y=3.16, width=1.05, height=0.08, fill_color=theme.colors.accent)
-    _add_textbox(
-        slide,
-        x=deck.canvas_width_in - 3.75,
-        y=3.55,
-        width=3.0,
-        height=0.42,
-        text=subtitle[:42],
-        style=_theme_text_style(theme, font_size_pt=14, color=theme.colors.text, bold=True),
-    )
+    if side_summary:
+        _add_textbox(
+            slide,
+            x=deck.canvas_width_in - 3.75,
+            y=3.55,
+            width=3.0,
+            height=0.42,
+            text=side_summary,
+            style=_theme_text_style(theme, font_size_pt=13, color=theme.colors.text, bold=True),
+        )
     _add_rect(slide, x=margin, y=accent_y, width=3.4, height=0.08, fill_color=theme.colors.primary)
     _add_textbox(
         slide,
@@ -407,6 +439,9 @@ def _render_column_template(slide, deck_slide, deck: Deck, theme: Theme, column_
     card_height = 3.95 if column_count == 2 else 3.65
     column_width = (deck.canvas_width_in - (margin * 2) - gutter * (column_count - 1)) / column_count
     slots = _slot_texts(body, column_count, fallback=" ")
+    if column_count == 2 and all(_is_sparse_card_text(text) for text in slots):
+        top = 1.84
+        card_height = 2.45
 
     _add_textbox(
         slide,
@@ -516,25 +551,55 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -
 
 def _render_closing_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
-    subtitle = body[0] if body else ""
+    actions = _body_lines(body)[:3]
     _add_rect(slide, x=4.9, y=1.6, width=3.5, height=0.08, fill_color=theme.colors.accent)
     _add_textbox(
         slide,
         x=1.45,
-        y=2.35,
+        y=2.05 if actions else 2.35,
         width=deck.canvas_width_in - 2.9,
         height=0.9,
         text=title,
         style=_theme_text_style(theme, font_size_pt=34, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
     )
-    if subtitle:
+    if actions:
+        for index, action in enumerate(actions, start=1):
+            y = 3.15 + (index - 1) * 0.58
+            _add_rect(
+                slide,
+                x=2.55,
+                y=y + 0.02,
+                width=0.48,
+                height=0.3,
+                fill_color=theme.colors.surface,
+                stroke_color=theme.colors.surface,
+            )
+            _add_textbox(
+                slide,
+                x=2.64,
+                y=y + 0.06,
+                width=0.3,
+                height=0.18,
+                text=f"{index:02d}",
+                style=_theme_text_style(theme, font_size_pt=8.5, color=theme.colors.primary, bold=True),
+            )
+            _add_textbox(
+                slide,
+                x=3.18,
+                y=y - 0.01,
+                width=deck.canvas_width_in - 6.1,
+                height=0.38,
+                text=_short_phrase(action, max_chars=56),
+                style=_theme_text_style(theme, font_size_pt=16, color=theme.colors.muted_text),
+            )
+    elif body:
         _add_textbox(
             slide,
             x=2.2,
             y=3.35,
             width=deck.canvas_width_in - 4.4,
             height=0.7,
-            text=subtitle,
+            text=_short_phrase(body[0], max_chars=72),
             style=_theme_text_style(theme, font_size_pt=18, color=theme.colors.muted_text),
         )
 
