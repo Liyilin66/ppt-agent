@@ -37,6 +37,7 @@ Included:
 - Rule-based QA for overlap, density, and text-fit checks
 - Structured JSON Patch Edit
 - Editable `.pptx` rendering with `python-pptx`
+- Template-guided rendering for common slide layouts while preserving editable PowerPoint shapes
 - Product CLI for `generate`, `qa`, `render`, `patch`, and `build`
 - Private beta FastAPI backend for local job creation, status checks, artifact listing, and downloads
 
@@ -164,7 +165,7 @@ Open the simple HTML private beta:
 http://127.0.0.1:8000
 ```
 
-The page submits build jobs, polls status, and shows artifact download links. It is a small local browser entry point, not a complete product UI.
+The page submits build jobs, polls status, and shows artifact download links. It currently uses a Chinese UI for private beta users. It is a small local browser entry point, not a complete product UI.
 
 Create a job:
 
@@ -207,8 +208,11 @@ This helper writes example QA, patch, and PPTX artifacts under `examples/output/
 - Validate before rendering
 - Run deterministic QA before accepting generated IR
 - Keep `.pptx` rendering outside the LLM
+- Use template-guided rendering to improve layout consistency without sacrificing editable PPTX output
 - Prefer structured Patch Edit over natural-language mutation
 - Keep generation, QA, patching, and rendering separable
+
+The current renderer supports controlled layouts such as `title_slide`, `section_divider`, `two_column`, `three_column`, `metric_cards`, and `closing_slide`. This is inspired by template-guided presentation generation, but `ppt-agent` does not integrate or depend on ppt-master at runtime.
 
 ## Architecture Note
 

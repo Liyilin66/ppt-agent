@@ -97,10 +97,27 @@ def test_index_page_returns_html_with_generate_button(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert ">Generate</button>" in response.text
+    assert ">生成 PPT</button>" in response.text
 
 
-def test_index_page_contains_required_job_fields(tmp_path: Path) -> None:
+def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    for text in [
+        "演示主题",
+        "目标观众",
+        "页数",
+        "最低 QA 分数",
+        "最大尝试次数",
+        "Patch 文件路径",
+        "任务状态",
+        "生成文件",
+    ]:
+        assert text in response.text
+
+
+def test_index_page_keeps_required_job_field_names(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/")
 
     assert response.status_code == 200

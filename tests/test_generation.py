@@ -7,6 +7,7 @@ from ppt_agent.generation import (
     generate_deck_with_model,
     generate_deck_with_quality_gate,
 )
+from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck
 from ppt_agent.qa import QAReport, analyze_deck
 
@@ -134,6 +135,14 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "Do not create any bbox that extends outside" in prompt
     assert "roughly 2 to 5 elements" in prompt
     assert "Generate exactly 4 slides" in prompt
+    assert "Required root fields: deck_id, title" in prompt
+    assert "Never use font_size; use font_size_pt" in prompt
+    assert "Never use line_color; use stroke_color" in prompt
+    assert "stroke_width_pt must be greater than 0; never use 0" in prompt
+    assert "Choose each slide.layout from these controlled layouts only" in prompt
+    assert "Do not rely on freeform bbox placement for visual design" in prompt
+    for layout in TEMPLATE_LAYOUTS:
+        assert layout in prompt
 
 
 def test_generate_deck_with_fake_model_returns_deck() -> None:
@@ -157,6 +166,47 @@ def test_generate_deck_with_fake_model_accepts_deck_instance() -> None:
 
     assert isinstance(deck, Deck)
     assert deck.deck_id == "generated_demo_deck"
+
+
+def test_generate_deck_normalizes_common_provider_schema_drift() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    payload = _valid_deck_payload()
+    del payload["deck_id"]
+    del payload["title"]
+    del payload["slides"][1]["layout"]
+    payload["slides"][0]["layout"] = "title"
+    payload["slides"][0]["elements"][0]["style"] = {
+        "font_size": 32,
+        "color": "#111827",
+    }
+    payload["slides"][0]["elements"][1]["style"] = {
+        "fill_color": "#2563EB",
+        "line_color": "#111827",
+    }
+
+    deck = generate_deck_with_model(FakeModel(payload), request)
+
+    assert deck.deck_id == "generated_ai_roadmap"
+    assert deck.title == "AI roadmap"
+    assert deck.slides[0].layout == "title_slide"
+    assert deck.slides[1].layout == "closing_slide"
+    assert deck.slides[0].elements[0].style.font_size_pt == 32
+    assert deck.slides[0].elements[1].style.stroke_color == "#111827"
+
+
+def test_generate_deck_omits_zero_shape_stroke_width() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
+    payload = _valid_deck_payload()
+    payload["slides"][0]["elements"][1]["style"] = {
+        "fill_color": "#2563EB",
+        "stroke_color": "#111827",
+        "stroke_width_pt": 0,
+    }
+
+    deck = generate_deck_with_model(FakeModel(payload), request)
+
+    assert deck.slides[0].elements[1].style.stroke_color == "#111827"
+    assert deck.slides[0].elements[1].style.stroke_width_pt is None
 
 
 def test_generated_deck_can_be_analyzed() -> None:

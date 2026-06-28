@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import copy
+import re
 from typing import Any
 
 from pydantic import Field
 
+from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
 from ppt_agent.qa import QAReport, analyze_deck
 from ppt_agent.theme import Theme
@@ -58,6 +61,7 @@ Avoid repeating these QA problems in the next Deck IR. Improve layout quality wh
 def build_generation_prompt(request: DeckGenerationRequest, qa_feedback: QAReport | None = None) -> str:
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
+    layouts = ", ".join(TEMPLATE_LAYOUTS)
 
     return f"""Generate a Slide IR deck as structured data that exactly matches the Deck Pydantic schema.
 
@@ -73,16 +77,26 @@ Request:
 Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
 - Do not generate Markdown, prose, speaker notes, PPTX, HTML, SVG, or images.
+- Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
 - Use bbox coordinates and sizes in PowerPoint-style inches, not pixels.
+- Choose each slide.layout from these controlled layouts only: {layouts}.
+- Prefer this sequence when it fits the requested deck: title_slide, section_divider, two_column or three_column, metric_cards, closing_slide.
+- Do not rely on freeform bbox placement for visual design. The renderer will apply deterministic template positions and styles.
+- Focus on semantic content: slide titles, concise section text, column content, metric labels/values, and closing message.
+- Still include valid bbox values for schema compatibility, but keep them simple and inside the canvas; template rendering may ignore the exact bbox.
 - Every slide must include slide_id, title, layout, and at least one element.
 - slide_id values must be unique across the deck.
 - Every element must include element_id, type, bbox, and type-specific fields.
 - element_id values must be unique within each slide.
 - Supported element types are text, shape, and image.
-- For text elements, include text and optional TextStyle.
-- For shape elements, include shape as rectangle, ellipse, or line, plus optional ShapeStyle.
+- For template-guided slides, make the first text element the primary slide title and subsequent text elements the body/columns/cards in reading order.
+- For text elements, include text and optional TextStyle with these exact fields only: font_family, font_size_pt, color, bold, italic.
+- For shape elements, include shape as rectangle, ellipse, or line, plus optional ShapeStyle with these exact fields only: fill_color, stroke_color, stroke_width_pt.
+- For shape stroke_width_pt, omit the field when there is no stroke. If present, stroke_width_pt must be greater than 0; never use 0.
 - For image elements, include a non-empty src and optional alt_text. Use placeholders only as IR image elements.
+- Never use font_size; use font_size_pt.
+- Never use line_color; use stroke_color.
 - Do not create any bbox that extends outside the slide canvas:
   bbox.x + bbox.width must be <= canvas_width_in.
   bbox.y + bbox.height must be <= canvas_height_in.
@@ -100,6 +114,104 @@ def _unwrap_structured_response(response: Any) -> Any:
     return response
 
 
+def _identifier_from_text(value: str, prefix: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
+    return f"{prefix}_{slug or 'deck'}"
+
+
+def _normalize_layout_alias(layout: Any, slide_index: int, slide_count: int) -> str:
+    if isinstance(layout, str):
+        normalized = layout.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "title": "title_slide",
+            "cover": "title_slide",
+            "cover_slide": "title_slide",
+            "section": "section_divider",
+            "section_list": "section_divider",
+            "section_title": "section_divider",
+            "two_columns": "two_column",
+            "two_col": "two_column",
+            "three_columns": "three_column",
+            "three_col": "three_column",
+            "metrics": "metric_cards",
+            "metric_card": "metric_cards",
+            "kpi_cards": "metric_cards",
+            "summary": "closing_slide",
+            "closing": "closing_slide",
+            "final": "closing_slide",
+        }
+        candidate = aliases.get(normalized, normalized)
+        if candidate in TEMPLATE_LAYOUTS:
+            return candidate
+
+    if slide_index == 1:
+        return "title_slide"
+    if slide_index == slide_count:
+        return "closing_slide"
+    return "two_column"
+
+
+def _normalize_style_aliases(style: Any, element_type: Any) -> Any:
+    if not isinstance(style, dict):
+        return style
+
+    normalized = dict(style)
+    if element_type == "text":
+        if "font_size" in normalized and "font_size_pt" not in normalized:
+            normalized["font_size_pt"] = normalized["font_size"]
+        normalized.pop("font_size", None)
+
+    if element_type == "shape":
+        if "line_color" in normalized and "stroke_color" not in normalized:
+            normalized["stroke_color"] = normalized["line_color"]
+        if "line_width" in normalized and "stroke_width_pt" not in normalized:
+            normalized["stroke_width_pt"] = normalized["line_width"]
+        normalized.pop("line_color", None)
+        normalized.pop("line_width", None)
+        if normalized.get("stroke_width_pt") in (0, 0.0, "0", "0.0"):
+            normalized.pop("stroke_width_pt", None)
+
+    return normalized
+
+
+def _normalize_deck_payload(response: Any, request: DeckGenerationRequest) -> Any:
+    if isinstance(response, Deck):
+        return response.model_dump(mode="json")
+    if not isinstance(response, dict):
+        return response
+
+    payload = copy.deepcopy(response)
+    payload.setdefault("deck_id", _identifier_from_text(request.topic, "generated"))
+    payload.setdefault("title", request.topic)
+    if request.style is not None:
+        payload.setdefault("theme_name", request.style)
+
+    slides = payload.get("slides")
+    if not isinstance(slides, list):
+        return payload
+
+    for slide_index, slide in enumerate(slides, start=1):
+        if not isinstance(slide, dict):
+            continue
+
+        slide.setdefault("slide_id", f"slide_{slide_index:03d}")
+        slide.setdefault("title", f"{request.topic} {slide_index}")
+        slide["layout"] = _normalize_layout_alias(slide.get("layout"), slide_index, len(slides))
+
+        elements = slide.get("elements")
+        if not isinstance(elements, list):
+            continue
+
+        for element_index, element in enumerate(elements, start=1):
+            if not isinstance(element, dict):
+                continue
+
+            element.setdefault("element_id", f"s{slide_index:03d}_e{element_index:02d}")
+            element["style"] = _normalize_style_aliases(element.get("style"), element.get("type"))
+
+    return payload
+
+
 def generate_deck_with_model(
     model: Any,
     request: DeckGenerationRequest,
@@ -111,10 +223,7 @@ def generate_deck_with_model(
     structured_model = model.with_structured_output(Deck)
     response = _unwrap_structured_response(structured_model.invoke(prompt))
 
-    if isinstance(response, Deck):
-        return Deck.model_validate(response.model_dump(mode="json"))
-
-    return Deck.model_validate(response)
+    return Deck.model_validate(_normalize_deck_payload(response, request))
 
 
 def generate_deck_with_quality_gate(

@@ -21,11 +21,11 @@ DEFAULT_MODEL = "gpt-5.5"
 
 
 INDEX_HTML = """<!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ppt-agent</title>
+    <title>ppt-agent PPT 生成器</title>
     <style>
       :root {
         color-scheme: light;
@@ -124,48 +124,48 @@ INDEX_HTML = """<!doctype html>
   </head>
   <body>
     <main>
-      <h1>ppt-agent</h1>
-      <p>Create a local private beta PPT build job and download the generated artifacts.</p>
+      <h1>ppt-agent PPT 生成器</h1>
+      <p>创建本地内测版 PPT 生成任务，并下载生成文件。</p>
 
       <form id="jobForm">
         <div class="grid">
           <label>
-            Topic
-            <input id="topic" name="topic" required placeholder="AI in Education">
+            演示主题
+            <input id="topic" name="topic" required placeholder="AI 教育应用">
           </label>
           <label>
-            Audience
-            <input id="audience" name="audience" required placeholder="university students">
+            目标观众
+            <input id="audience" name="audience" required placeholder="大学生">
           </label>
           <label>
-            Slides
+            页数
             <input id="slides" name="slides" type="number" min="1" max="10" value="8" required>
           </label>
           <label>
-            Minimum QA score
+            最低 QA 分数
             <input id="min_qa_score" name="min_qa_score" type="number" min="0" max="100" value="80" required>
           </label>
           <label>
-            Maximum attempts
+            最大尝试次数
             <input id="max_attempts" name="max_attempts" type="number" min="1" value="2" required>
           </label>
           <label>
-            Patch path
+            Patch 文件路径
             <input id="patch_path" name="patch_path" placeholder="examples/sample_patch.json">
           </label>
         </div>
-        <button id="generateButton" type="submit">Generate</button>
+        <button id="generateButton" type="submit">生成 PPT</button>
       </form>
 
       <section>
-        <h2>Job Status</h2>
-        <p>Job ID: <span id="jobId">None</span></p>
-        <p>Status: <span id="jobStatus">Idle</span></p>
+        <h2>任务状态</h2>
+        <p>任务 ID：<span id="jobId">暂无</span></p>
+        <p>状态：<span id="jobStatus">未开始</span></p>
         <p id="errorMessage"></p>
       </section>
 
       <section>
-        <h2>Artifacts</h2>
+        <h2>生成文件</h2>
         <ul id="artifacts"></ul>
       </section>
     </main>
@@ -183,8 +183,17 @@ INDEX_HTML = """<!doctype html>
         button.disabled = isBusy;
       }
 
+      const statusText = {
+        idle: "未开始",
+        submitting: "提交中",
+        pending: "等待中",
+        running: "生成中",
+        succeeded: "已完成",
+        failed: "失败"
+      };
+
       function setStatus(status) {
-        jobStatus.textContent = status;
+        jobStatus.textContent = statusText[status] || status;
       }
 
       function clearArtifacts() {
@@ -210,7 +219,7 @@ INDEX_HTML = """<!doctype html>
         const response = await fetch(url, options);
         const body = await response.json();
         if (!response.ok) {
-          throw new Error(body.detail || "Request failed");
+          throw new Error(body.detail || "请求失败");
         }
         return body;
       }
@@ -222,7 +231,7 @@ INDEX_HTML = """<!doctype html>
           const item = document.createElement("li");
           const link = document.createElement("a");
           link.href = artifact.download_url;
-          link.textContent = `${artifact.name}.${artifact.kind}`;
+          link.textContent = `下载 ${artifact.name}.${artifact.kind}`;
           item.appendChild(link);
           artifacts.appendChild(item);
         }
@@ -250,7 +259,7 @@ INDEX_HTML = """<!doctype html>
           clearInterval(pollTimer);
         }
         setBusy(true);
-        setStatus("Submitting");
+        setStatus("submitting");
         errorMessage.textContent = "";
         clearArtifacts();
 
@@ -272,7 +281,7 @@ INDEX_HTML = """<!doctype html>
           }
         } catch (error) {
           errorMessage.textContent = error.message;
-          setStatus("Failed");
+          setStatus("failed");
           setBusy(false);
         }
       });
