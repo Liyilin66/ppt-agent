@@ -255,12 +255,45 @@ def test_build_brief_from_user_prompt_with_fake_model() -> None:
         slide_count=3,
     )
 
-    assert model.schema is DeckBrief
+    assert model.schema["title"] == "DeckBrief"
     assert brief.topic == "AI 如何帮助学习"
     assert brief.language == "zh-CN"
     assert brief.slide_count == 3
     assert brief.user_requirements_raw == requirements
     assert "Default language to zh-CN" in model.structured_model.prompts[0]
+
+
+def test_build_brief_normalizes_common_provider_schema_drift() -> None:
+    response = {
+        "topic": "AI Agent 产品经理",
+        "audience": "IT 硕士学生",
+        "slide_count": 8,
+        "language": "zh-CN",
+        "purpose": "技术产品分享",
+        "tone": "技术产品分享",
+        "visual_style": "简洁现代",
+        "content_focus": ["技术边界", "用户需求分析", "评估指标", "落地风险"],
+        "must_include": "工作流设计",
+        "must_avoid": ["营销口号"],
+        "user_requirements_raw": "placeholder",
+        "style": "clean_business",
+        "key_points": [],
+    }
+    requirements = "我要做一份中文分享 PPT，面向准备进入 AI 产品岗位的 IT 硕士学生。"
+
+    brief = build_brief_from_user_prompt(
+        FakeModel(response),
+        requirements,
+        topic="AI Agent 产品经理",
+        audience="IT 硕士学生",
+        slide_count=8,
+        style="clean_business",
+    )
+
+    assert brief.content_focus == "技术边界；用户需求分析；评估指标；落地风险"
+    assert brief.must_include == ["工作流设计"]
+    assert brief.must_avoid == ["营销口号"]
+    assert brief.user_requirements_raw == requirements
 
 
 def test_generate_deck_with_fake_model_returns_deck() -> None:
@@ -303,6 +336,24 @@ def test_generate_deck_with_user_requirements_builds_brief_first() -> None:
     assert len(model.structured_model.prompts) == 2
     assert "Extract a DeckBrief" in model.structured_model.prompts[0]
     assert "诚信风险" in model.structured_model.prompts[1]
+
+
+def test_generate_deck_chunks_long_decks_to_reduce_single_request_size() -> None:
+    request = DeckGenerationRequest(topic="AI Agent 产品经理", audience="IT 硕士学生", slide_count=8)
+    model = FakeModel([
+        _deck_payload_with_slide_count(4),
+        _deck_payload_with_slide_count(4),
+    ])
+
+    deck = generate_deck_with_model(model, request)
+
+    assert len(deck.slides) == 8
+    assert [slide.slide_id for slide in deck.slides] == [f"slide_{index:03d}" for index in range(1, 9)]
+    assert deck.slides[0].layout == "title_slide"
+    assert deck.slides[-1].layout == "closing_slide"
+    assert len(model.structured_model.prompts) == 2
+    assert "Generate only global slides 1 through 4" in model.structured_model.prompts[0]
+    assert "Generate only global slides 5 through 8" in model.structured_model.prompts[1]
 
 
 def test_generate_deck_with_fake_model_accepts_deck_instance() -> None:

@@ -15,6 +15,7 @@ from ppt_agent.theme import Theme
 
 
 DEFAULT_LANGUAGE = "zh-CN"
+MAX_SINGLE_GENERATION_SLIDES = 4
 
 
 class DeckBrief(StrictModel):
@@ -29,6 +30,28 @@ class DeckBrief(StrictModel):
     must_include: list[str] = Field(default_factory=list)
     must_avoid: list[str] = Field(default_factory=list)
     user_requirements_raw: str | None = Field(default=None, min_length=1)
+
+
+BRIEF_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
+    "title": "DeckBrief",
+    "description": "Structured brief extracted from detailed presentation requirements.",
+    "type": "object",
+    "properties": {
+        "topic": {"type": "string"},
+        "audience": {"type": "string"},
+        "slide_count": {"type": "integer"},
+        "language": {"type": "string"},
+        "purpose": {"type": "string"},
+        "tone": {"type": "string"},
+        "visual_style": {"type": "string"},
+        "content_focus": {"type": "string"},
+        "must_include": {"type": "array", "items": {"type": "string"}},
+        "must_avoid": {"type": "array", "items": {"type": "string"}},
+        "user_requirements_raw": {"type": "string"},
+    },
+    "required": ["topic", "audience", "slide_count"],
+    "additionalProperties": True,
+}
 
 
 class DeckGenerationRequest(StrictModel):
@@ -107,6 +130,26 @@ def _format_brief_items(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) or "- None provided"
 
 
+def _stringify_brief_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "；".join(str(item) for item in value if item is not None)
+    return str(value)
+
+
+def _string_list_value(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None and str(item).strip()]
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    return [str(value)]
+
+
 def _language_instruction(language: str) -> str:
     normalized = language.strip().lower()
     if normalized.startswith("en") or "english" in normalized:
@@ -127,6 +170,7 @@ def build_generation_prompt(
     request: DeckGenerationRequest,
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
+    segment_instruction: str | None = None,
 ) -> str:
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
@@ -209,6 +253,7 @@ Hard schema and layout rules:
 - Keep each slide simple, with roughly 2 to 5 elements, to avoid dense layouts.
 - Prefer readable business-style layouts with clear titles and generous whitespace.
 - Generate exactly {request.slide_count} slides.
+{segment_instruction or ""}
 {_format_qa_feedback(qa_feedback)}
 {_format_generation_feedback(generation_feedback)}
 """
@@ -218,6 +263,39 @@ def _unwrap_structured_response(response: Any) -> Any:
     if isinstance(response, dict) and "structured_response" in response:
         return response["structured_response"]
     return response
+
+
+def _normalize_brief_payload(
+    response: Any,
+    *,
+    topic: str,
+    audience: str,
+    slide_count: int,
+    language: str,
+    user_requirements: str,
+) -> Any:
+    if isinstance(response, DeckBrief):
+        response = response.model_dump(mode="json")
+    if not isinstance(response, dict):
+        return response
+
+    allowed_fields = set(DeckBrief.model_fields)
+    normalized = {key: value for key, value in response.items() if key in allowed_fields}
+
+    normalized.setdefault("topic", topic)
+    normalized.setdefault("audience", audience)
+    normalized.setdefault("language", language)
+    normalized["slide_count"] = slide_count
+    normalized["user_requirements_raw"] = user_requirements
+
+    for field in ["topic", "audience", "language", "purpose", "tone", "visual_style", "content_focus"]:
+        if field in normalized:
+            normalized[field] = _stringify_brief_value(normalized[field])
+
+    for field in ["must_include", "must_avoid"]:
+        normalized[field] = _string_list_value(normalized.get(field))
+
+    return normalized
 
 
 def build_brief_from_user_prompt(
@@ -256,9 +334,17 @@ Rules:
 - Extract purpose, tone, visual_style, content_focus, must_include, and must_avoid when present.
 - Preserve the raw detailed request in user_requirements_raw.
 """
-    structured_model = model.with_structured_output(DeckBrief)
+    structured_model = model.with_structured_output(BRIEF_STRUCTURED_OUTPUT_SCHEMA)
     response = _unwrap_structured_response(structured_model.invoke(prompt))
-    brief = DeckBrief.model_validate(response)
+    normalized = _normalize_brief_payload(
+        response,
+        topic=topic,
+        audience=audience,
+        slide_count=slide_count,
+        language=language,
+        user_requirements=user_requirements,
+    )
+    brief = DeckBrief.model_validate(normalized)
     return brief.model_copy(
         update={
             "slide_count": slide_count,
@@ -333,6 +419,15 @@ def _normalize_layout_alias(layout: Any, slide_index: int, slide_count: int) -> 
     return "two_column"
 
 
+def _normalize_generated_layout(layout: Any, slide_index: int, slide_count: int) -> str:
+    normalized = _normalize_layout_alias(layout, slide_index, slide_count)
+    if normalized == "title_slide" and slide_index != 1:
+        return "two_column"
+    if normalized == "closing_slide" and slide_index != slide_count:
+        return "two_column"
+    return normalized
+
+
 def _normalize_style_aliases(style: Any, element_type: Any) -> Any:
     if not isinstance(style, dict):
         return style
@@ -356,7 +451,14 @@ def _normalize_style_aliases(style: Any, element_type: Any) -> Any:
     return normalized
 
 
-def _normalize_deck_payload(response: Any, request: DeckGenerationRequest) -> Any:
+def _normalize_deck_payload(
+    response: Any,
+    request: DeckGenerationRequest,
+    *,
+    slide_index_offset: int = 0,
+    total_slide_count: int | None = None,
+    force_slide_ids: bool = False,
+) -> Any:
     if isinstance(response, Deck):
         return response.model_dump(mode="json")
     if not isinstance(response, dict):
@@ -372,13 +474,22 @@ def _normalize_deck_payload(response: Any, request: DeckGenerationRequest) -> An
     if not isinstance(slides, list):
         return payload
 
+    layout_slide_count = total_slide_count or len(slides)
     for slide_index, slide in enumerate(slides, start=1):
         if not isinstance(slide, dict):
             continue
 
-        slide.setdefault("slide_id", f"slide_{slide_index:03d}")
-        slide.setdefault("title", f"{request.topic} {slide_index}")
-        slide["layout"] = _normalize_layout_alias(slide.get("layout"), slide_index, len(slides))
+        global_slide_index = slide_index_offset + slide_index
+        if force_slide_ids:
+            slide["slide_id"] = f"slide_{global_slide_index:03d}"
+        else:
+            slide.setdefault("slide_id", f"slide_{global_slide_index:03d}")
+        slide.setdefault("title", f"{request.topic} {global_slide_index}")
+        slide["layout"] = _normalize_generated_layout(
+            slide.get("layout"),
+            global_slide_index,
+            layout_slide_count,
+        )
 
         elements = slide.get("elements")
         if not isinstance(elements, list):
@@ -388,7 +499,10 @@ def _normalize_deck_payload(response: Any, request: DeckGenerationRequest) -> An
             if not isinstance(element, dict):
                 continue
 
-            element.setdefault("element_id", f"s{slide_index:03d}_e{element_index:02d}")
+            if force_slide_ids:
+                element["element_id"] = f"s{global_slide_index:03d}_e{element_index:02d}"
+            else:
+                element.setdefault("element_id", f"s{global_slide_index:03d}_e{element_index:02d}")
             element["style"] = _normalize_style_aliases(element.get("style"), element.get("type"))
 
     return payload
@@ -404,6 +518,117 @@ def _ensure_slide_count(deck: Deck, request: DeckGenerationRequest) -> Deck:
     return deck
 
 
+def _generate_deck_once(
+    model: Any,
+    request: DeckGenerationRequest,
+    qa_feedback: QAReport | None = None,
+    generation_feedback: str | None = None,
+    segment_instruction: str | None = None,
+    slide_index_offset: int = 0,
+    total_slide_count: int | None = None,
+    force_slide_ids: bool = False,
+) -> Deck:
+    prompt = build_generation_prompt(
+        request,
+        qa_feedback=qa_feedback,
+        generation_feedback=generation_feedback,
+        segment_instruction=segment_instruction,
+    )
+    structured_model = model.with_structured_output(Deck)
+    response = _unwrap_structured_response(structured_model.invoke(prompt))
+
+    deck = Deck.model_validate(
+        _normalize_deck_payload(
+            response,
+            request,
+            slide_index_offset=slide_index_offset,
+            total_slide_count=total_slide_count,
+            force_slide_ids=force_slide_ids,
+        )
+    )
+    return _ensure_slide_count(deck, request)
+
+
+def _segment_instruction(start: int, count: int, total: int) -> str:
+    end = start + count - 1
+    first_layout = "title_slide" if start == 1 else "two_column, three_column, four_cards, or metric_cards"
+    last_layout = "closing_slide" if end == total else "two_column, three_column, four_cards, or metric_cards"
+    return f"""
+
+Segmented generation rules:
+- This response is one segment of a larger {total}-slide deck.
+- Generate only global slides {start} through {end}; do not generate slides outside this range.
+- This response must contain exactly {count} slides.
+- The first slide in this segment should use one of: {first_layout}.
+- The last slide in this segment should use one of: {last_layout}.
+- Keep slide_id values aligned to the global deck order when possible, such as slide_{start:03d}.
+"""
+
+
+def _chunked_request(request: DeckGenerationRequest, start: int, count: int) -> DeckGenerationRequest:
+    brief = _brief_from_request(request)
+    segment_focus = (
+        f"{brief.content_focus}\n"
+        f"Segment: generate global slides {start}-{start + count - 1} of {request.slide_count}."
+    ).strip()
+    return request.model_copy(
+        update={
+            "slide_count": count,
+            "brief": brief.model_copy(
+                update={
+                    "slide_count": count,
+                    "content_focus": segment_focus,
+                }
+            ),
+        }
+    )
+
+
+def _merge_deck_chunks(chunks: list[Deck], request: DeckGenerationRequest) -> Deck:
+    if not chunks:
+        raise ValueError("No deck chunks were generated.")
+
+    first = chunks[0]
+    payload = first.model_dump(mode="json")
+    payload["deck_id"] = _identifier_from_text(request.topic, "generated")
+    payload["title"] = request.topic
+    if request.style is not None:
+        payload["theme_name"] = request.style
+    payload["slides"] = [
+        slide.model_dump(mode="json")
+        for chunk in chunks
+        for slide in chunk.slides
+    ]
+    return _ensure_slide_count(Deck.model_validate(payload), request)
+
+
+def _generate_deck_in_chunks(
+    model: Any,
+    request: DeckGenerationRequest,
+    qa_feedback: QAReport | None = None,
+    generation_feedback: str | None = None,
+) -> Deck:
+    chunks: list[Deck] = []
+    start = 1
+    while start <= request.slide_count:
+        count = min(MAX_SINGLE_GENERATION_SLIDES, request.slide_count - start + 1)
+        chunk_request = _chunked_request(request, start, count)
+        chunk = _generate_deck_once(
+            model,
+            chunk_request,
+            qa_feedback=qa_feedback,
+            generation_feedback=generation_feedback,
+            segment_instruction=_segment_instruction(start, count, request.slide_count),
+            slide_index_offset=start - 1,
+            total_slide_count=request.slide_count,
+            force_slide_ids=True,
+        )
+        chunks.append(chunk)
+        start += count
+
+    return _merge_deck_chunks(chunks, request)
+
+
 def generate_deck_with_model(
     model: Any,
     request: DeckGenerationRequest,
@@ -413,16 +638,20 @@ def generate_deck_with_model(
     """Generate a Deck using a LangChain chat model with structured output."""
 
     request = _request_with_brief(model, request)
-    prompt = build_generation_prompt(
+    if request.slide_count > MAX_SINGLE_GENERATION_SLIDES:
+        return _generate_deck_in_chunks(
+            model,
+            request,
+            qa_feedback=qa_feedback,
+            generation_feedback=generation_feedback,
+        )
+
+    return _generate_deck_once(
+        model,
         request,
         qa_feedback=qa_feedback,
         generation_feedback=generation_feedback,
     )
-    structured_model = model.with_structured_output(Deck)
-    response = _unwrap_structured_response(structured_model.invoke(prompt))
-
-    deck = Deck.model_validate(_normalize_deck_payload(response, request))
-    return _ensure_slide_count(deck, request)
 
 
 def generate_deck_with_quality_gate(
