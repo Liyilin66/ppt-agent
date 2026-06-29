@@ -625,6 +625,160 @@ def test_content_style_warns_on_weak_slide_message() -> None:
     assert "specific judgment" in issues[0].message
 
 
+def test_anti_generic_qa_warns_on_generic_content() -> None:
+    deck = _deck_with_text_slide(
+        "three_column",
+        "治理原则",
+        ["提升效率、降低风险、前置治理、建立闭环。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "generic_content" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_anti_generic_qa_warns_on_missing_product_judgment() -> None:
+    deck = _deck_with_text_slide(
+        "comparison_matrix",
+        "责任边界",
+        ["技术边界\n产品经理判断\n评估指标"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "missing_product_judgment" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_anti_generic_qa_warns_on_vague_action() -> None:
+    deck = _deck_with_text_slide(
+        "closing_slide",
+        "下一步",
+        ["关注风险", "理解边界", "提升能力"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "vague_action" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_anti_generic_qa_warns_on_prompt_keyword_repetition() -> None:
+    deck = _deck_with_text_slide(
+        "four_cards",
+        "核心框架",
+        ["技术边界、用户需求分析、工作流设计、评估指标、落地风险。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "prompt_keyword_repetition" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_anti_generic_qa_warns_on_weak_takeaway() -> None:
+    deck = _deck_with_text_slide(
+        "key_takeaway",
+        "总结",
+        ["综合来看，要理解技术边界、工作流设计和落地风险。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "weak_takeaway" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_qa_warns_on_instruction_leakage() -> None:
+    deck = _deck_with_text_slide(
+        "closing_slide",
+        "下一步",
+        ["把这一点转化为明确的下一步行动。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "instruction_leakage" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_qa_warns_on_risk_matrix_malformed_row() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_risk_matrix_malformed_deck",
+            "title": "QA Risk Matrix Malformed Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Risk Matrix",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "Risk Matrix",
+                        },
+                        {
+                            "element_id": "risk_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 8.0, "height": 0.8},
+                            "text": "AI Agent 的落地风险要在设计阶段被约束\n影响大\n加强治理",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+
+    assert "risk_matrix_malformed_row" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_qa_warns_on_card_body_contains_subheadings() -> None:
+    deck = _deck_with_text_slide(
+        "four_cards",
+        "边界设计",
+        ["工具与权限 / 接管与追溯 / 落地风险"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "card_body_contains_subheadings" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_qa_warns_on_metric_explanation_contains_risk_governance() -> None:
+    deck = _deck_with_text_slide(
+        "metric_cards",
+        "指标判断",
+        ["越权操作、模型幻觉、不可追溯、用户过度信任不能被指标掩盖。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "metric_explanation_contains_risk_governance" in _issue_codes(report)
+    assert report.score > 0
+
+
+def test_qa_warns_on_closing_action_not_executable() -> None:
+    deck = _deck_with_text_slide(
+        "closing_slide",
+        "下一步",
+        ["明确下一步行动。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "closing_action_not_executable" in _issue_codes(report)
+    assert report.score > 0
+
+
 def test_content_style_warnings_do_not_zero_qa_score() -> None:
     deck = _deck_with_text_slide(
         "four_cards",

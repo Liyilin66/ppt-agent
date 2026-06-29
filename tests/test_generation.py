@@ -1066,6 +1066,55 @@ def test_build_generation_prompt_includes_qa_feedback() -> None:
     assert "Avoid repeating these QA problems" in prompt
 
 
+def test_build_generation_prompt_includes_slide_content_contract() -> None:
+    request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=4)
+
+    prompt = build_generation_prompt(request)
+
+    assert "Slide Content Contract" in prompt
+    assert "comparison_matrix" in prompt
+    assert "process_flow" in prompt
+    assert "metric_cards" in prompt
+    assert "closing_slide" in prompt
+
+
+def test_build_generation_prompt_comparison_matrix_forbids_concept_only_cells() -> None:
+    request = DeckGenerationRequest(topic="Agent product", audience="PMs", slide_count=3)
+
+    prompt = build_generation_prompt(request)
+
+    assert 'Do not fill cells with concept-only labels such as "技术边界", "产品经理判断", or "评估指标"' in prompt
+    assert "every comparison row must express a concrete product judgment or responsibility difference" in prompt
+
+
+def test_build_generation_prompt_process_flow_requires_control_point() -> None:
+    request = DeckGenerationRequest(topic="Agent workflow", audience="PMs", slide_count=3)
+
+    prompt = build_generation_prompt(request)
+
+    assert "Include at least one concrete control point" in prompt
+    assert "permission confirmation, human handoff, failure rollback, or output validation" in prompt
+
+
+def test_build_generation_prompt_metric_cards_focuses_on_measurement() -> None:
+    request = DeckGenerationRequest(topic="Agent metrics", audience="PMs", slide_count=3)
+
+    prompt = build_generation_prompt(request)
+
+    assert "Each metric must state how it is measured" in prompt
+    assert "Keep risk governance content out of metric explanations" in prompt
+
+
+def test_build_generation_prompt_forbids_instruction_leakage() -> None:
+    request = DeckGenerationRequest(topic="Agent workflow", audience="PMs", slide_count=3)
+
+    prompt = build_generation_prompt(request)
+
+    assert "Final slide content must be audience-facing content only" in prompt
+    assert "Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text" in prompt
+    assert "把这一点转化为明确的下一步行动" in prompt
+
+
 def test_format_qa_feedback_for_generation_instructs_layout_diversity_fix() -> None:
     report = QAReport(
         deck_id="deck",
@@ -1274,6 +1323,75 @@ def test_format_qa_feedback_for_generation_instructs_content_style_fixes_once() 
     assert "Give each slide a specific judgment or action" in feedback
     assert "Showing first 5 of 6 QA issues" in feedback
     assert feedback.count("Shorten card, metric, step, table-cell, or action-item body text") == 1
+
+
+def test_format_qa_feedback_for_generation_instructs_anti_generic_fixes() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=78,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                code="generic_content",
+                message="Generic phrases without action.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_003",
+                code="missing_product_judgment",
+                message="No product judgment.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_004",
+                code="vague_action",
+                message="Action is vague.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_005",
+                code="prompt_keyword_repetition",
+                message="Prompt keyword repetition.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_006",
+                code="weak_takeaway",
+                message="Takeaway is weak.",
+            ),
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "Replace generic slogans with concrete product judgments" in feedback
+    assert "Turn concept explanation into a product decision" in feedback
+    assert "Rewrite vague action items into concrete next steps" in feedback
+    assert "Reduce direct repetition of user prompt keywords" in feedback
+    assert "Give the slide one strong takeaway or tradeoff principle" in feedback
+    assert "Anti-generic retry guidance" in feedback
+    assert "Keep one strong viewpoint per slide" in feedback
+    assert "Make closing-slide actions executable" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_instruction_leakage_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=82,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_008",
+                code="instruction_leakage",
+                message="Contains prompt-like meta language.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "Remove prompt-like meta language and rewrite it as audience-facing slide content" in feedback
 
 
 def test_format_qa_feedback_for_generation_limits_issue_count() -> None:

@@ -26,6 +26,20 @@ MAX_SINGLE_GENERATION_SLIDES = 3
 LONG_DECK_CHUNK_SLIDES = 2
 LONG_DECK_SLIDE_THRESHOLD = 6
 MAX_QA_FEEDBACK_ISSUES = 5
+# These codes share one retry block that pushes the next generation toward
+# audience-facing, layout-specific judgments without widening the core schema.
+ANTI_GENERIC_FEEDBACK_CODES = {
+    "generic_content",
+    "missing_product_judgment",
+    "vague_action",
+    "prompt_keyword_repetition",
+    "weak_takeaway",
+    "instruction_leakage",
+    "risk_matrix_malformed_row",
+    "card_body_contains_subheadings",
+    "metric_explanation_contains_risk_governance",
+    "closing_action_not_executable",
+}
 
 BriefSource = Literal["llm", "deterministic", "fallback", "provided", "none"]
 
@@ -73,6 +87,36 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
     ),
     "weak_slide_message": (
         "Give each slide a specific judgment or action, not a generic topic label."
+    ),
+    "generic_content": (
+        "Replace generic slogans with concrete product judgments, control points, or operating actions."
+    ),
+    "missing_product_judgment": (
+        "Turn concept explanation into a product decision: say when to do it, when not to do it, what to define, or how to recover."
+    ),
+    "vague_action": (
+        "Rewrite vague action items into concrete next steps with an owner action, control point, or measurable check."
+    ),
+    "prompt_keyword_repetition": (
+        "Reduce direct repetition of user prompt keywords and expand them into one specific judgment, scenario, or operating rule."
+    ),
+    "weak_takeaway": (
+        "Give the slide one strong takeaway or tradeoff principle instead of summarizing earlier slides."
+    ),
+    "instruction_leakage": (
+        "Remove prompt-like meta language and rewrite it as audience-facing slide content."
+    ),
+    "risk_matrix_malformed_row": (
+        "Rewrite each risk-matrix row as risk, impact, and mitigation; use a specific risk event and a concrete mitigation action."
+    ),
+    "card_body_contains_subheadings": (
+        "Keep each card to one heading and one body sentence; split stacked mini-headings into separate cards or remove them."
+    ),
+    "metric_explanation_contains_risk_governance": (
+        "Keep metric cards focused on how the metric is measured; move governance or risk lists to risk_matrix."
+    ),
+    "closing_action_not_executable": (
+        "Rewrite closing-slide actions as concrete verb-plus-object next steps and remove meta instruction wording."
     ),
 }
 
@@ -169,6 +213,7 @@ def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
     issue_lines: list[str] = []
     emitted_fix_codes: set[str] = set()
     limited_issues = qa_report.issues[:MAX_QA_FEEDBACK_ISSUES]
+    seen_codes = {issue.code for issue in qa_report.issues}
     for issue in limited_issues:
         location = f"slide={issue.slide_id}"
         if issue.element_id is not None:
@@ -185,6 +230,19 @@ def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
         issue_lines.append(
             f"- Showing first {MAX_QA_FEEDBACK_ISSUES} of {len(qa_report.issues)} QA issues. "
             "Fix these first before making cosmetic changes."
+        )
+
+    if seen_codes & ANTI_GENERIC_FEEDBACK_CODES:
+        issue_lines.extend(
+            [
+                "- Anti-generic retry guidance:",
+                "  Fix: Replace vague concept words with concrete product judgments.",
+                "  Fix: Keep one strong viewpoint per slide.",
+                "  Fix: Add a specific scenario, control point, or fallback rule where relevant.",
+                "  Fix: Do not mechanically repeat the user's prompt keywords.",
+                "  Fix: Make closing-slide actions executable for the target audience.",
+                "  Fix: Remove prompt-like meta language and rewrite it as audience-facing content.",
+            ]
         )
 
     issues = "\n".join(issue_lines) or "- No specific issues were reported, but improve the deck quality."
@@ -217,6 +275,49 @@ Generation feedback from the previous attempt:
 - {generation_feedback}
 
 Regenerate the Deck IR and fix this issue before optimizing style.
+"""
+
+
+def _slide_content_contract_rules() -> str:
+    # Keep these constraints prompt-only. QA mirrors them as warnings, but the
+    # final Deck IR should read like slide copy, not like prompt instructions.
+    return """
+- Final slide content must be audience-facing content only.
+- Do not copy prompt instructions, planning rules, QA rules, or content contract language into slide text.
+- Never write slide text such as "把这一点转化为明确的下一步行动", "明确下一步行动", "本页必须", "该页需要", "内容合同", "核心判断必须", "可执行建议应该", "根据用户要求", or "将用户要求转化为".
+- Slide Content Contract:
+  - comparison_matrix:
+    - Use real comparison dimensions, not abstract labels.
+    - Each cell must be a short judgment, not a concept noun.
+    - Make clear why Agent products carry different product responsibility than ordinary AI features.
+    - Do not fill cells with concept-only labels such as "技术边界", "产品经理判断", or "评估指标".
+  - framework slides using three_column or four_cards:
+    - Each card must answer one product decision such as when it is safe to do, when it is not safe, what the product manager must define, or how the system falls back on failure.
+    - Do not use cards only to explain concepts.
+  - process_flow:
+    - Show a real execution order.
+    - Include at least one concrete control point such as permission confirmation, human handoff, failure rollback, or output validation.
+    - Do not use an empty flow like input -> plan -> call -> deliver without control logic.
+  - metric_cards:
+    - Each metric must state how it is measured.
+    - Keep risk governance content out of metric explanations.
+    - Metrics should help decide whether the workflow is ready to launch.
+  - risk_matrix:
+    - The first row cannot be the page takeaway or slide-level summary.
+    - Every row must include risk, impact, and mitigation.
+    - Risk must be a specific risk event or failure mode.
+    - Impact must describe the consequence.
+    - Mitigation must be an action, not a slogan.
+    - Prefer actions like "record input, tool calls, and output version" over slogans like "strengthen governance".
+  - key_takeaway:
+    - Give one strong judgment.
+    - Do not only repeat earlier slides.
+    - Answer the most important product tradeoff or operating principle of the topic.
+  - closing_slide:
+    - Give concrete next-step advice for the target audience.
+    - Each action must be executable.
+    - Do not use vague items like "learn boundaries", "understand workflow", or "pay attention to risk" without a next action.
+    - Do not use meta expressions like "把这一点转化为明确的下一步行动".
 """
 
 
@@ -536,6 +637,8 @@ Hard schema and layout rules:
 - Output only fields defined by the Deck / Slide / Element schema. Do not add extra fields.
 - Do not add key_message, rationale, notes, speaker_notes, layout_reason, title_hint, recommended_layout, must_not_repeat, or any planning-only fields to final Deck IR objects.
 - The slide-level idea should be expressed through existing slide.title, subtitle/body text elements, card headings, or card bodies, not as a new field.
+- Final slide content must be audience-facing content only.
+- Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text.
 - Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
 - The slides array length must be exactly {request.slide_count}. Do not generate more or fewer slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
@@ -565,7 +668,9 @@ Hard schema and layout rules:
 - Do not squeeze 5 process steps into one narrow row; keep each process_flow step to a concise title plus one short description sentence.
 - For key_takeaway, every takeaway must include both a concise title and a one-sentence explanation.
 - For comparison_matrix, prefer aligned comparison rows over two sparse cards; put matching points in the same order on both sides.
+- For comparison_matrix, every comparison row must express a concrete product judgment or responsibility difference, not a category word.
 - For risk_matrix, every row must include a concrete mitigation; never leave mitigation implicit or mixed into the impact text.
+- For risk_matrix, do not place the page takeaway or overall slide judgment inside any table row.
 - For risk_matrix, keep each risk, impact, and mitigation cell concise while preserving all three cells.
 - For closing_slide, each action item must include a concise heading plus one explanatory sentence.
 - Do not rely on freeform bbox placement for visual design. The renderer will apply deterministic template positions and styles.
@@ -589,13 +694,13 @@ Hard schema and layout rules:
   - Do not compress the user's full detailed requirements into a single slide.
 - Layout-specific content budget:
   - title_slide: one clear title, one subtitle, and very little auxiliary text.
-  - comparison_matrix: each cell contains one short judgment; align rows instead of writing paragraphs.
-  - three_column/four_cards: each card has a short heading plus one short body sentence.
-  - process_flow: each step has a short heading plus one-line body.
-  - metric_cards: metric name plus one-line explanation.
+  - comparison_matrix: each cell contains one short judgment; align rows instead of writing paragraphs; compare responsibility, promise, validation, or rollback logic.
+  - three_column/four_cards: each card has a short heading plus one short body sentence that states a product decision, boundary, or fallback rule; card bodies must not contain new subheadings or stacked mini-titles.
+  - process_flow: each step has a short heading plus one-line body, and at least one step must act as a control point.
+  - metric_cards: metric name plus one-line explanation of how to measure it; do not use metric cards to list governance or risk concerns.
   - risk_matrix: risk, impact, and mitigation cells must all be short.
-  - key_takeaway: use a strong judgment, not a long summary.
-  - closing_slide: action checklist; each item is a heading plus one short explanation.
+  - key_takeaway: use a strong judgment or tradeoff principle, not a long summary.
+  - closing_slide: action checklist; each item is a heading plus one short explanation with a concrete next step and no meta-instruction wording.
 - Presentation Style Guard:
   - Write like a spoken technical product-sharing deck, not a report summary or course handout.
   - Do not write paper-like explanatory paragraphs.
@@ -604,7 +709,11 @@ Hard schema and layout rules:
   - One sentence expresses one judgment only.
   - Prefer Chinese patterns like "先判断……", "只承诺……", "把……拆成……", "用……验证……", "高风险动作必须……".
   - Avoid Chinese patterns like "需要理解的技术边界包括……", "覆盖……以及……并且……", "从……、……、……、……等方面……".
+  - Avoid generic claims like "提升效率", "降低风险", "前置治理", "完善机制", "加强监控", "优化体验", or "建立闭环" unless the slide also states a specific operating action or product judgment.
+  - Do not mechanically repeat user prompt keywords such as "技术边界", "用户需求分析", "工作流设计", "评估指标", or "落地风险" without concrete expansion.
+  - Never use meta prompt language like "本页必须", "该页需要", "明确下一步行动", "把这一点转化为", "内容合同", "核心判断必须", "可执行建议应该", "根据用户要求", or "将用户要求转化为" in final slide text.
   - 中文输出要像技术产品分享，不像营销文案，也不像课程讲义摘要。
+{_slide_content_contract_rules()}
 - Every slide must include slide_id, title, layout, and at least one element.
 - slide_id values must be unique across the deck.
 - Every element must include element_id, type, bbox, and type-specific fields.

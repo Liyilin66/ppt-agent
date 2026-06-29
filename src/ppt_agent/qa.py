@@ -33,6 +33,16 @@ CONTENT_STYLE_WARNING_CODES = {
     "paragraph_like_slide",
     "long_enumeration",
     "weak_slide_message",
+    "generic_content",
+    "missing_product_judgment",
+    "vague_action",
+    "prompt_keyword_repetition",
+    "weak_takeaway",
+    "instruction_leakage",
+    "risk_matrix_malformed_row",
+    "card_body_contains_subheadings",
+    "metric_explanation_contains_risk_governance",
+    "closing_action_not_executable",
 }
 LAYOUT_TEXT_LIMITS = {
     "title_slide": 125,
@@ -81,6 +91,123 @@ WEAK_MESSAGE_TITLES = {
     "流程",
     "指标",
     "风险",
+}
+GENERIC_CONTENT_PHRASES = {
+    "提升效率",
+    "降低风险",
+    "前置治理",
+    "完善机制",
+    "加强监控",
+    "优化体验",
+    "建立闭环",
+}
+PRODUCT_JUDGMENT_PHRASES = {
+    "只承诺",
+    "必须人工确认",
+    "人工确认",
+    "高风险动作必须",
+    "失败后回退",
+    "回退到人工",
+    "低权限任务优先试点",
+    "先判断",
+    "不能上线",
+    "可以上线",
+    "不上线",
+    "先试点",
+    "按角色授权",
+    "记录输入",
+    "记录工具调用",
+    "记录输出版本",
+    "权限确认",
+    "人工接管",
+    "失败回退",
+    "校验输出",
+    "验证结果",
+}
+MEASUREMENT_PHRASES = {
+    "如何衡量",
+    "按周统计",
+    "按日统计",
+    "按月统计",
+    "记录",
+    "统计",
+    "计算",
+    "衡量",
+    "观察",
+    "复盘",
+    "看板",
+    "命中率",
+    "成功率",
+    "转化率",
+}
+VAGUE_ACTION_PHRASES = {
+    "关注风险",
+    "理解边界",
+    "提升能力",
+    "学习技术边界",
+    "理解工作流",
+    "关注治理",
+}
+PROMPT_KEYWORD_REPETITION_TERMS = {
+    "技术边界",
+    "用户需求分析",
+    "工作流设计",
+    "评估指标",
+    "落地风险",
+}
+WEAK_TAKEAWAY_PHRASES = {
+    "总结前文",
+    "综合来看",
+    "总体来说",
+    "以上内容",
+    "最后总结",
+}
+INSTRUCTION_LEAKAGE_PHRASES = {
+    "把这一点转化为明确的下一步行动",
+    "明确下一步行动",
+    "本页必须",
+    "该页需要",
+    "内容合同",
+    "核心判断必须",
+    "可执行建议应该",
+    "产品经理要清楚ai agent需要理解的技术边界",
+    "产品经理要清楚 AI Agent 需要理解的技术边界",
+    "将用户要求转化为",
+    "根据用户要求",
+}
+RISK_GOVERNANCE_TERMS = {
+    "越权操作",
+    "模型幻觉",
+    "不可追溯",
+    "风险治理",
+    "用户过度信任",
+    "成本失控",
+    "治理建议",
+}
+WEAK_MITIGATION_PHRASES = {
+    "加强治理",
+    "完善机制",
+    "前置治理",
+    "加强监控",
+    "关注风险",
+}
+ACTION_PHRASES = {
+    "记录",
+    "限制",
+    "设置",
+    "要求",
+    "验证",
+    "统计",
+    "回退",
+    "标注",
+    "列出",
+    "拆",
+    "画",
+    "设计",
+    "选择",
+    "授权",
+    "确认",
+    "试点",
 }
 
 
@@ -458,6 +585,71 @@ def _looks_like_weak_slide_message(slide) -> bool:
     return False
 
 
+def _normalized_slide_text(slide) -> str:
+    parts = [slide.title]
+    parts.extend(element.text for element in _body_texts(slide))
+    return "\n".join(part for part in parts if part).strip()
+
+
+def _contains_any_phrase(text: str, phrases: set[str]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def _generic_phrase_hits(text: str) -> list[str]:
+    return [phrase for phrase in GENERIC_CONTENT_PHRASES if phrase in text]
+
+
+def _prompt_keyword_hits(text: str) -> list[str]:
+    return [phrase for phrase in PROMPT_KEYWORD_REPETITION_TERMS if phrase in text]
+
+
+def _looks_like_vague_action(text: str) -> bool:
+    lines = _semantic_lines(text)
+    return any(line in VAGUE_ACTION_PHRASES for line in lines)
+
+
+def _has_product_judgment(text: str) -> bool:
+    return _contains_any_phrase(text, PRODUCT_JUDGMENT_PHRASES | MEASUREMENT_PHRASES)
+
+
+def _instruction_leakage_hits(text: str) -> list[str]:
+    lowered = text.lower()
+    return [phrase for phrase in INSTRUCTION_LEAKAGE_PHRASES if phrase.lower() in lowered]
+
+
+def _has_action_phrase(text: str) -> bool:
+    return _contains_any_phrase(text, ACTION_PHRASES)
+
+
+def _looks_like_takeaway_risk_cell(text: str) -> bool:
+    normalized = text.strip()
+    if _text_length_score(normalized) < 12:
+        return False
+    takeaway_markers = ("要", "必须", "需要", "应该", "被约束", "前置", "设计阶段")
+    return "风险" in normalized and any(marker in normalized for marker in takeaway_markers)
+
+
+def _looks_like_subheading_stack(text: str) -> bool:
+    lines = _semantic_lines(text)
+    short_title_lines = [
+        line for line in lines if _text_length_score(line) <= 10 and not re.search(r"[。.!?；;:：]", line)
+    ]
+    if len(short_title_lines) >= 2 and len(lines) >= 2:
+        return True
+
+    if "/" in text or "／" in text:
+        segments = [
+            segment.strip(" /／")
+            for segment in re.split(r"[／/]", text)
+            if segment.strip(" /／")
+        ]
+        compact_segments = [segment for segment in segments if _text_length_score(segment) <= 10]
+        if len(compact_segments) >= 3:
+            return True
+
+    return False
+
+
 def _append_content_style_issues(deck: Deck, issues: list[QAIssue]) -> None:
     for slide in deck.slides:
         text_elements = _text_elements(slide)
@@ -537,8 +729,162 @@ def _append_content_style_issues(deck: Deck, issues: list[QAIssue]) -> None:
                         f"'{slide.title}'. Use a specific judgment or action-oriented "
                         "key message."
                     ),
+                    )
+                )
+
+
+def _append_anti_generic_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        combined_text = _normalized_slide_text(slide)
+        if not combined_text:
+            continue
+
+        instruction_hits = _instruction_leakage_hits(combined_text)
+        if instruction_hits:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="instruction_leakage",
+                    message=(
+                        f"Slide '{slide.slide_id}' contains prompt-like meta language such as "
+                        f"{', '.join(instruction_hits[:3])}. Rewrite it as audience-facing content."
+                    ),
                 )
             )
+
+        generic_hits = _generic_phrase_hits(combined_text)
+        if generic_hits and not _has_product_judgment(combined_text):
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="generic_content",
+                    message=(
+                        f"Slide '{slide.slide_id}' uses generic phrases like {', '.join(generic_hits[:3])} "
+                        "without a concrete product action or operating judgment."
+                    ),
+                )
+            )
+
+        keyword_hits = _prompt_keyword_hits(combined_text)
+        if len(keyword_hits) >= 3 and not _has_product_judgment(combined_text):
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="prompt_keyword_repetition",
+                    message=(
+                        f"Slide '{slide.slide_id}' repeats prompt keywords such as "
+                        f"{', '.join(keyword_hits[:4])} without concrete expansion."
+                    ),
+                )
+            )
+
+        if slide.layout in {"comparison_matrix", "two_column", "three_column", "four_cards", "process_flow", "metric_cards"}:
+            if not _has_product_judgment(combined_text):
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="missing_product_judgment",
+                        message=(
+                            f"Slide '{slide.slide_id}' explains concepts but does not state a clear product decision, "
+                            "boundary, control point, fallback rule, or measurement rule."
+                        ),
+                    )
+                )
+
+        if slide.layout in {"two_column", "three_column", "four_cards"}:
+            # Card layouts drift easily when the model compresses several mini-topics
+            # into one body. Warn early so retries preserve one card = one judgment.
+            stacked_elements = [
+                element.element_id
+                for element in _body_texts(slide)
+                if _looks_like_subheading_stack(element.text)
+            ]
+            if stacked_elements:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="card_body_contains_subheadings",
+                        message=(
+                            f"Slide '{slide.slide_id}' stacks mini-headings inside body elements "
+                            f"{', '.join(stacked_elements)}. Keep each card to one heading and one body."
+                        ),
+                    )
+                )
+
+        if slide.layout == "metric_cards":
+            governance_elements = [
+                element.element_id
+                for element in _body_texts(slide)
+                if _contains_any_phrase(element.text, RISK_GOVERNANCE_TERMS)
+                and not _contains_any_phrase(element.text, MEASUREMENT_PHRASES)
+            ]
+            if governance_elements:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="metric_explanation_contains_risk_governance",
+                        message=(
+                            f"Metric slide '{slide.slide_id}' uses governance or risk-list language in "
+                            f"{', '.join(governance_elements)} instead of explaining how the metric is measured."
+                        ),
+                    )
+                )
+
+        if slide.layout == "closing_slide":
+            vague_elements = [
+                element.element_id
+                for element in _body_texts(slide)
+                if _looks_like_vague_action(element.text)
+            ]
+            if vague_elements:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="vague_action",
+                        message=(
+                            f"Closing slide '{slide.slide_id}' contains vague action items in "
+                            f"{', '.join(vague_elements)}. Replace slogans with executable next steps."
+                        ),
+                    )
+                )
+
+            non_executable_elements = [
+                element.element_id
+                for element in _body_texts(slide)
+                if _instruction_leakage_hits(element.text) or not _has_action_phrase(element.text)
+            ]
+            if non_executable_elements:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="closing_action_not_executable",
+                        message=(
+                            f"Closing slide '{slide.slide_id}' has non-executable action text in "
+                            f"{', '.join(non_executable_elements)}. Use a concrete verb plus object."
+                        ),
+                    )
+                )
+
+        if slide.layout in {"key_takeaway", "closing_slide"}:
+            if not _has_product_judgment(combined_text) or _contains_any_phrase(combined_text, WEAK_TAKEAWAY_PHRASES):
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        code="weak_takeaway",
+                        message=(
+                            f"Slide '{slide.slide_id}' needs a stronger takeaway or tradeoff principle instead of a recap."
+                        ),
+                    )
+                )
 
 
 def _risk_matrix_parts(text: str) -> tuple[str, str, str]:
@@ -558,22 +904,48 @@ def _append_risk_matrix_semantic_issues(deck: Deck, issues: list[QAIssue]) -> No
         if slide.layout != "risk_matrix":
             continue
         for element in _body_texts(slide)[:4]:
-            _risk, _impact, mitigation = _risk_matrix_parts(element.text)
-            if mitigation:
-                continue
-            issues.append(
-                QAIssue(
-                    severity="warning",
-                    slide_id=slide.slide_id,
-                    element_id=element.element_id,
-                    code="risk_matrix_missing_mitigation",
-                    message=(
-                        f"Risk matrix row '{element.element_id}' on slide '{slide.slide_id}' "
-                        "is missing a clear mitigation. Each risk row should include risk, "
-                        "impact, and mitigation."
-                    ),
+            # This stays heuristic on purpose: we want actionable warnings for bad
+            # row semantics without turning content-quality misses into hard render failures.
+            risk, impact, mitigation = _risk_matrix_parts(element.text)
+            malformed_reasons: list[str] = []
+            if not risk:
+                malformed_reasons.append("missing risk")
+            elif _looks_like_takeaway_risk_cell(risk):
+                malformed_reasons.append("risk cell looks like a slide takeaway instead of a risk item")
+            if not impact or _text_length_score(impact) < 6:
+                malformed_reasons.append("impact is missing or too short")
+            if not mitigation:
+                malformed_reasons.append("mitigation is missing")
+            elif mitigation in WEAK_MITIGATION_PHRASES or not _has_action_phrase(mitigation):
+                malformed_reasons.append("mitigation is not a concrete action")
+
+            if malformed_reasons:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="risk_matrix_malformed_row",
+                        message=(
+                            f"Risk matrix row '{element.element_id}' on slide '{slide.slide_id}' is malformed: "
+                            f"{'; '.join(malformed_reasons)}."
+                        ),
+                    )
                 )
-            )
+            if not mitigation:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="risk_matrix_missing_mitigation",
+                        message=(
+                            f"Risk matrix row '{element.element_id}' on slide '{slide.slide_id}' "
+                            "is missing a clear mitigation. Each risk row should include risk, "
+                            "impact, and mitigation."
+                        ),
+                    )
+                )
 
 
 def _body_texts(slide) -> list[TextElement]:
@@ -680,6 +1052,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_risk_matrix_semantic_issues(deck, issues)
     _append_visual_preflight_issues(deck, issues)
     _append_content_style_issues(deck, issues)
+    _append_anti_generic_issues(deck, issues)
 
     for slide in deck.slides:
         total_element_area = sum(_bbox_area(element.bbox) for element in slide.elements)
