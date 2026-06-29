@@ -170,6 +170,61 @@ def _batch_artifact(long_plan, batch_id: str) -> BatchGenerationArtifact:
     )
 
 
+def _long_deck_ir_for_qa(long_plan) -> Deck:
+    slides: list[dict] = []
+    for section in long_plan.sections:
+        for local_index, slide_number in enumerate(range(section.start_slide, section.end_slide + 1)):
+            batch = next(
+                batch
+                for batch in long_plan.batches
+                if batch.start_slide <= slide_number <= batch.end_slide
+            )
+            layout = section.preferred_layouts[min(local_index, len(section.preferred_layouts) - 1)]
+            if slide_number == 1:
+                layout = "title_slide"
+            elif slide_number == long_plan.slide_count:
+                layout = "closing_slide"
+
+            title_prefix = "接下来：" if slide_number == batch.start_slide and slide_number != 1 else ""
+            body_prefix = "接下来承接上一批的判断。 " if slide_number == batch.start_slide and slide_number != 1 else ""
+            text_parts = []
+            if local_index < len(section.key_messages):
+                text_parts.append(section.key_messages[local_index])
+            else:
+                text_parts.append(section.key_questions[(local_index - len(section.key_messages)) % len(section.key_questions)])
+            if local_index == 0 and section.must_include:
+                text_parts.extend(section.must_include)
+            if slide_number == long_plan.slide_count:
+                text_parts.append("下一步：列出禁止清单，设计失败回退路径，并标注人工接管点。")
+            text_parts.append(f"Slide {slide_number} keeps the section on {section.title}.")
+
+            slides.append(
+                {
+                    "slide_id": f"slide_{slide_number:03d}",
+                    "title": f"{title_prefix}{section.title} {local_index + 1}",
+                    "layout": layout,
+                    "elements": [
+                        {
+                            "element_id": f"s{slide_number:03d}_e01",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.8, "width": 8.0, "height": 1.0},
+                            "text": body_prefix + " ".join(text_parts),
+                        }
+                    ],
+                }
+            )
+    return Deck.model_validate(
+        {
+            "deck_id": "generated_long_deck",
+            "title": long_plan.topic,
+            "theme_name": "clean_business",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": slides,
+        }
+    )
+
+
 def test_run_build_pipeline_accepted_outputs_generated_artifacts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
 
@@ -291,6 +346,29 @@ def test_run_build_pipeline_writes_optional_merged_long_deck_artifact(
     assert "generated_long_deck_ir" in _artifact_names(result)
     assert merged_artifact["slides"][0]["slide_id"] == "slide_001"
     assert merged_artifact["slides"][-1]["slide_id"] == "slide_030"
+
+
+def test_run_build_pipeline_writes_optional_long_deck_qa_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(), batch_size=10)
+    request = _request(tmp_path).model_copy(
+        update={
+            "long_deck_plan": long_plan,
+            "long_deck_ir": _long_deck_ir_for_qa(long_plan),
+            "long_deck_qa_enabled": True,
+        }
+    )
+
+    result = run_build_pipeline(object(), request)
+    qa_artifact = json.loads((tmp_path / "generated_long_deck_qa.json").read_text(encoding="utf-8"))
+
+    assert result.accepted is True
+    assert "generated_long_deck_qa" in _artifact_names(result)
+    assert qa_artifact["passed"] is True
+    assert qa_artifact["score"] >= 0.75
 
 
 def test_run_build_pipeline_defaults_to_deterministic_brief_and_plan(tmp_path: Path) -> None:

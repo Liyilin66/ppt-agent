@@ -23,8 +23,9 @@ from ppt_agent.generation import (
     generate_deck_with_quality_gate,
 )
 from ppt_agent.long_deck import merge_batch_deck_irs
+from ppt_agent.long_deck_qa import LongDeckQAReport, evaluate_long_deck_consistency
 from ppt_agent.load import load_patch, load_theme
-from ppt_agent.models import StrictModel
+from ppt_agent.models import Deck, StrictModel
 from ppt_agent.patch import (
     PatchResult,
     apply_patch,
@@ -52,6 +53,8 @@ class BuildPipelineRequest(StrictModel):
     long_deck_batch_size: int = Field(default=10, ge=1)
     batch_generation_request: BatchGenerationRequest | None = None
     long_deck_batch_artifacts: list[BatchGenerationArtifact] | None = None
+    long_deck_ir: Deck | None = None
+    long_deck_qa_enabled: bool = False
 
 
 class BuildArtifact(StrictModel):
@@ -200,6 +203,26 @@ def run_build_pipeline(
             use_deck_plan=False,
         )
 
+    long_deck_qa_report: LongDeckQAReport | None = None
+    if request.long_deck_qa_enabled:
+        if resolved_long_deck_plan is None:
+            raise ValueError("long_deck_qa_enabled requires long_deck_plan or long_deck_request.")
+        resolved_long_deck_ir = request.long_deck_ir or merged_long_deck
+        if resolved_long_deck_ir is None:
+            raise ValueError("long_deck_qa_enabled requires long_deck_ir or long_deck_batch_artifacts.")
+        long_deck_qa_report = _run_stage(
+            stage_observer,
+            started_at,
+            job_timeout_seconds,
+            "evaluate_long_deck_qa",
+            lambda: evaluate_long_deck_consistency(
+                resolved_long_deck_ir,
+                resolved_long_deck_plan,
+            ),
+            slide_count=resolved_long_deck_plan.slide_count,
+            use_deck_plan=False,
+        )
+
     generation_result = _run_stage(
         stage_observer,
         started_at,
@@ -267,6 +290,13 @@ def run_build_pipeline(
                 output_dir / "generated_long_deck_ir.json",
             )
             artifacts.append(_artifact("generated_long_deck_ir", merged_long_deck_path, "json"))
+
+        if long_deck_qa_report is not None:
+            long_deck_qa_path = write_model_json(
+                long_deck_qa_report,
+                output_dir / "generated_long_deck_qa.json",
+            )
+            artifacts.append(_artifact("generated_long_deck_qa", long_deck_qa_path, "json"))
 
         deck_path = write_model_json(generation_result.deck, output_dir / "generated_deck_ir.json")
         artifacts.append(_artifact("generated_deck_ir", deck_path, "json"))
