@@ -55,6 +55,8 @@ Patch 前后对比：
 
 ![Demo Patch Before After](patches/screenshots/patch_before_after.png)
 
+下面的 `--output-dir examples/demo_ai_agent_pm/output` 用于重新生成到单独目录，避免覆盖仓库里已提交的 demo artifacts。
+
 ## 重新生成
 
 需要服务端环境变量中有 `OPENAI_API_KEY`：

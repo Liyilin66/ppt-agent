@@ -1,6 +1,8 @@
 # ppt-agent
 
-`ppt-agent` 是一个 AI Presentation Agent：通过 `Deck IR`、QA gate、确定性 renderer 和结构化 Patch Edit，把用户需求生成可编辑 PPTX。
+`ppt-agent` is a local-first AI Presentation Agent that converts user requirements into editable PowerPoint decks through structured Deck IR, QA checks, deterministic PPTX rendering, and structured patch editing.
+
+`ppt-agent` 是一个本地优先的 AI Presentation Agent：通过 `Deck IR`、QA gate、确定性 renderer 和结构化 Patch Edit，把用户需求生成可编辑 PPTX。
 
 它的核心思路不是让大模型直接写 `.pptx`，而是让大模型只生成严格的 `Deck` 结构化 JSON；后续的 schema validation、质量检查、补丁修改和 PowerPoint 渲染都由确定性的 Python 代码完成。
 
@@ -47,7 +49,7 @@
 
 ## Current Limitations / 当前限制
 
-- 当前不是商业 SaaS。
+- 当前定位是本地优先 private beta / portfolio demo，不是托管产品。
 - 不支持登录。
 - 不支持多租户。
 - 不支持 RAG。
@@ -59,7 +61,6 @@
 - 不支持复杂品牌模板系统。
 - 不支持外部数据库或生产级托管。
 - 不集成 ppt-master runtime。
-- 当前目标是 local private beta / portfolio demo。
 
 ## Architecture Pipeline
 
@@ -74,6 +75,19 @@ flowchart TD
     G --> H["Editable PPTX + Artifacts"]
     H --> I["Structured Patch Edit"]
 ```
+
+## Portfolio Highlights
+
+- Schema-driven `Deck IR` with strict Pydantic validation.
+- Deterministic PPTX renderer that outputs editable PowerPoint elements.
+- Rule-based QA gate for content, layout, and visual-risk checks.
+- Structured patch edit for targeted post-generation updates.
+- FastAPI local job backend with artifact download and stage visibility.
+- Local artifacts and a reproducible demo with committed PPTX, QA, patch, and screenshot outputs.
+
+Resume line:
+
+> Built a local-first AI Presentation Agent that converts user requirements into editable PowerPoint decks using structured Deck IR, Pydantic validation, rule-based QA, deterministic PPTX rendering, and targeted patch editing.
 
 ## 快速开始
 
@@ -96,7 +110,7 @@ export OPENAI_API_KEY="..."
 uv run uvicorn ppt_agent.api:app --reload
 ```
 
-打开：
+默认打开：
 
 [http://127.0.0.1:8000](http://127.0.0.1:8000/)
 
@@ -183,6 +197,8 @@ Deck IR -> PPTX -> QA -> Patch 的闭环可以直接从官方 demo 截图里看�
 Patch 前后对比：
 
 ![Patch Before After](examples/demo_ai_agent_pm/patches/screenshots/patch_before_after.png)
+
+下面的命令把重新生成的结果写到 `examples/demo_ai_agent_pm/output/`，避免覆盖仓库里已提交的 demo artifacts。
 
 重新生成：
 
@@ -437,6 +453,24 @@ uv run python scripts/run_demo_pipeline.py
 ```
 
 该脚本会在 `examples/output/` 下写入示例 QA、patch 和 PPTX 产物。
+
+可选的 screenshot demo script：
+
+```bash
+uv run python scripts/generate_demo_screenshots.py --include-patch-demo
+```
+
+这个脚本只用于刷新 README 预览图，不属于主生成链路，也不要求 CI 或 runtime 依赖它。
+
+## Release Hygiene
+
+发布前检查见：
+
+```text
+docs/release_checklist.md
+```
+
+其中包含依赖校验、测试、敏感信息扫描、demo screenshots 校验和 example PPTX / patch report 检查。
 
 ## 设计原则
 

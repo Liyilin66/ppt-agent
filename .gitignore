@@ -15,6 +15,7 @@ env/
 .env.*
 *.egg-info/
 data/
+examples/demo_ai_agent_pm/output/
 
 .DS_Store
 

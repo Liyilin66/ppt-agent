@@ -191,10 +191,9 @@ Patch 文件是合法 JSON，但不符合 `SlidePatch` schema。`patch_report.js
 
 ## 当前 private beta 边界
 
-- 当前不是商业 SaaS。
+- 当前定位是本地优先 private beta / portfolio demo，不是托管产品。
 - 不支持登录、多租户、权限系统或云端托管。
 - 不支持 RAG。
 - 不支持 image-to-PPT。
 - 不支持 30/50/100 页 batch generation。
 - 不支持复杂品牌模板系统。
-- 当前目标是 local private beta / portfolio demo。
