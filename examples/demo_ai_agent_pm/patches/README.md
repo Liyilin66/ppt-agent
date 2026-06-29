@@ -28,7 +28,7 @@
 uv run ppt-agent patch examples/demo_ai_agent_pm/generated_deck_ir.json \
   --patch examples/demo_ai_agent_pm/patches/sample_patch.json \
   --output examples/demo_ai_agent_pm/patched_deck_ir.json \
-  --result-output examples/demo_ai_agent_pm/patch_result.json
+  --result-output examples/demo_ai_agent_pm/patch_report.json
 
 uv run ppt-agent render examples/demo_ai_agent_pm/patched_deck_ir.json \
   --theme examples/theme.json \

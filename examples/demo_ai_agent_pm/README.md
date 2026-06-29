@@ -19,9 +19,12 @@
 - `generated_deck_brief.json`
 - `generated_deck_plan.json`
 - `generated_deck_ir.json`
+- `patchable_elements.json`
 - `generated_qa_report.json`
 - `generated_attempts.json`
 - `generated_deck.pptx`
+- `patch_report.json`
+- `patched_deck.pptx`
 
 这些产物用于 GitHub / 简历 / private beta 演示。由于 LLM 输出可能随模型版本变化，重新运行同一输入不保证字词完全一致；但本项目的 DeckBrief 快速路径、DeckPlan、QA、renderer 和 patch 逻辑都保持可复现、可检查。
 
@@ -49,5 +52,7 @@ uv run ppt-agent build \
 ## Patch demo
 
 `patches/sample_patch.json` 演示如何只修改封面副标题，而不是重新生成整份 PPT。
+
+如果需要自己写 patch，先看 `patchable_elements.json`。它列出了每个 slide 的可 patch 元素、文本预览和支持的操作。
 
 详见 `patches/README.md`。

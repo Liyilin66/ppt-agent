@@ -6,9 +6,11 @@ from fastapi.testclient import TestClient
 import ppt_agent.api as api
 from ppt_agent.generation import GenerationAttempt, GenerationResult
 from ppt_agent.job_store import JobStore
-from ppt_agent.load import load_deck
+from ppt_agent.load import load_deck, load_patch
+from ppt_agent.patch import build_patchable_elements_report
 from ppt_agent.pipeline import BuildArtifact, BuildPipelineResult
 from ppt_agent.qa import analyze_deck
+from ppt_agent.patch import apply_patch
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -52,11 +54,16 @@ def _fake_pipeline_result(output_dir: Path, accepted: bool = True) -> BuildPipel
     generation_result = _generation_result(accepted=accepted)
 
     deck_path = output_dir / "generated_deck_ir.json"
+    patchable_elements_path = output_dir / "patchable_elements.json"
     qa_path = output_dir / "generated_qa_report.json"
     attempts_path = output_dir / "generated_attempts.json"
     pptx_path = output_dir / "generated_deck.pptx"
 
     deck_path.write_text(generation_result.deck.model_dump_json(indent=2), encoding="utf-8")
+    patchable_elements_path.write_text(
+        build_patchable_elements_report(generation_result.deck).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
     qa_path.write_text(generation_result.qa_report.model_dump_json(indent=2), encoding="utf-8")
     attempts_path.write_text(generation_result.model_dump_json(indent=2), encoding="utf-8")
     pptx_path.write_bytes(b"fake pptx")
@@ -65,6 +72,7 @@ def _fake_pipeline_result(output_dir: Path, accepted: bool = True) -> BuildPipel
         generation_result=generation_result,
         artifacts=[
             BuildArtifact(name="generated_deck_ir", kind="json", path=deck_path),
+            BuildArtifact(name="patchable_elements", kind="json", path=patchable_elements_path),
             BuildArtifact(name="generated_qa_report", kind="json", path=qa_path),
             BuildArtifact(name="generated_attempts", kind="json", path=attempts_path),
             BuildArtifact(name="generated_deck", kind="pptx", path=pptx_path),
@@ -72,6 +80,41 @@ def _fake_pipeline_result(output_dir: Path, accepted: bool = True) -> BuildPipel
         accepted=accepted,
         status_code=0 if accepted else 2,
         messages=[] if accepted else ["Generated Deck IR did not meet the QA score gate."],
+    )
+
+
+def _fake_pipeline_result_with_patch(output_dir: Path, accepted: bool = True) -> BuildPipelineResult:
+    result = _fake_pipeline_result(output_dir, accepted=accepted)
+    deck = result.generation_result.deck
+    patch = load_patch(EXAMPLES_DIR / "sample_patch.json")
+    patch_result = apply_patch(deck, patch)
+
+    patched_deck_path = output_dir / "patched_deck_ir.json"
+    patch_report_path = output_dir / "patch_report.json"
+    patched_pptx_path = output_dir / "patched_deck.pptx"
+
+    patched_deck_path.write_text(patch_result.deck.model_dump_json(indent=2), encoding="utf-8")
+    patch_report_path.write_text(
+        patch_result.model_copy(
+            update={
+                "input_patch_path": str(EXAMPLES_DIR / "sample_patch.json"),
+                "output_pptx_path": str(patched_pptx_path),
+            }
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    patched_pptx_path.write_bytes(b"fake patched pptx")
+
+    return result.model_copy(
+        update={
+            "patch_result": patch_result,
+            "artifacts": [
+                *result.artifacts,
+                BuildArtifact(name="patched_deck_ir", kind="json", path=patched_deck_path),
+                BuildArtifact(name="patch_report", kind="json", path=patch_report_path),
+                BuildArtifact(name="patched_deck", kind="pptx", path=patched_pptx_path),
+            ],
+        }
     )
 
 
@@ -145,6 +188,8 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert "正在快速规划大纲" in response.text
     assert "正在生成 Deck：第" in response.text
     assert "已生成，但未通过 QA" in response.text
+    assert "已生成，但 Patch 需要修正" in response.text
+    assert "已生成，但 QA 和 Patch 仍需修正" in response.text
     assert "任务运行时间较长，请检查后端日志" in response.text
 
 
@@ -235,6 +280,7 @@ def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_
     assert "QA score gate" in body["error_message"]
     assert {artifact["name"] for artifact in artifacts} >= {
         "generated_deck_ir",
+        "patchable_elements",
         "generated_qa_report",
         "generated_attempts",
         "generated_deck",
@@ -321,11 +367,41 @@ def test_artifacts_can_be_listed(tmp_path: Path, monkeypatch) -> None:
     artifacts = response.json()["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {
         "generated_deck_ir",
+        "patchable_elements",
         "generated_qa_report",
         "generated_attempts",
         "generated_deck",
     }
     assert all(artifact["download_url"].startswith("/api/artifacts/") for artifact in artifacts)
+
+
+def test_artifacts_include_patch_outputs_when_patch_succeeds(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_build_pipeline(model, request, **kwargs):
+        return _fake_pipeline_result_with_patch(request.output_dir, accepted=True)
+
+    monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
+    client = _client(tmp_path)
+    payload = {
+        **_job_payload(),
+        "patch_path": str(EXAMPLES_DIR / "sample_patch.json"),
+    }
+
+    job_id = client.post("/api/jobs", json=payload).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+
+    assert body["status"] == "succeeded"
+    assert body["accepted"] is True
+    assert {artifact["name"] for artifact in artifacts} >= {
+        "generated_deck_ir",
+        "patchable_elements",
+        "patch_report",
+        "patched_deck",
+        "patched_deck_ir",
+    }
 
 
 def test_registered_artifact_can_be_downloaded(tmp_path: Path, monkeypatch) -> None:

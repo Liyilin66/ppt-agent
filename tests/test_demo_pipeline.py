@@ -26,8 +26,9 @@ def test_run_demo_pipeline_generates_expected_outputs(tmp_path: Path) -> None:
 
     expected_files = {
         "qa_report": "qa_report.json",
+        "patchable_elements": "patchable_elements.json",
         "sample_deck": "sample_deck.pptx",
-        "patch_result": "patch_result.json",
+        "patch_report": "patch_report.json",
         "patched_qa_report": "patched_qa_report.json",
         "patched_sample_deck": "patched_sample_deck.pptx",
     }
@@ -40,13 +41,16 @@ def test_run_demo_pipeline_generates_expected_outputs(tmp_path: Path) -> None:
         assert path.stat().st_size > 0
 
     qa_report = json.loads((tmp_path / "qa_report.json").read_text(encoding="utf-8"))
-    patch_result = json.loads((tmp_path / "patch_result.json").read_text(encoding="utf-8"))
+    patchable_elements = json.loads((tmp_path / "patchable_elements.json").read_text(encoding="utf-8"))
+    patch_report = json.loads((tmp_path / "patch_report.json").read_text(encoding="utf-8"))
     patched_qa_report = json.loads((tmp_path / "patched_qa_report.json").read_text(encoding="utf-8"))
 
     assert qa_report["deck_id"] == "sample_clean_business_deck"
-    assert patch_result["applied_count"] == 3
-    assert patch_result["issues"] == []
-    assert patch_result["deck"]["slides"][0]["elements"][0]["text"] == "Updated Q3 Operating Review"
+    assert patchable_elements["slides"][0]["slide_id"] == "slide_001"
+    assert patchable_elements["slides"][0]["elements"][0]["patchable_operations"]
+    assert patch_report["applied_count"] == 3
+    assert patch_report["issues"] == []
+    assert patch_report["deck"]["slides"][0]["elements"][0]["text"] == "Updated Q3 Operating Review"
     assert patched_qa_report["deck_id"] == "sample_clean_business_deck"
 
     assert len(Presentation(tmp_path / "sample_deck.pptx").slides) == 3

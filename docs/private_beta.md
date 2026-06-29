@@ -61,11 +61,12 @@ data/jobs/<job_id>/
 - `generated_deck_brief.json`：需求解析结果和 brief 来源。
 - `generated_deck_plan.json`：DeckPlan、slide role、layout 建议和叙事顺序。
 - `generated_deck_ir.json`：通过 Pydantic 校验的 Deck IR。
+- `patchable_elements.json`：从 Deck IR 派生的可 patch 元素清单，包含 `slide_id`、`slide_index`、`element_id`、`type`、`text_preview` 和支持的 patch 操作。
 - `generated_qa_report.json`：QA 分数和 issue 列表。
 - `generated_attempts.json`：生成尝试、QA 和 gate 结果。
 - `generated_deck.pptx`：可编辑 PowerPoint。
 - `patched_deck_ir.json`：应用 patch 后的 Deck IR。
-- `patch_result.json`：patch 应用数量和问题。
+- `patch_report.json`：patch 是否成功、应用数量、issues、changed elements、输入 patch 路径和输出 PPTX 路径。
 - `patched_deck.pptx`：patch 后的可编辑 PowerPoint。
 
 ## QA failed 但 PPTX 已生成是什么意思
@@ -104,6 +105,19 @@ Patch Edit 使用结构化 JSON，不是自然语言指令。当前支持：
 ```
 
 Web UI 中填写 patch 路径后，pipeline 会先生成 deck，再把 patch 应用到 Deck IR，最后重新渲染 patch 后的 PPTX。
+
+## Patch Edit 推荐流程
+
+1. 先生成 deck。
+2. 打开 `generated_deck_ir.json` 或 `patchable_elements.json` 找到目标 `slide_id` 和 `element_id`。
+3. 编写 `sample_patch.json`。
+4. 在 Web UI 的 `patch_path` 中填写 patch 文件路径。
+5. 重新 build，或使用 CLI 单独应用 patch。
+6. 下载：
+   - `patched_deck.pptx`
+   - `patch_report.json`
+
+`patchable_elements.json` 的作用是降低“看不到 element_id 就没法写 patch”的工程门槛。它不改 Deck IR schema，只是从已验证 Deck IR 派生出来的索引文件。
 
 ## 常见错误
 
@@ -145,12 +159,35 @@ PPTX 已生成，但 QA 分数低于 `min_qa_score`。常见原因：
 
 ### invalid patch json
 
-Patch 文件不是合法 JSON，或不符合 `SlidePatch` schema。确认：
+Patch 文件不是合法 JSON。`patch_report.json` 或 job `error_message` 会明确提示 `INVALID_PATCH_JSON`。
+
+### patch schema validation failed
+
+Patch 文件是合法 JSON，但不符合 `SlidePatch` schema。`patch_report.json` 或 job `error_message` 会明确提示 `PATCH_SCHEMA_VALIDATION_FAILED`。
+
+确认：
 
 - 文件后缀是 `.json`。
 - 顶层包含 `operations` 数组。
 - 每个 operation 的 `op` 是当前支持的类型。
 - `slide_id` 和 `element_id` 存在于目标 Deck IR。
+
+### target element not found
+
+目标 `element_id` 不在对应 `slide_id` 下。`patch_report.json` 会返回 `ELEMENT_NOT_FOUND`。
+
+先检查 `patchable_elements.json`，不要手猜 `element_id`。
+
+### unsupported operation
+
+当前 patch schema 只支持：
+
+- `update_text`
+- `move_element`
+- `resize_element`
+- `update_shape_style`
+
+如果 operation 类型不在这个集合内，patch 无法通过 schema validation。
 
 ## 当前 private beta 边界
 

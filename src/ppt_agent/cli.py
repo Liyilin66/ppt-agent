@@ -149,7 +149,7 @@ def _cmd_qa(args: argparse.Namespace) -> int:
 def _cmd_patch(args: argparse.Namespace) -> int:
     deck = load_deck(args.deck)
     patch = load_patch(args.patch)
-    result = apply_patch(deck, patch)
+    result = apply_patch(deck, patch).model_copy(update={"input_patch_path": str(args.patch)})
 
     output_path = write_model_json(result.deck, args.output)
     print(output_path)

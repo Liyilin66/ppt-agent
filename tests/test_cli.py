@@ -375,8 +375,9 @@ def test_build_cli_with_patch_outputs_original_and_patched_files(
     assert (tmp_path / "generated_qa_report.json").exists()
     assert (tmp_path / "generated_attempts.json").exists()
     assert (tmp_path / "generated_deck.pptx").exists()
+    assert (tmp_path / "patchable_elements.json").exists()
     assert (tmp_path / "patched_deck_ir.json").exists()
-    assert (tmp_path / "patch_result.json").exists()
+    assert (tmp_path / "patch_report.json").exists()
     assert (tmp_path / "patched_deck.pptx").exists()
 
 
@@ -411,8 +412,9 @@ def test_build_cli_with_patch_issue_outputs_files_and_returns_2(
     assert (tmp_path / "generated_qa_report.json").exists()
     assert (tmp_path / "generated_attempts.json").exists()
     assert (tmp_path / "generated_deck.pptx").exists()
+    assert (tmp_path / "patchable_elements.json").exists()
     assert (tmp_path / "patched_deck_ir.json").exists()
-    result = json.loads((tmp_path / "patch_result.json").read_text(encoding="utf-8"))
+    result = json.loads((tmp_path / "patch_report.json").read_text(encoding="utf-8"))
     assert result["issues"][0]["code"] == "SLIDE_NOT_FOUND"
     assert (tmp_path / "patched_deck.pptx").exists()
 
@@ -486,7 +488,7 @@ def test_patch_cli_with_issue_returns_2_and_outputs_result(tmp_path: Path) -> No
         encoding="utf-8",
     )
     output_path = tmp_path / "patched_deck_ir.json"
-    result_path = tmp_path / "patch_result.json"
+    result_path = tmp_path / "patch_report.json"
 
     status = main(
         [
@@ -505,3 +507,5 @@ def test_patch_cli_with_issue_returns_2_and_outputs_result(tmp_path: Path) -> No
     assert output_path.exists()
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["issues"][0]["code"] == "SLIDE_NOT_FOUND"
+    assert result["accepted"] is False
+    assert result["success"] is False

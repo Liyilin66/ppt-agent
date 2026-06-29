@@ -4,7 +4,7 @@ from pptx import Presentation
 
 from ppt_agent.load import load_deck, load_patch, load_theme
 from ppt_agent.models import ShapeElement, TextElement
-from ppt_agent.patch import SlidePatch, apply_patch
+from ppt_agent.patch import SlidePatch, apply_patch, build_patchable_elements_report
 from ppt_agent.renderer import render_deck_to_pptx
 
 
@@ -38,6 +38,11 @@ def test_apply_patch_returns_new_deck_without_mutating_original() -> None:
     assert result.deck is not deck
     assert result.applied_count == 3
     assert result.issues == []
+    assert result.accepted is True
+    assert result.success is True
+    assert result.patch_id == "sample_patch_001"
+    assert len(result.operations) == 3
+    assert len(result.changed_elements) == 3
     assert _element(deck, "slide_001", "s1_title").text == original_title
     assert _element(result.deck, "slide_001", "s1_title").text == "Updated Q3 Operating Review"
 
@@ -160,6 +165,8 @@ def test_missing_element_id_records_issue() -> None:
     assert result.applied_count == 0
     assert result.issues[0].code == "ELEMENT_NOT_FOUND"
     assert "missing_element" in result.issues[0].message
+    assert result.accepted is False
+    assert result.success is False
 
 
 def test_update_text_on_shape_element_records_type_issue() -> None:
@@ -219,3 +226,52 @@ def test_patched_deck_can_render_to_pptx(tmp_path: Path) -> None:
     assert output_path.exists()
     presentation = Presentation(output_path)
     assert len(presentation.slides) == len(result.deck.slides)
+
+
+def test_patchable_elements_report_lists_patchable_text_and_shape_fields() -> None:
+    deck = _sample_deck()
+
+    report = build_patchable_elements_report(deck)
+
+    assert len(report.slides) == 3
+    first_slide = report.slides[0]
+    assert first_slide.slide_id == "slide_001"
+    assert first_slide.slide_index == 1
+    assert first_slide.title == "Q3 Operating Review"
+    title = next(element for element in first_slide.elements if element.element_id == "s1_title")
+    accent = next(element for element in first_slide.elements if element.element_id == "s1_accent_bar")
+    assert title.type == "text"
+    assert title.text_preview == "Q3 Operating Review"
+    assert title.patchable_operations == ["update_text", "move_element", "resize_element"]
+    assert accent.type == "shape"
+    assert accent.text_preview is None
+    assert accent.patchable_operations == ["move_element", "resize_element", "update_shape_style"]
+
+
+def test_patch_result_includes_changed_elements_before_and_after() -> None:
+    deck = _sample_deck()
+    patch = SlidePatch.model_validate(
+        {
+            "patch_id": "subtitle_patch",
+            "operations": [
+                {
+                    "op": "update_text",
+                    "slide_id": "slide_001",
+                    "element_id": "s1_subtitle",
+                    "text": "Updated subtitle",
+                }
+            ]
+        }
+    )
+
+    result = apply_patch(deck, patch)
+
+    assert result.applied_count == 1
+    assert result.issues == []
+    assert result.accepted is True
+    assert result.changed_elements[0].slide_id == "slide_001"
+    assert result.changed_elements[0].element_id == "s1_subtitle"
+    assert result.changed_elements[0].operation == "update_text"
+    assert result.changed_elements[0].before == "A simple Slide IR sample for milestone one"
+    assert result.changed_elements[0].after == "Updated subtitle"
+    assert result.generated_at is not None

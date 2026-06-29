@@ -1,0 +1,814 @@
+{
+  "patch_id": "demo_ai_agent_pm_update_cover_subtitle",
+  "accepted": true,
+  "success": true,
+  "deck": {
+    "deck_id": "generated_ai_agent",
+    "title": "AI 产品经理如何设计 Agent 产品",
+    "theme_name": "clean_business",
+    "canvas_width_in": 13.333,
+    "canvas_height_in": 7.5,
+    "slides": [
+      {
+        "slide_id": "slide_001",
+        "title": "AI 产品经理如何设计 Agent 产品",
+        "layout": "title_slide",
+        "elements": [
+          {
+            "element_id": "s1_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF9F8",
+              "stroke_color": "#D7ECEA",
+              "stroke_width_pt": 0.5
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s1_title",
+            "type": "text",
+            "bbox": {
+              "x": 1.1,
+              "y": 1.6,
+              "width": 10.8,
+              "height": 0.9
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 34.0,
+              "color": "#123B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "AI 产品经理如何设计 Agent 产品"
+          },
+          {
+            "element_id": "s1_subtitle",
+            "type": "text",
+            "bbox": {
+              "x": 1.12,
+              "y": 2.75,
+              "width": 10.6,
+              "height": 0.6
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 20.0,
+              "color": "#2F5F5D",
+              "bold": false,
+              "italic": false
+            },
+            "text": "从需求到工作流：用边界、指标和风险控制设计可落地 Agent"
+          },
+          {
+            "element_id": "s1_focus",
+            "type": "text",
+            "bbox": {
+              "x": 1.15,
+              "y": 4.15,
+              "width": 10.9,
+              "height": 1.1
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#1F4E4C",
+              "bold": true,
+              "italic": false
+            },
+            "text": "本分享聚焦：技术边界、用户需求分析、工作流设计、评估指标、落地风险"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_002",
+        "title": "责任边界先被重新定义",
+        "layout": "comparison_matrix",
+        "elements": [
+          {
+            "element_id": "s2_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF9F8",
+              "stroke_color": "#D7ECEA",
+              "stroke_width_pt": 0.5
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s2_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.55,
+              "width": 11.8,
+              "height": 0.55
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 28.0,
+              "color": "#123B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "责任边界先被重新定义"
+          },
+          {
+            "element_id": "s2_left",
+            "type": "text",
+            "bbox": {
+              "x": 1.05,
+              "y": 1.65,
+              "width": 5.25,
+              "height": 3.4
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#244A49",
+              "bold": false,
+              "italic": false
+            },
+            "text": "传统软件产品\n用户发起明确操作\n系统按规则返回结果\n产品经理主要定义页面、流程与权限"
+          },
+          {
+            "element_id": "s2_right",
+            "type": "text",
+            "bbox": {
+              "x": 7.0,
+              "y": 1.65,
+              "width": 5.25,
+              "height": 3.4
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#244A49",
+              "bold": false,
+              "italic": false
+            },
+            "text": "AI Agent 产品\nAgent 拆解目标并调用工具\n结果受模型、数据与环境共同影响\n产品经理必须定义技术边界、干预点与失败处理"
+          },
+          {
+            "element_id": "s2_rule",
+            "type": "text",
+            "bbox": {
+              "x": 1.05,
+              "y": 5.9,
+              "width": 11.2,
+              "height": 0.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#0F6B66",
+              "bold": true,
+              "italic": false
+            },
+            "text": "判断规则：先界定 Agent 可以自主决策什么，再设计用户确认、回退与审计机制。"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_003",
+        "title": "技术边界决定产品承诺",
+        "layout": "three_column",
+        "elements": [
+          {
+            "element_id": "s003_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF8F7",
+              "stroke_color": null,
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s003_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.55,
+              "width": 11.8,
+              "height": 0.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 28.0,
+              "color": "#123B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "技术边界决定产品承诺"
+          },
+          {
+            "element_id": "s003_col_1",
+            "type": "text",
+            "bbox": {
+              "x": 0.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "模型能力\n理解 Agent 的推理、记忆、多轮上下文与幻觉边界。"
+          },
+          {
+            "element_id": "s003_col_2",
+            "type": "text",
+            "bbox": {
+              "x": 4.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "工具边界\n明确 API、权限、数据可用性与执行失败的处理方式。"
+          },
+          {
+            "element_id": "s003_col_3",
+            "type": "text",
+            "bbox": {
+              "x": 8.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "产品承诺\n产品经理只承诺可验证、可回退、可监控的结果。"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_004",
+        "title": "需求分析要落到可执行任务",
+        "layout": "three_column",
+        "elements": [
+          {
+            "element_id": "s004_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF8F7",
+              "stroke_color": null,
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s004_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.55,
+              "width": 11.8,
+              "height": 0.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 28.0,
+              "color": "#123B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "需求分析要落到可执行任务"
+          },
+          {
+            "element_id": "s004_col_1",
+            "type": "text",
+            "bbox": {
+              "x": 0.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "用户场景\n识别高频、耗时、规则明确且结果可验收的工作。"
+          },
+          {
+            "element_id": "s004_col_2",
+            "type": "text",
+            "bbox": {
+              "x": 4.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "任务拆解\n把意图拆成输入、约束、工具调用与交付物。"
+          },
+          {
+            "element_id": "s004_col_3",
+            "type": "text",
+            "bbox": {
+              "x": 8.95,
+              "y": 1.75,
+              "width": 3.45,
+              "height": 4.65
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 18.0,
+              "color": "#174E4C",
+              "bold": false,
+              "italic": false
+            },
+            "text": "验收标准\n定义准确率、时延、人工介入率与落地风险阈值。"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_005",
+        "title": "工作流设计决定 Agent 可控性",
+        "layout": "process_flow",
+        "elements": [
+          {
+            "element_id": "s005_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#F1FBFA",
+              "stroke_color": "#D6EEEC",
+              "stroke_width_pt": 1.0
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s005_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.7,
+              "y": 0.45,
+              "width": 11.9,
+              "height": 0.55
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 26.0,
+              "color": "#153B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "工作流设计决定 Agent 可控性"
+          },
+          {
+            "element_id": "s005_step_1",
+            "type": "text",
+            "bbox": {
+              "x": 0.9,
+              "y": 1.65,
+              "width": 2.6,
+              "height": 1.35
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "任务触发\n明确用户意图、输入来源和授权条件。"
+          },
+          {
+            "element_id": "s005_step_2",
+            "type": "text",
+            "bbox": {
+              "x": 3.75,
+              "y": 1.65,
+              "width": 2.6,
+              "height": 1.35
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "计划拆解\n把目标拆成可验证的子任务和依赖关系。"
+          },
+          {
+            "element_id": "s005_step_3",
+            "type": "text",
+            "bbox": {
+              "x": 6.6,
+              "y": 1.65,
+              "width": 2.6,
+              "height": 1.35
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "工具调用\n定义工具边界、失败回退和人工确认点。"
+          },
+          {
+            "element_id": "s005_step_4",
+            "type": "text",
+            "bbox": {
+              "x": 9.45,
+              "y": 1.65,
+              "width": 2.8,
+              "height": 1.35
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "结果交付\n输出要可追溯、可编辑、可中止。"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_006",
+        "title": "评估指标要同时看效果与风险",
+        "layout": "metric_cards",
+        "elements": [
+          {
+            "element_id": "s006_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#F1FBFA",
+              "stroke_color": "#D6EEEC",
+              "stroke_width_pt": 1.0
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s006_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.7,
+              "y": 0.45,
+              "width": 11.9,
+              "height": 0.55
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 26.0,
+              "color": "#153B3A",
+              "bold": true,
+              "italic": false
+            },
+            "text": "评估指标要同时看效果与风险"
+          },
+          {
+            "element_id": "s006_metric_1",
+            "type": "text",
+            "bbox": {
+              "x": 0.85,
+              "y": 1.55,
+              "width": 2.75,
+              "height": 1.5
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "任务成功率\n衡量 AI Agent 是否完成真实业务目标。"
+          },
+          {
+            "element_id": "s006_metric_2",
+            "type": "text",
+            "bbox": {
+              "x": 3.9,
+              "y": 1.55,
+              "width": 2.75,
+              "height": 1.5
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "干预成本\n记录产品经理需设计的确认、纠错与接管频率。"
+          },
+          {
+            "element_id": "s006_metric_3",
+            "type": "text",
+            "bbox": {
+              "x": 6.95,
+              "y": 1.55,
+              "width": 2.75,
+              "height": 1.5
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "技术边界命中\n监控模型、工具和权限限制导致的失败。"
+          },
+          {
+            "element_id": "s006_metric_4",
+            "type": "text",
+            "bbox": {
+              "x": 10.0,
+              "y": 1.55,
+              "width": 2.55,
+              "height": 1.5
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#244947",
+              "bold": false,
+              "italic": false
+            },
+            "text": "落地风险\n跟踪错误执行、越权操作和用户信任损耗。"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_007",
+        "title": "落地风险需要前置治理",
+        "layout": "risk_matrix",
+        "elements": [
+          {
+            "element_id": "s007_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF9F8",
+              "stroke_color": null,
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s007_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.7,
+              "y": 0.45,
+              "width": 11.9,
+              "height": 0.6
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 28.0,
+              "color": "#123C45",
+              "bold": true,
+              "italic": false
+            },
+            "text": "落地风险需要前置治理"
+          },
+          {
+            "element_id": "s007_risk_01",
+            "type": "text",
+            "bbox": {
+              "x": 0.85,
+              "y": 1.55,
+              "width": 3.6,
+              "height": 4.6
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "风险：AI Agent 越权调用工具\n影响：误操作业务系统或泄露数据\n缓解：按角色授权，关键动作二次确认"
+          },
+          {
+            "element_id": "s007_risk_02",
+            "type": "text",
+            "bbox": {
+              "x": 4.85,
+              "y": 1.55,
+              "width": 3.6,
+              "height": 4.6
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "风险：技术边界被产品承诺放大\n影响：用户预期超过模型稳定能力\n缓解：明确可做、不可做与降级路径"
+          },
+          {
+            "element_id": "s007_risk_03",
+            "type": "text",
+            "bbox": {
+              "x": 8.85,
+              "y": 1.55,
+              "width": 3.6,
+              "height": 4.6
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 16.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "风险：缺少可追溯决策记录\n影响：问题复盘依赖人工猜测\n缓解：记录输入、工具调用与输出版本"
+          }
+        ]
+      },
+      {
+        "slide_id": "slide_008",
+        "title": "下一步从可执行判断开始",
+        "layout": "closing_slide",
+        "elements": [
+          {
+            "element_id": "s008_bg",
+            "type": "shape",
+            "bbox": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 13.333,
+              "height": 7.5
+            },
+            "style": {
+              "fill_color": "#EEF9F8",
+              "stroke_color": null,
+              "stroke_width_pt": null
+            },
+            "shape": "rectangle"
+          },
+          {
+            "element_id": "s008_title",
+            "type": "text",
+            "bbox": {
+              "x": 0.8,
+              "y": 0.65,
+              "width": 11.7,
+              "height": 0.75
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 30.0,
+              "color": "#123C45",
+              "bold": true,
+              "italic": false
+            },
+            "text": "下一步从可执行判断开始"
+          },
+          {
+            "element_id": "s008_action_01",
+            "type": "text",
+            "bbox": {
+              "x": 1.0,
+              "y": 2.0,
+              "width": 3.4,
+              "height": 2.2
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 17.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "先界定任务\n产品经理先判断 Agent 是否真能减少人工决策成本。"
+          },
+          {
+            "element_id": "s008_action_02",
+            "type": "text",
+            "bbox": {
+              "x": 4.95,
+              "y": 2.0,
+              "width": 3.4,
+              "height": 2.2
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 17.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "再验证边界\n用小样本测试能力上限、失败模式和人工接管条件。"
+          },
+          {
+            "element_id": "s008_action_03",
+            "type": "text",
+            "bbox": {
+              "x": 8.9,
+              "y": 2.0,
+              "width": 3.4,
+              "height": 2.2
+            },
+            "style": {
+              "font_family": "Microsoft YaHei",
+              "font_size_pt": 17.0,
+              "color": "#1F4D55",
+              "bold": false,
+              "italic": false
+            },
+            "text": "最后做闭环\n把用户需求分析、工作流设计和评估指标接入迭代。"
+          }
+        ]
+      }
+    ]
+  },
+  "applied_count": 1,
+  "issues": [],
+  "operations": [
+    {
+      "op": "update_text",
+      "slide_id": "slide_001",
+      "element_id": "s1_subtitle",
+      "text": "从需求到工作流：用边界、指标和风险控制设计可落地 Agent"
+    }
+  ],
+  "changed_elements": [
+    {
+      "slide_id": "slide_001",
+      "element_id": "s1_subtitle",
+      "operation": "update_text",
+      "before": "核心不是包装能力，而是定义可交付的技术边界与责任边界",
+      "after": "从需求到工作流：用边界、指标和风险控制设计可落地 Agent"
+    }
+  ],
+  "input_patch_path": "examples/demo_ai_agent_pm/patches/sample_patch.json",
+  "output_pptx_path": "examples/demo_ai_agent_pm/patched_deck.pptx",
+  "generated_at": "2026-06-29T11:54:48+00:00"
+}

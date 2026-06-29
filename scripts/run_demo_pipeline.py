@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ppt_agent.export import write_model_json
 from ppt_agent.load import load_deck, load_patch, load_theme
-from ppt_agent.patch import apply_patch
+from ppt_agent.patch import apply_patch, build_patchable_elements_report
 from ppt_agent.qa import analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
 
@@ -22,6 +22,10 @@ def run_demo_pipeline(
 
     qa_report = analyze_deck(deck, theme)
     qa_report_path = write_model_json(qa_report, output_path / "qa_report.json")
+    patchable_elements_path = write_model_json(
+        build_patchable_elements_report(deck),
+        output_path / "patchable_elements.json",
+    )
 
     sample_deck_path = render_deck_to_pptx(
         deck,
@@ -30,8 +34,19 @@ def run_demo_pipeline(
         assets_dir=examples_path,
     )
 
-    patch_result = apply_patch(deck, patch)
-    patch_result_path = write_model_json(patch_result, output_path / "patch_result.json")
+    patched_sample_deck_path = render_deck_to_pptx(
+        apply_patch(deck, patch).deck,
+        theme,
+        output_path / "patched_sample_deck.pptx",
+        assets_dir=examples_path,
+    )
+    patch_result = apply_patch(deck, patch).model_copy(
+        update={
+            "input_patch_path": str(examples_path / "sample_patch.json"),
+            "output_pptx_path": str(patched_sample_deck_path),
+        }
+    )
+    patch_report_path = write_model_json(patch_result, output_path / "patch_report.json")
 
     patched_qa_report = analyze_deck(patch_result.deck, theme)
     patched_qa_report_path = write_model_json(
@@ -39,17 +54,11 @@ def run_demo_pipeline(
         output_path / "patched_qa_report.json",
     )
 
-    patched_sample_deck_path = render_deck_to_pptx(
-        patch_result.deck,
-        theme,
-        output_path / "patched_sample_deck.pptx",
-        assets_dir=examples_path,
-    )
-
     return {
         "qa_report": qa_report_path,
+        "patchable_elements": patchable_elements_path,
         "sample_deck": sample_deck_path,
-        "patch_result": patch_result_path,
+        "patch_report": patch_report_path,
         "patched_qa_report": patched_qa_report_path,
         "patched_sample_deck": patched_sample_deck_path,
     }

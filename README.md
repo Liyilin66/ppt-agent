@@ -125,11 +125,12 @@ uv run ppt-agent build \
 | `generated_deck_brief.json` | 需求解析结果，记录 brief 来源和兜底信息。 |
 | `generated_deck_plan.json` | DeckPlan，包括 slide role、layout 建议和叙事顺序。 |
 | `generated_deck_ir.json` | 通过 Pydantic 校验的 Deck IR。 |
+| `patchable_elements.json` | 从 Deck IR 派生的可 patch 元素索引，帮助定位 `slide_id` / `element_id`。 |
 | `generated_qa_report.json` | 最终 QA 报告。 |
 | `generated_attempts.json` | 带 QA 门槛的生成尝试历史。 |
 | `generated_deck.pptx` | 从 Deck IR 渲染出的可编辑 PowerPoint。 |
 | `patched_deck_ir.json` | 应用结构化 patch 后的 Deck IR。 |
-| `patch_result.json` | patch 执行结果和问题列表。 |
+| `patch_report.json` | patch 执行结果、问题列表、changed elements 和输出文件路径。 |
 | `patched_deck.pptx` | patch 后重新渲染的可编辑 PowerPoint。 |
 
 ## Demo
@@ -149,9 +150,12 @@ examples/demo_ai_agent_pm/
 - `generated_deck_brief.json`
 - `generated_deck_plan.json`
 - `generated_deck_ir.json`
+- `patchable_elements.json`
 - `generated_qa_report.json`
 - `generated_attempts.json`
 - `generated_deck.pptx`
+- `patch_report.json`
+- `patched_deck.pptx`
 
 重新生成：
 
@@ -178,13 +182,20 @@ examples/demo_ai_agent_pm/patches/
 
 `sample_patch.json` 会修改官方 demo 第 1 页封面副标题，证明系统支持结构化局部修改，而不是整份 PPT 重新生成。
 
+编写 patch 前可以先查看：
+
+- `generated_deck_ir.json`
+- `patchable_elements.json`
+
+其中 `patchable_elements.json` 会列出每页可修改的 `element_id`、文本预览和支持的 patch 操作。
+
 独立应用 patch：
 
 ```bash
 uv run ppt-agent patch examples/demo_ai_agent_pm/generated_deck_ir.json \
   --patch examples/demo_ai_agent_pm/patches/sample_patch.json \
   --output examples/demo_ai_agent_pm/patched_deck_ir.json \
-  --result-output examples/demo_ai_agent_pm/patch_result.json
+  --result-output examples/demo_ai_agent_pm/patch_report.json
 
 uv run ppt-agent render examples/demo_ai_agent_pm/patched_deck_ir.json \
   --theme examples/theme.json \
@@ -247,10 +258,16 @@ uv run ppt-agent qa examples/output/generated_deck_ir.json \
 uv run ppt-agent patch examples/sample_slide_ir.json \
   --patch examples/sample_patch.json \
   --output examples/output/patched_deck_ir.json \
-  --result-output examples/output/patch_result.json
+  --result-output examples/output/patch_report.json
 ```
 
 Patch Edit 接受结构化操作，例如 `update_text`、`move_element`、`resize_element` 和 `update_shape_style`。它不解析自然语言，也不调用 LLM。
+
+如果不确定 `element_id`，先看：
+
+```bash
+cat examples/demo_ai_agent_pm/patchable_elements.json
+```
 
 ## 本地 API / 私有 beta 页面
 

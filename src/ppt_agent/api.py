@@ -245,7 +245,15 @@ INDEX_HTML = """<!doctype html>
         complete_job: "正在完成任务"
       };
 
-      function setStatus(status, accepted) {
+      function setStatus(status, accepted, errorMessageText = "") {
+        if (status === "succeeded" && errorMessageText.includes("Patch")) {
+          if (accepted === false && errorMessageText.includes("QA score gate")) {
+            jobStatus.textContent = "已生成，但 QA 和 Patch 仍需修正";
+            return;
+          }
+          jobStatus.textContent = "已生成，但 Patch 需要修正";
+          return;
+        }
         if (status === "succeeded" && accepted === false) {
           jobStatus.textContent = "已生成，但未通过 QA";
           return;
@@ -319,7 +327,7 @@ INDEX_HTML = """<!doctype html>
 
       async function pollJob(id) {
         const job = await requestJson(`/api/jobs/${id}`);
-        setStatus(job.status, job.accepted);
+        setStatus(job.status, job.accepted, job.error_message || "");
         setProgress(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
@@ -356,7 +364,7 @@ INDEX_HTML = """<!doctype html>
             body: JSON.stringify(buildPayload())
           });
           jobId.textContent = job.job_id;
-          setStatus(job.status, job.accepted);
+          setStatus(job.status, job.accepted, job.error_message || "");
           const finished = await pollJob(job.job_id);
           if (!finished) {
             pollTimer = setInterval(() => pollJob(job.job_id).catch((error) => {

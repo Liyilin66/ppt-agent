@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Literal, TypeVar
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
@@ -20,7 +21,12 @@ from ppt_agent.generation import (
 )
 from ppt_agent.load import load_patch, load_theme
 from ppt_agent.models import StrictModel
-from ppt_agent.patch import PatchResult, apply_patch
+from ppt_agent.patch import (
+    PatchResult,
+    apply_patch,
+    build_patch_failure_result,
+    build_patchable_elements_report,
+)
 from ppt_agent.renderer import render_deck_to_pptx
 from ppt_agent.runtime import JobTimeoutError, StageObserver, observed_stage
 
@@ -177,6 +183,12 @@ def run_build_pipeline(
         deck_path = write_model_json(generation_result.deck, output_dir / "generated_deck_ir.json")
         artifacts.append(_artifact("generated_deck_ir", deck_path, "json"))
 
+        patchable_elements_path = write_model_json(
+            build_patchable_elements_report(generation_result.deck),
+            output_dir / "patchable_elements.json",
+        )
+        artifacts.append(_artifact("patchable_elements", patchable_elements_path, "json"))
+
         qa_path = write_model_json(generation_result.qa_report, output_dir / "generated_qa_report.json")
         artifacts.append(_artifact("generated_qa_report", qa_path, "json"))
 
@@ -209,21 +221,38 @@ def run_build_pipeline(
 
     patch_result: PatchResult | None = None
     if request.patch_path is not None:
-        patch_result = _run_stage(
-            stage_observer,
-            started_at,
-            job_timeout_seconds,
-            "apply_patch",
-            lambda: apply_patch(generation_result.deck, load_patch(request.patch_path)),
-            patch_path=str(request.patch_path),
-        )
-
-        with _pipeline_stage(stage_observer, started_at, job_timeout_seconds, "save_artifacts"):
-            patched_deck_path = write_model_json(patch_result.deck, output_dir / "patched_deck_ir.json")
-            artifacts.append(_artifact("patched_deck_ir", patched_deck_path, "json"))
-
-            patch_result_path = write_model_json(patch_result, output_dir / "patch_result.json")
-            artifacts.append(_artifact("patch_result", patch_result_path, "json"))
+        try:
+            patch = _run_stage(
+                stage_observer,
+                started_at,
+                job_timeout_seconds,
+                "apply_patch",
+                lambda: load_patch(request.patch_path),
+                patch_path=str(request.patch_path),
+            )
+        except json.JSONDecodeError as exc:
+            patch_result = build_patch_failure_result(
+                generation_result.deck,
+                code="INVALID_PATCH_JSON",
+                message=f"Patch file '{request.patch_path}' is not valid JSON: {exc}",
+                input_patch_path=str(request.patch_path),
+            )
+        except ValidationError as exc:
+            patch_result = build_patch_failure_result(
+                generation_result.deck,
+                code="PATCH_SCHEMA_VALIDATION_FAILED",
+                message=f"Patch file '{request.patch_path}' does not match the SlidePatch schema: {exc}",
+                input_patch_path=str(request.patch_path),
+            )
+        else:
+            patch_result = _run_stage(
+                stage_observer,
+                started_at,
+                job_timeout_seconds,
+                "apply_patch",
+                lambda: apply_patch(generation_result.deck, patch),
+                patch_path=str(request.patch_path),
+            )
 
         patched_pptx_path = _run_stage(
             stage_observer,
@@ -238,17 +267,33 @@ def run_build_pipeline(
             ),
             slide_count=len(patch_result.deck.slides),
         )
+
+        patch_result = patch_result.model_copy(
+            update={
+                "input_patch_path": str(request.patch_path),
+                "output_pptx_path": str(patched_pptx_path),
+            }
+        )
+
+        with _pipeline_stage(stage_observer, started_at, job_timeout_seconds, "save_artifacts"):
+            patched_deck_path = write_model_json(patch_result.deck, output_dir / "patched_deck_ir.json")
+            artifacts.append(_artifact("patched_deck_ir", patched_deck_path, "json"))
+
+            patch_report_path = write_model_json(patch_result, output_dir / "patch_report.json")
+            artifacts.append(_artifact("patch_report", patch_report_path, "json"))
+
         artifacts.append(_artifact("patched_deck", patched_pptx_path, "pptx"))
 
         if patch_result.issues:
-            messages.append(f"Patch completed with {len(patch_result.issues)} issue(s). See {patch_result_path}.")
+            issue_label = "completed" if patch_result.applied_count > 0 else "failed"
+            messages.append(f"Patch {issue_label} with {len(patch_result.issues)} issue(s). See {patch_report_path}.")
             status_code = 2
 
     return BuildPipelineResult(
         generation_result=generation_result,
         patch_result=patch_result,
         artifacts=artifacts,
-        accepted=status_code == 0,
+        accepted=generation_result.accepted,
         status_code=status_code,
         messages=messages,
     )

@@ -115,12 +115,14 @@ def test_run_build_pipeline_accepted_outputs_generated_artifacts(tmp_path: Path,
     assert _artifact_names(result) == [
         "generated_deck_plan",
         "generated_deck_ir",
+        "patchable_elements",
         "generated_qa_report",
         "generated_attempts",
         "generated_deck",
     ]
     assert (tmp_path / "generated_deck_plan.json").exists()
     assert (tmp_path / "generated_deck_ir.json").exists()
+    assert (tmp_path / "patchable_elements.json").exists()
     assert (tmp_path / "generated_qa_report.json").exists()
     assert (tmp_path / "generated_attempts.json").exists()
     assert (tmp_path / "generated_deck.pptx").exists()
@@ -250,10 +252,17 @@ def test_run_build_pipeline_with_patch_outputs_patched_artifacts(tmp_path: Path,
     assert result.status_code == 0
     assert result.patch_result is not None
     assert (tmp_path / "patched_deck_ir.json").exists()
-    assert (tmp_path / "patch_result.json").exists()
+    assert (tmp_path / "patch_report.json").exists()
     assert (tmp_path / "patched_deck.pptx").exists()
     patched = json.loads((tmp_path / "patched_deck_ir.json").read_text(encoding="utf-8"))
+    patch_report = json.loads((tmp_path / "patch_report.json").read_text(encoding="utf-8"))
     assert patched["slides"][0]["elements"][0]["text"] == "Updated Q3 Operating Review"
+    assert patch_report["accepted"] is True
+    assert patch_report["success"] is True
+    assert patch_report["applied_count"] == 3
+    assert patch_report["issues"] == []
+    assert patch_report["changed_elements"]
+    assert patch_report["output_pptx_path"].endswith("patched_deck.pptx")
 
 
 def test_run_build_pipeline_with_patch_issue_writes_last_legal_artifacts(tmp_path: Path, monkeypatch) -> None:
@@ -277,13 +286,30 @@ def test_run_build_pipeline_with_patch_issue_writes_last_legal_artifacts(tmp_pat
 
     result = run_build_pipeline(object(), _request(tmp_path, patch_path=bad_patch))
 
-    assert result.accepted is False
+    assert result.accepted is True
     assert result.status_code == 2
     assert result.patch_result is not None
     assert result.patch_result.issues[0].code == "SLIDE_NOT_FOUND"
-    assert "Patch completed with 1 issue" in result.messages[0]
+    assert "Patch failed with 1 issue" in result.messages[0]
     assert (tmp_path / "patched_deck_ir.json").exists()
-    assert (tmp_path / "patch_result.json").exists()
+    assert (tmp_path / "patch_report.json").exists()
+    assert (tmp_path / "patched_deck.pptx").exists()
+
+
+def test_run_build_pipeline_with_invalid_patch_json_writes_patch_report(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    invalid_patch = tmp_path / "invalid_patch.json"
+    invalid_patch.write_text("{not valid json}", encoding="utf-8")
+
+    result = run_build_pipeline(object(), _request(tmp_path, patch_path=invalid_patch))
+    patch_report = json.loads((tmp_path / "patch_report.json").read_text(encoding="utf-8"))
+
+    assert result.accepted is True
+    assert result.status_code == 2
+    assert result.patch_result is not None
+    assert patch_report["issues"][0]["code"] == "INVALID_PATCH_JSON"
+    assert patch_report["accepted"] is False
+    assert patch_report["success"] is False
     assert (tmp_path / "patched_deck.pptx").exists()
 
 
