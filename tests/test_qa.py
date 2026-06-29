@@ -50,6 +50,43 @@ def _deck_with_layouts(layouts: list[str], titles: list[str] | None = None) -> D
     )
 
 
+def _deck_with_text_slide(layout: str, title: str, body_texts: list[str]) -> Deck:
+    elements = [
+        {
+            "element_id": "title",
+            "type": "text",
+            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+            "text": title,
+        }
+    ]
+    for index, text in enumerate(body_texts, start=1):
+        elements.append(
+            {
+                "element_id": f"body_{index}",
+                "type": "text",
+                "bbox": {"x": 0.8, "y": 1.0 + index * 0.85, "width": 7.2, "height": 0.6},
+                "text": text,
+            }
+        )
+
+    return Deck.model_validate(
+        {
+            "deck_id": "qa_content_style_test_deck",
+            "title": "QA Content Style Test Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": title,
+                    "layout": layout,
+                    "elements": elements,
+                }
+            ],
+        }
+    )
+
+
 def test_sample_deck_generates_qa_report() -> None:
     deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
     theme = load_theme(EXAMPLES_DIR / "theme.json")
@@ -509,6 +546,109 @@ def test_visual_preflight_warns_on_title_wrapping_risk() -> None:
     report = analyze_deck(deck)
 
     assert "title_wrapping_risk" in _issue_codes(report)
+
+
+def test_content_style_warns_on_slide_text_too_dense() -> None:
+    dense_body = (
+        "Agent 产品经理需要同时说明技术边界、用户需求、任务拆解、工具调用、"
+        "权限控制、上下文限制、评估指标、错误成本、人工接管、灰度发布、"
+        "治理机制和落地风险。" * 3
+    )
+    deck = _deck_with_text_slide("three_column", "密度过高", [dense_body])
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "slide_text_too_dense"]
+
+    assert issues
+    assert issues[0].severity == "warning"
+    assert report.score >= 60
+
+
+def test_content_style_warns_on_card_body_too_long() -> None:
+    deck = _deck_with_text_slide(
+        "four_cards",
+        "边界判断",
+        [
+            (
+                "先定边界\n"
+                "这张卡片把模型能力、工具调用、权限控制、失败回退和人工接管都写进一句话里，"
+                "演讲时会变成报告摘要。"
+            )
+        ],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "card_body_too_long"]
+
+    assert issues
+    assert issues[0].severity == "warning"
+    assert issues[0].element_id == "body_1"
+
+
+def test_content_style_warns_on_paragraph_like_slide() -> None:
+    deck = _deck_with_text_slide(
+        "two_column",
+        "需求判断",
+        [
+            (
+                "产品经理需要理解用户任务背后的真实目标，并且把模糊需求转化为可验证的输入、"
+                "执行、校验和交付闭环，否则 Agent 很容易只是在界面上包装一层自动化能力。"
+            )
+        ],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "paragraph_like_slide" in _issue_codes(report)
+
+
+def test_content_style_warns_on_long_enumeration() -> None:
+    deck = _deck_with_text_slide(
+        "two_column",
+        "技术边界",
+        ["技术边界包括模型能力、工具调用、权限控制、上下文限制、失败回退、人工接管、日志审计。"],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "long_enumeration" in _issue_codes(report)
+
+
+def test_content_style_warns_on_weak_slide_message() -> None:
+    deck = _deck_with_text_slide("two_column", "概述", ["介绍 Agent 产品经理需要关注的内容。"])
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "weak_slide_message"]
+
+    assert issues
+    assert issues[0].severity == "warning"
+    assert "specific judgment" in issues[0].message
+
+
+def test_content_style_warnings_do_not_zero_qa_score() -> None:
+    deck = _deck_with_text_slide(
+        "four_cards",
+        "概述",
+        [
+            (
+                "技术边界包括模型能力、工具调用、权限控制、上下文限制、失败回退、人工接管、"
+                "日志审计、评估指标，而且这些内容需要在同一页中完整说明。"
+            )
+        ],
+    )
+
+    report = analyze_deck(deck)
+    content_codes = {
+        "slide_text_too_dense",
+        "card_body_too_long",
+        "paragraph_like_slide",
+        "long_enumeration",
+        "weak_slide_message",
+    }
+
+    assert content_codes & set(_issue_codes(report))
+    assert all(issue.severity != "error" for issue in report.issues)
+    assert report.score >= 60
 
 
 def test_warning_only_issues_do_not_zero_qa_score() -> None:

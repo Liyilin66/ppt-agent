@@ -27,12 +27,60 @@ VISUAL_PATTERN_LAYOUTS = {
     "key_takeaway": "takeaway",
     "section_divider": "divider",
 }
+CONTENT_STYLE_WARNING_CODES = {
+    "slide_text_too_dense",
+    "card_body_too_long",
+    "paragraph_like_slide",
+    "long_enumeration",
+    "weak_slide_message",
+}
 LAYOUT_TEXT_LIMITS = {
     "title_slide": 125,
     "comparison_matrix": 95,
     "process_flow": 72,
     "risk_matrix": 78,
     "key_takeaway": 110,
+}
+SLIDE_TEXT_BUDGETS = {
+    "title_slide": 150,
+    "two_column": 210,
+    "three_column": 230,
+    "four_cards": 250,
+    "metric_cards": 190,
+    "comparison_matrix": 220,
+    "process_flow": 200,
+    "risk_matrix": 230,
+    "key_takeaway": 190,
+    "closing_slide": 190,
+}
+DEFAULT_SLIDE_TEXT_BUDGET = 300
+BODY_TEXT_BUDGETS = {
+    "comparison_matrix": 42,
+    "process_flow": 36,
+    "risk_matrix": 34,
+    "metric_cards": 36,
+    "key_takeaway": 42,
+    "closing_slide": 42,
+}
+DEFAULT_BODY_TEXT_BUDGET = 44
+WEAK_MESSAGE_TITLES = {
+    "overview",
+    "summary",
+    "background",
+    "context",
+    "introduction",
+    "agenda",
+    "核心内容",
+    "内容概述",
+    "概述",
+    "介绍",
+    "背景",
+    "总结",
+    "价值",
+    "方法",
+    "流程",
+    "指标",
+    "风险",
 }
 
 
@@ -76,7 +124,7 @@ def _score_for_issues(issues: list[QAIssue]) -> int:
         "title_wrapping_risk",
         "visual_pattern_repetition",
         "SLIDE_TOO_EMPTY",
-    }
+    } | CONTENT_STYLE_WARNING_CODES
     for issue in issues:
         if issue.severity == "error":
             continue
@@ -333,6 +381,166 @@ def _bullet_line_count(text: str) -> int:
     )
 
 
+def _semantic_lines(text: str) -> list[str]:
+    lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        line = re.sub(r"^\s*(?:[-*•]|\d+[\).]|[A-Z]\.)\s*", "", line)
+        line = re.sub(
+            r"^(?:heading|title|body|risk|impact|mitigation|风险|影响|缓解措施|缓解|说明|解释)[:：]\s*",
+            "",
+            line,
+            flags=re.I,
+        ).strip()
+        if line:
+            lines.append(line)
+    if lines:
+        return lines
+    stripped = text.strip()
+    return [stripped] if stripped else []
+
+
+def _body_segments_for_budget(layout: str, text: str) -> list[str]:
+    if layout == "risk_matrix":
+        return [part for part in _risk_matrix_parts(text) if part]
+
+    lines = _semantic_lines(text)
+    if len(lines) >= 2:
+        return [" ".join(lines[1:])]
+    return lines
+
+
+def _punctuation_count(text: str) -> int:
+    return sum(text.count(marker) for marker in ("，", "、", "；", "。", ",", ";", "."))
+
+
+def _looks_like_paragraph(text: str) -> bool:
+    length_score = _text_length_score(text)
+    if length_score < 70:
+        return False
+    return _punctuation_count(text) >= 3
+
+
+def _looks_like_long_enumeration(text: str) -> bool:
+    if _text_length_score(text) < 42:
+        return False
+
+    separator_count = sum(text.count(marker) for marker in ("、", "，", ",", "；", ";"))
+    if separator_count < 5:
+        return False
+
+    segments = [
+        segment.strip(" ：:。.;；")
+        for segment in re.split(r"[、，,；;]", text)
+        if segment.strip(" ：:。.;；")
+    ]
+    compact_terms = [segment for segment in segments if 1 <= _text_length_score(segment) <= 18]
+    return len(compact_terms) >= 6
+
+
+def _normalized_message_text(text: str) -> str:
+    return re.sub(r"[\s:：。.!?？！（）()\[\]【】_-]+", "", text.strip().lower())
+
+
+def _looks_like_weak_slide_message(slide) -> bool:
+    if slide.layout in {"title_slide", "section_divider", "closing_slide"}:
+        return False
+
+    normalized_title = _normalized_message_text(slide.title)
+    if normalized_title in WEAK_MESSAGE_TITLES:
+        return True
+
+    first_body = _body_texts(slide)[0].text if _body_texts(slide) else ""
+    normalized_body = _normalized_message_text(first_body)
+    if normalized_title and normalized_title == normalized_body:
+        return True
+
+    return False
+
+
+def _append_content_style_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        text_elements = _text_elements(slide)
+        total_chars = sum(_text_length_score(element.text) for element in text_elements)
+        slide_budget = SLIDE_TEXT_BUDGETS.get(slide.layout, DEFAULT_SLIDE_TEXT_BUDGET)
+        if total_chars > slide_budget:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="slide_text_too_dense",
+                    message=(
+                        f"Slide '{slide.slide_id}' has text length score {total_chars}, "
+                        f"above the presentation budget {slide_budget} for layout "
+                        f"'{slide.layout}'."
+                    ),
+                )
+            )
+
+        body_budget = BODY_TEXT_BUDGETS.get(slide.layout, DEFAULT_BODY_TEXT_BUDGET)
+        for element in _body_texts(slide):
+            body_segments = _body_segments_for_budget(slide.layout, element.text)
+            longest_segment = max((_text_length_score(segment) for segment in body_segments), default=0)
+            if longest_segment > body_budget:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="card_body_too_long",
+                        message=(
+                            f"Text element '{element.element_id}' on slide '{slide.slide_id}' "
+                            f"has body length score {longest_segment}, above the layout body "
+                            f"budget {body_budget}."
+                        ),
+                    )
+                )
+
+            if _looks_like_paragraph(element.text):
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="paragraph_like_slide",
+                        message=(
+                            f"Text element '{element.element_id}' on slide '{slide.slide_id}' "
+                            "reads like a report paragraph. Use shorter presentation-style "
+                            "phrases or one judgment sentence."
+                        ),
+                    )
+                )
+
+            if _looks_like_long_enumeration(element.text):
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="long_enumeration",
+                        message=(
+                            f"Text element '{element.element_id}' on slide '{slide.slide_id}' "
+                            "contains a long enumeration. Keep only the most important items "
+                            "or split the concepts across slides."
+                        ),
+                    )
+                )
+
+        if _looks_like_weak_slide_message(slide):
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="weak_slide_message",
+                    message=(
+                        f"Slide '{slide.slide_id}' has a generic message title "
+                        f"'{slide.title}'. Use a specific judgment or action-oriented "
+                        "key message."
+                    ),
+                )
+            )
+
+
 def _risk_matrix_parts(text: str) -> tuple[str, str, str]:
     lines = [line.strip(" -•\t") for line in text.splitlines() if line.strip(" -•\t")]
     if len(lines) == 1 and "|" in lines[0]:
@@ -471,6 +679,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_layout_contract_issues(deck, issues)
     _append_risk_matrix_semantic_issues(deck, issues)
     _append_visual_preflight_issues(deck, issues)
+    _append_content_style_issues(deck, issues)
 
     for slide in deck.slides:
         total_element_area = sum(_bbox_area(element.bbox) for element in slide.elements)

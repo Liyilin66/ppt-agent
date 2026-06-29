@@ -57,6 +57,23 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
         "Increase visual variety across the deck; alternate card grids with process, matrix, "
         "takeaway, split-view, or checklist-style layouts."
     ),
+    "slide_text_too_dense": (
+        "Compress the slide to one core judgment, remove secondary concepts, and keep body text "
+        "within the layout content budget."
+    ),
+    "card_body_too_long": (
+        "Shorten card, metric, step, table-cell, or action-item body text to one compact sentence."
+    ),
+    "paragraph_like_slide": (
+        "Rewrite report-style paragraphs into short presentation phrases; one sentence should "
+        "express one judgment."
+    ),
+    "long_enumeration": (
+        "Reduce long enumerations; keep only the most important items or split them across slides."
+    ),
+    "weak_slide_message": (
+        "Give each slide a specific judgment or action, not a generic topic label."
+    ),
 }
 
 
@@ -229,7 +246,7 @@ def _format_deck_plan(
         focus_slides = deck_plan.slides
 
     outline_lines = [
-        f"- {slide.slide_index}: {slide.key_message} ({slide.recommended_layout})"
+        f"- Slide {slide.slide_index}: planning idea only: {slide.key_message}; layout: {slide.recommended_layout}"
         for slide in deck_plan.slides
     ]
     slide_lines: list[str] = []
@@ -238,11 +255,10 @@ def _format_deck_plan(
         slide_lines.append(
             "\n".join(
                 [
-                    f"- Slide {slide.slide_index}:",
-                    f"  title_hint: {slide.key_message}",
-                    f"  key_message: {slide.key_message}",
-                    f"  recommended_layout: {slide.recommended_layout}",
-                    f"  must_not_repeat: {must_not_repeat}",
+                    f"- Slide {slide.slide_index} planning guidance:",
+                    f"  Express this planning idea through slide.title or text elements: {slide.key_message}",
+                    f"  Use this controlled layout as slide.layout: {slide.recommended_layout}",
+                    f"  Avoid repeating these topics: {must_not_repeat}",
                 ]
             )
         )
@@ -258,11 +274,12 @@ def _format_deck_plan(
 DeckPlan guidance:
 - Follow this deck-level plan when generating Deck IR.
 - Use the global outline only for story continuity; do not generate slides outside the requested segment.
-- slide.title, slide.layout, and slide content must align with each slide's key_message.
+- DeckPlan key_message is planning guidance only. Do not copy it as a key_message field into the final Deck IR slide.
+- slide.title, slide.layout, and slide content must align with each slide's planning idea.
 - Use each slide's recommended_layout as the slide.layout unless schema repair is absolutely required.
 - Do not repeat any topic listed in must_not_repeat for that slide.
 - Preserve distinct slide roles so the deck does not repeat the same point.
-{segment_note}Global slide key_messages:
+{segment_note}Global slide planning ideas:
 {outline_text}
 
 Current segment SlidePlan:
@@ -515,6 +532,10 @@ Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
 - Do not generate Markdown, prose, speaker notes, PPTX, HTML, SVG, or images.
 - {_language_instruction(brief.language)}
+- Final Deck IR must exactly match the provided Pydantic schema.
+- Output only fields defined by the Deck / Slide / Element schema. Do not add extra fields.
+- Do not add key_message, rationale, notes, speaker_notes, layout_reason, title_hint, recommended_layout, must_not_repeat, or any planning-only fields to final Deck IR objects.
+- The slide-level idea should be expressed through existing slide.title, subtitle/body text elements, card headings, or card bodies, not as a new field.
 - Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
 - The slides array length must be exactly {request.slide_count}. Do not generate more or fewer slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
@@ -528,7 +549,7 @@ Hard schema and layout rules:
 - Do not use section_divider by default in a short 3-slide deck.
 - Use section_divider only for true chapter transition or section break pages, never for ordinary content explanation pages.
 - For decks with 8 slides or fewer, do not use section_divider unless the user explicitly asks for divider, transition, or section break pages.
-- If a slide has only one key_message plus one explanation sentence, use key_takeaway, two_column, or three_column instead of section_divider.
+- If a slide has only one core idea plus one explanation sentence, use key_takeaway, two_column, or three_column instead of section_divider.
 - Use four_cards for four parallel concepts, four steps, four capabilities, or four recommendations.
 - Use comparison_matrix for two-option comparisons, before/after views, or normal AI vs Agent; provide two major body text elements, one per side, and optionally one short decision_rule.
 - Use process_flow for workflows, pipelines, or step-by-step processes; provide 3-5 step text elements in order.
@@ -552,18 +573,46 @@ Hard schema and layout rules:
 - Match each slide's content to its chosen layout. Do not create empty cards or placeholder-only cards.
 - Card text should be short phrases or compact sentences, not long paragraphs.
 - Still include valid bbox values for schema compatibility, but keep them simple and inside the canvas; template rendering may ignore the exact bbox.
+- Content Budget:
+  - Each slide can express only 1 core judgment.
+  - Express the core judgment through slide.title, subtitle/body text, card headings, or card bodies.
+  - Do not create a key_message field in Deck IR slides.
+  - Chinese slide title <= 18 characters; English slide title <= 8 words.
+  - Subtitle or key takeaway <= 32 Chinese characters.
+  - Card heading <= 8 Chinese characters; English card heading <= 4 words.
+  - Card body <= 32 Chinese characters; English card body <= 14 words.
+  - Process step body <= 28 Chinese characters.
+  - Risk matrix cells <= 24 Chinese characters each.
+  - Metric card explanation <= 28 Chinese characters.
+  - Closing slide action item explanation <= 32 Chinese characters.
+  - Do not put 4 or more concepts into one card body.
+  - Do not compress the user's full detailed requirements into a single slide.
+- Layout-specific content budget:
+  - title_slide: one clear title, one subtitle, and very little auxiliary text.
+  - comparison_matrix: each cell contains one short judgment; align rows instead of writing paragraphs.
+  - three_column/four_cards: each card has a short heading plus one short body sentence.
+  - process_flow: each step has a short heading plus one-line body.
+  - metric_cards: metric name plus one-line explanation.
+  - risk_matrix: risk, impact, and mitigation cells must all be short.
+  - key_takeaway: use a strong judgment, not a long summary.
+  - closing_slide: action checklist; each item is a heading plus one short explanation.
+- Presentation Style Guard:
+  - Write like a spoken technical product-sharing deck, not a report summary or course handout.
+  - Do not write paper-like explanatory paragraphs.
+  - Do not write long enumeration sentences such as "包括 A、B、C、D、E".
+  - Each bullet or body should be a judgment sentence or action sentence.
+  - One sentence expresses one judgment only.
+  - Prefer Chinese patterns like "先判断……", "只承诺……", "把……拆成……", "用……验证……", "高风险动作必须……".
+  - Avoid Chinese patterns like "需要理解的技术边界包括……", "覆盖……以及……并且……", "从……、……、……、……等方面……".
+  - 中文输出要像技术产品分享，不像营销文案，也不像课程讲义摘要。
 - Every slide must include slide_id, title, layout, and at least one element.
 - slide_id values must be unique across the deck.
 - Every element must include element_id, type, bbox, and type-specific fields.
 - element_id values must be unique within each slide.
 - Supported element types are text, shape, and image.
 - For template-guided slides, make the first text element the primary slide title and subsequent text elements the body/columns/cards in reading order.
-- Keep generated text compact:
-  title <= 9 words.
-  subtitle <= 16 words.
-  card heading <= 4 words.
-  card body <= 18 words.
-- Avoid paragraph-style body text. Prefer phrases, short sentences, and short bullets.
+- Keep generated text compact and below the Content Budget.
+- Avoid paragraph-style body text. Prefer phrases, short judgment sentences, and short action bullets.
 - For card content, use this format whenever possible:
   Heading
   Short body sentence.

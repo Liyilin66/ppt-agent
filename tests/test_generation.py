@@ -349,11 +349,14 @@ def test_build_generation_prompt_includes_optional_deck_plan() -> None:
     prompt = build_generation_prompt(request, deck_plan=deck_plan)
 
     assert "DeckPlan guidance" in prompt
-    assert "key_message: Unique message 2" in prompt
-    assert "recommended_layout: four_cards" in prompt
-    assert "title_hint: Unique message 2" in prompt
-    assert "must_not_repeat: Unique message 1" in prompt
-    assert "must align with each slide's key_message" in prompt
+    assert "DeckPlan key_message is planning guidance only" in prompt
+    assert "Do not copy it as a key_message field" in prompt
+    assert "Express this planning idea through slide.title or text elements: Unique message 2" in prompt
+    assert "Use this controlled layout as slide.layout: four_cards" in prompt
+    assert "Avoid repeating these topics: Unique message 1" in prompt
+    assert "must align with each slide's planning idea" in prompt
+    assert "key_message: Unique message 2" not in prompt
+    assert "title_hint:" not in prompt
 
 
 @pytest.mark.parametrize("slide_count", [0, 11])
@@ -386,6 +389,11 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "Never use font_size; use font_size_pt" in prompt
     assert "Never use line_color; use stroke_color" in prompt
     assert "stroke_width_pt must be greater than 0; never use 0" in prompt
+    assert "Final Deck IR must exactly match the provided Pydantic schema" in prompt
+    assert "Output only fields defined by the Deck / Slide / Element schema" in prompt
+    assert "Do not add extra fields" in prompt
+    assert "Do not add key_message, rationale, notes, speaker_notes, layout_reason" in prompt
+    assert "The slide-level idea should be expressed through existing slide.title" in prompt
     assert "Choose each slide.layout from these controlled layouts only" in prompt
     assert "Do not rely on freeform bbox placement for visual design" in prompt
     assert "Do not create empty cards" in prompt
@@ -408,15 +416,48 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "every takeaway must include both a concise title and a one-sentence explanation" in prompt
     assert "prefer aligned comparison rows over two sparse cards" in prompt
     assert "keep each risk, impact, and mitigation cell concise" in prompt
-    assert "title <= 9 words" in prompt
-    assert "subtitle <= 16 words" in prompt
-    assert "card heading <= 4 words" in prompt
-    assert "card body <= 18 words" in prompt
+    assert "Content Budget" in prompt
+    assert "Each slide can express only 1 core judgment" in prompt
+    assert "Express the core judgment through slide.title" in prompt
+    assert "Do not create a key_message field in Deck IR slides" in prompt
+    assert "Each slide must have exactly 1 key_message" not in prompt
+    assert "Chinese slide title <= 18 characters" in prompt
+    assert "English slide title <= 8 words" in prompt
+    assert "Card heading <= 8 Chinese characters" in prompt
+    assert "Card body <= 32 Chinese characters" in prompt
+    assert "Risk matrix cells <= 24 Chinese characters each" in prompt
+    assert "Metric card explanation <= 28 Chinese characters" in prompt
+    assert "Closing slide action item explanation <= 32 Chinese characters" in prompt
     assert "Heading\n  Short body sentence" in prompt
     assert "Default to Simplified Chinese" in prompt
     assert "generate all user-visible slide text in natural Chinese" in prompt
     for layout in TEMPLATE_LAYOUTS:
         assert layout in prompt
+
+
+def test_build_generation_prompt_contains_presentation_style_guard() -> None:
+    request = DeckGenerationRequest(
+        topic="AI Agent 产品经理",
+        audience="IT 硕士学生",
+        slide_count=8,
+        user_requirements="不要像营销材料，每页内容要有明确观点。",
+    )
+
+    prompt = build_generation_prompt(request)
+
+    assert "Presentation Style Guard" in prompt
+    assert "not a report summary or course handout" in prompt
+    assert "Do not write paper-like explanatory paragraphs" in prompt
+    assert "Do not write long enumeration sentences" in prompt
+    assert "Each bullet or body should be a judgment sentence or action sentence" in prompt
+    assert "One sentence expresses one judgment only" in prompt
+    assert "先判断" in prompt
+    assert "只承诺" in prompt
+    assert "把……拆成" in prompt
+    assert "用……验证" in prompt
+    assert "高风险动作必须" in prompt
+    assert "需要理解的技术边界包括" in prompt
+    assert "中文输出要像技术产品分享" in prompt
 
 
 def test_build_generation_prompt_includes_user_brief_constraints() -> None:
@@ -850,10 +891,10 @@ def test_chunk_generation_prompt_focuses_deck_plan_on_current_segment() -> None:
 
     assert result.accepted is True
     assert "Current chunk must follow only SlidePlan entries 3-4" in second_chunk_prompt
-    assert "Global slide key_messages" in second_chunk_prompt
-    assert "Slide 3:" in segment_plan
-    assert "Slide 4:" in segment_plan
-    assert "Slide 5:" not in segment_plan
+    assert "Global slide planning ideas" in second_chunk_prompt
+    assert "Slide 3 planning guidance" in segment_plan
+    assert "Slide 4 planning guidance" in segment_plan
+    assert "Slide 5 planning guidance" not in segment_plan
     assert "Generate exactly 2 slides" in second_chunk_prompt
     assert "Generate exactly 8 slides" not in second_chunk_prompt
 
@@ -1177,6 +1218,64 @@ def test_format_qa_feedback_for_generation_instructs_visual_preflight_fixes_once
     assert feedback.count("Shorten long text blocks") == 1
 
 
+def test_format_qa_feedback_for_generation_instructs_content_style_fixes_once() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=68,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_001",
+                code="slide_text_too_dense",
+                message="Too much slide text.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                element_id="card_1",
+                code="card_body_too_long",
+                message="Card body is too long.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_003",
+                element_id="body_1",
+                code="paragraph_like_slide",
+                message="Body is paragraph-like.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_004",
+                element_id="body_2",
+                code="long_enumeration",
+                message="Body enumerates too many concepts.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_005",
+                code="weak_slide_message",
+                message="Slide message is generic.",
+            ),
+            QAIssue(
+                severity="warning",
+                slide_id="slide_006",
+                code="card_body_too_long",
+                message="Another long card.",
+            ),
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "Compress the slide to one core judgment" in feedback
+    assert "Shorten card, metric, step, table-cell, or action-item body text" in feedback
+    assert "Rewrite report-style paragraphs" in feedback
+    assert "Reduce long enumerations" in feedback
+    assert "Give each slide a specific judgment or action" in feedback
+    assert "Showing first 5 of 6 QA issues" in feedback
+    assert feedback.count("Shorten card, metric, step, table-cell, or action-item body text") == 1
+
+
 def test_format_qa_feedback_for_generation_limits_issue_count() -> None:
     report = QAReport(
         deck_id="deck",
@@ -1213,7 +1312,7 @@ def test_quality_gate_uses_deterministic_plan_by_default() -> None:
     assert len(model.structured_model.prompts) == 1
     assert "Create a DeckPlan" not in model.structured_model.prompts[0]
     assert "DeckPlan guidance" in model.structured_model.prompts[0]
-    assert "recommended_layout: closing_slide" in model.structured_model.prompts[0]
+    assert "Use this controlled layout as slide.layout: closing_slide" in model.structured_model.prompts[0]
     assert '"deck_plan"' in result.model_dump_json()
     assert '"plan_source":"deterministic"' in result.model_dump_json()
 
@@ -1237,7 +1336,8 @@ def test_quality_gate_can_use_llm_plan_when_enabled() -> None:
     assert len(model.structured_model.prompts) == 2
     assert "Create a DeckPlan" in model.structured_model.prompts[0]
     assert "DeckPlan guidance" in model.structured_model.prompts[1]
-    assert "key_message: Unique message 2" in model.structured_model.prompts[1]
+    assert "DeckPlan key_message is planning guidance only" in model.structured_model.prompts[1]
+    assert "key_message: Unique message 2" not in model.structured_model.prompts[1]
 
 
 def test_quality_gate_uses_fallback_brief_when_llm_brief_fails() -> None:
