@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Literal, Self
+from typing import Any, Iterable, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -181,6 +181,171 @@ class DeckPlan(StrictModel):
         return self
 
 
+class SectionPlan(StrictModel):
+    section_id: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    purpose: str = Field(..., min_length=1)
+    start_slide: int = Field(..., ge=1)
+    end_slide: int = Field(..., ge=1)
+    target_slide_count: int = Field(..., ge=1)
+    key_questions: list[str] = Field(..., min_length=1)
+    key_messages: list[str] = Field(..., min_length=1)
+    preferred_layouts: list[str] = Field(..., min_length=1)
+    must_include: list[str] = Field(default_factory=list)
+    must_avoid: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_section_range(self) -> Self:
+        if self.end_slide < self.start_slide:
+            raise ValueError(
+                f"Section '{self.section_id}' end_slide must be >= start_slide; "
+                f"got {self.start_slide}-{self.end_slide}."
+            )
+        for layout_name in self.preferred_layouts:
+            try:
+                get_layout_contract(layout_name)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Section '{self.section_id}' uses unsupported preferred_layout "
+                    f"'{layout_name}'. {exc}"
+                ) from exc
+        actual_count = self.end_slide - self.start_slide + 1
+        if actual_count != self.target_slide_count:
+            raise ValueError(
+                f"Section '{self.section_id}' target_slide_count={self.target_slide_count} "
+                f"does not match range size {actual_count}."
+            )
+        return self
+
+
+class BatchPlan(StrictModel):
+    batch_id: str = Field(..., min_length=1)
+    start_slide: int = Field(..., ge=1)
+    end_slide: int = Field(..., ge=1)
+    section_ids: list[str] = Field(..., min_length=1)
+    batch_goal: str = Field(..., min_length=1)
+    context_summary: str = Field(..., min_length=1)
+    must_include: list[str] = Field(default_factory=list)
+    must_not_repeat: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_batch_range(self) -> Self:
+        if self.end_slide < self.start_slide:
+            raise ValueError(
+                f"Batch '{self.batch_id}' end_slide must be >= start_slide; "
+                f"got {self.start_slide}-{self.end_slide}."
+            )
+        return self
+
+
+class LongDeckPlan(StrictModel):
+    topic: str = Field(..., min_length=1)
+    audience: str = Field(..., min_length=1)
+    slide_count: int = Field(..., ge=21, le=100)
+    language: str = Field(..., min_length=1)
+    deck_type: str = Field(..., min_length=1)
+    sections: list[SectionPlan] = Field(..., min_length=1)
+    batches: list[BatchPlan] = Field(..., min_length=1)
+    narrative_summary: str = Field(..., min_length=1)
+    global_style_notes: list[str] = Field(default_factory=list)
+    content_constraints: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_long_deck_relationships(self) -> Self:
+        errors: list[str] = []
+
+        duplicate_section_ids = _duplicate_values(section.section_id for section in self.sections)
+        if duplicate_section_ids:
+            errors.append(
+                "LongDeckPlan section_id values must be unique; "
+                f"duplicates: {', '.join(sorted(duplicate_section_ids))}."
+            )
+
+        duplicate_batch_ids = _duplicate_values(batch.batch_id for batch in self.batches)
+        if duplicate_batch_ids:
+            errors.append(
+                "LongDeckPlan batch_id values must be unique; "
+                f"duplicates: {', '.join(sorted(duplicate_batch_ids))}."
+            )
+
+        errors.extend(_validate_range_coverage(self.sections, self.slide_count, label="SectionPlan"))
+        errors.extend(_validate_range_coverage(self.batches, self.slide_count, label="BatchPlan"))
+
+        known_section_ids = {section.section_id for section in self.sections}
+        for batch in self.batches:
+            unknown_ids = [section_id for section_id in batch.section_ids if section_id not in known_section_ids]
+            if unknown_ids:
+                errors.append(
+                    f"Batch '{batch.batch_id}' references unknown section_ids: {unknown_ids}."
+                )
+                continue
+
+            overlapping_section_ids = [
+                section.section_id
+                for section in self.sections
+                if section.start_slide <= batch.end_slide and batch.start_slide <= section.end_slide
+            ]
+            if batch.section_ids != overlapping_section_ids:
+                errors.append(
+                    f"Batch '{batch.batch_id}' section_ids must match the overlapping sections "
+                    f"{overlapping_section_ids}; got {batch.section_ids}."
+                )
+
+        conclusion_positions = [
+            index for index, section in enumerate(self.sections) if _is_conclusion_section(section)
+        ]
+        if conclusion_positions and conclusion_positions[-1] != len(self.sections) - 1:
+            errors.append("LongDeckPlan conclusion / action section must be the final section.")
+
+        if conclusion_positions:
+            first_conclusion = conclusion_positions[0]
+            late_context_sections = [
+                section.section_id
+                for section in self.sections[first_conclusion + 1 :]
+                if _is_context_section(section)
+            ]
+            if late_context_sections:
+                errors.append(
+                    "LongDeckPlan places context/background sections after conclusion; "
+                    f"late section_ids: {late_context_sections}."
+                )
+
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
+class LongDeckPlanningRequest(StrictModel):
+    topic: str = Field(..., min_length=1)
+    audience: str = Field(..., min_length=1)
+    slide_count: int = Field(..., ge=21, le=100)
+    language: str = Field(default="zh-CN", min_length=1)
+    deck_type: str | None = Field(default=None, min_length=1)
+    purpose: str = ""
+    tone: str = ""
+    visual_style: str = ""
+    content_focus: str = ""
+    must_include: list[str] = Field(default_factory=list)
+    must_avoid: list[str] = Field(default_factory=list)
+    user_requirements_raw: str | None = Field(default=None, min_length=1)
+
+
+class BatchContext(StrictModel):
+    batch_id: str = Field(..., min_length=1)
+    start_slide: int = Field(..., ge=1)
+    end_slide: int = Field(..., ge=1)
+    section_ids: list[str] = Field(..., min_length=1)
+    batch_goal: str = Field(..., min_length=1)
+    context_summary: str = Field(..., min_length=1)
+    must_include: list[str] = Field(default_factory=list)
+    must_not_repeat: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] = Field(..., min_length=1)
+    sections: list[SectionPlan] = Field(..., min_length=1)
+    previous_section_summary: str | None = None
+    next_section_summary: str | None = None
+
+
 DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
     "title": "DeckPlan",
     "description": "Deck-level plan generated before Slide IR. Extra provider fields are normalized locally.",
@@ -256,6 +421,55 @@ def _brief_value(brief: Any, field_name: str, fallback: str = "") -> Any:
     return getattr(brief, field_name, fallback)
 
 
+def _duplicate_values(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for value in values:
+        if value in seen and value not in duplicates:
+            duplicates.append(value)
+        seen.add(value)
+    return duplicates
+
+
+def _validate_range_coverage(items: list[Any], slide_count: int, *, label: str) -> list[str]:
+    errors: list[str] = []
+    if not items:
+        return [f"{label} must not be empty."]
+
+    sorted_items = sorted(items, key=lambda item: item.start_slide)
+    expected_start = 1
+    for item in sorted_items:
+        if item.start_slide < 1 or item.end_slide > slide_count:
+            errors.append(
+                f"{label} range {item.start_slide}-{item.end_slide} must stay within 1-{slide_count}."
+            )
+        if item.start_slide != expected_start:
+            errors.append(
+                f"{label} ranges must be continuous without gaps or overlap; expected slide {expected_start}, "
+                f"got {item.start_slide}."
+            )
+        expected_start = item.end_slide + 1
+
+    if expected_start != slide_count + 1:
+        errors.append(
+            f"{label} ranges must cover through slide {slide_count}; coverage stopped at {expected_start - 1}."
+        )
+
+    return errors
+
+
+def _section_text(section: SectionPlan) -> str:
+    return f"{section.title} {section.purpose}".lower()
+
+
+def _is_conclusion_section(section: SectionPlan) -> bool:
+    return _contains_any_marker(_section_text(section), CONCLUSION_MARKERS)
+
+
+def _is_context_section(section: SectionPlan) -> bool:
+    return _contains_any_marker(_section_text(section), EARLY_STAGE_MARKERS)
+
+
 def _format_brief_list(value: Any) -> str:
     if not value:
         return "- None provided"
@@ -312,6 +526,150 @@ class _ArcStep:
     slide_role: SlideRole
     content_goal: str
     layout_hint: str | None = None
+
+
+@dataclass(frozen=True)
+class _LongDeckSectionBlueprint:
+    slug: str
+    title: str
+    purpose: str
+    key_questions: tuple[str, ...]
+    key_messages: tuple[str, ...]
+    preferred_layouts: tuple[str, ...]
+    slide_roles: tuple[SlideRole, ...]
+    message_markers: tuple[str, ...] = ()
+
+
+_LONG_DECK_SECTION_BLUEPRINTS: tuple[_LongDeckSectionBlueprint, ...] = (
+    _LongDeckSectionBlueprint(
+        slug="opening_context",
+        title="Cover and Context",
+        purpose="Open the narrative, anchor the audience problem, and explain why the topic matters now.",
+        key_questions=(
+            "Why does this topic matter for this audience now?",
+            "What decision or framing does the deck need before details?",
+        ),
+        key_messages=(
+            "Open with the core judgment before expanding the rest of the deck.",
+            "Use early slides to define the context the audience will carry through later sections.",
+        ),
+        preferred_layouts=("title_slide", "two_column", "key_takeaway"),
+        slide_roles=("cover", "context"),
+        message_markers=("背景", "context", "why", "价值", "场景", "问题"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="responsibility_boundary",
+        title="Problem and Responsibility Boundary",
+        purpose="Explain what changes when the topic becomes a product responsibility instead of a pure capability demo.",
+        key_questions=(
+            "What product problem is being solved?",
+            "Why is the responsibility boundary different here?",
+        ),
+        key_messages=(
+            "Responsibility boundaries should be explicit before solution detail expands.",
+            "Comparison slides should clarify what the product must own, not just what the model can do.",
+        ),
+        preferred_layouts=("comparison_matrix", "two_column", "metric_cards"),
+        slide_roles=("comparison",),
+        message_markers=("责任", "边界", "对比", "comparison", "取舍"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="technical_boundary",
+        title="Framework and Technical Boundary",
+        purpose="Define the technical boundary, system constraints, and capability framing that shape product promises.",
+        key_questions=(
+            "What can the system safely promise?",
+            "Which constraints define the technical boundary?",
+        ),
+        key_messages=(
+            "Technical boundary should shape the product promise before workflow detail grows.",
+            "Framework slides should separate capability, constraint, and escalation paths.",
+        ),
+        preferred_layouts=("four_cards", "three_column", "key_takeaway"),
+        slide_roles=("framework",),
+        message_markers=("技术", "能力", "约束", "系统", "权限", "边界"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="user_needs_tasks",
+        title="User Needs and Task Decomposition",
+        purpose="Translate user goals into task units, decision points, and success conditions that can be designed.",
+        key_questions=(
+            "Which user tasks should be decomposed first?",
+            "What inputs, states, and success conditions need definition?",
+        ),
+        key_messages=(
+            "User needs become design material only after they are decomposed into executable tasks.",
+            "Task decomposition should expose what the product must define before automation expands.",
+        ),
+        preferred_layouts=("three_column", "four_cards", "two_column"),
+        slide_roles=("framework",),
+        message_markers=("用户", "需求", "任务", "拆解", "状态", "success", "need", "task"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="workflow_process",
+        title="Workflow and Process Design",
+        purpose="Show the execution sequence, control points, and handoff logic that make the workflow operable.",
+        key_questions=(
+            "What is the execution order?",
+            "Where do confirmation, validation, and rollback happen?",
+        ),
+        key_messages=(
+            "Workflow design should show control points, not only a nominal happy path.",
+            "Process detail should make handoff and fallback legible before launch decisions.",
+        ),
+        preferred_layouts=("process_flow", "four_cards", "three_column"),
+        slide_roles=("process",),
+        message_markers=("流程", "步骤", "确认", "回退", "workflow", "process"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="metrics_evaluation",
+        title="Metrics and Evaluation",
+        purpose="Define how success will be measured and what evidence is needed to justify rollout.",
+        key_questions=(
+            "How will the team measure whether the workflow is working?",
+            "Which metrics decide whether rollout should continue?",
+        ),
+        key_messages=(
+            "Metrics should explain how they are measured before they are used as launch gates.",
+            "Evaluation slides should help decide whether the workflow is worth scaling.",
+        ),
+        preferred_layouts=("metric_cards", "comparison_matrix", "three_column"),
+        slide_roles=("metrics",),
+        message_markers=("指标", "评估", "衡量", "metric", "measure", "evaluation"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="risk_governance",
+        title="Risks and Governance",
+        purpose="Make the major risks, impacts, and mitigation actions concrete before the deck closes.",
+        key_questions=(
+            "Which risks block rollout if unaddressed?",
+            "What mitigation actions reduce those risks?",
+        ),
+        key_messages=(
+            "Risk sections should name concrete failure modes and the actions that constrain them.",
+            "Governance slides should explain what the team will actually do when risk appears.",
+        ),
+        preferred_layouts=("risk_matrix", "two_column", "three_column"),
+        slide_roles=("risk",),
+        message_markers=("风险", "治理", "缓解", "risk", "governance", "mitigation"),
+    ),
+    _LongDeckSectionBlueprint(
+        slug="conclusion_action",
+        title="Conclusion and Action",
+        purpose="Close with the key product judgment and the next executable actions for the target audience.",
+        key_questions=(
+            "What is the strongest final product judgment?",
+            "What should the audience do next?",
+        ),
+        key_messages=(
+            "The conclusion should make the final tradeoff explicit instead of reopening background.",
+            "Closing actions should be concrete enough for the audience to execute next.",
+        ),
+        preferred_layouts=("key_takeaway", "closing_slide"),
+        slide_roles=("summary",),
+        message_markers=("结论", "下一步", "行动", "summary", "closing", "action"),
+    ),
+)
 
 
 _PLAN_RECIPES: dict[str, dict[str, tuple[_ArcStep, ...]]] = {
@@ -570,6 +928,343 @@ def _order_steps_for_narrative(steps: list[_ArcStep]) -> list[_ArcStep]:
             key=lambda indexed_step: (_narrative_priority(indexed_step[1]), indexed_step[0]),
         )
     ]
+
+
+def _infer_long_deck_type(brief: Any, deck_plan: DeckPlan | None) -> str:
+    if isinstance(brief, LongDeckPlanningRequest) and brief.deck_type:
+        return brief.deck_type
+    purpose = _classify_plan_purpose(brief)
+    return {
+        "technical_product_share": "technical_product_share",
+        "classroom_teaching": "classroom_teaching",
+        "business_pitch": "business_pitch",
+        "project_report": "project_report",
+        "risk_analysis": "risk_analysis",
+        "general_knowledge_share": "knowledge_share",
+    }.get(purpose, "knowledge_share")
+
+
+def _fallback_section_blueprint(slide: SlidePlan) -> _LongDeckSectionBlueprint:
+    for blueprint in _LONG_DECK_SECTION_BLUEPRINTS:
+        if slide.slide_role in blueprint.slide_roles:
+            return blueprint
+        if any(marker.lower() in f"{slide.key_message} {slide.content_goal}".lower() for marker in blueprint.message_markers):
+            return blueprint
+    return _LONG_DECK_SECTION_BLUEPRINTS[2]
+
+
+def _section_blueprint_for_slide(slide: SlidePlan) -> _LongDeckSectionBlueprint:
+    if slide.slide_index == 1 or slide.slide_role == "cover":
+        return _LONG_DECK_SECTION_BLUEPRINTS[0]
+    if slide.recommended_layout == "closing_slide" or _is_conclusion_slide(slide):
+        return _LONG_DECK_SECTION_BLUEPRINTS[-1]
+
+    normalized_text = f"{slide.key_message} {slide.content_goal}".lower()
+    for blueprint in _LONG_DECK_SECTION_BLUEPRINTS:
+        if slide.slide_role in blueprint.slide_roles:
+            if blueprint.message_markers and any(marker.lower() in normalized_text for marker in blueprint.message_markers):
+                return blueprint
+    for blueprint in _LONG_DECK_SECTION_BLUEPRINTS:
+        if blueprint.message_markers and any(marker.lower() in normalized_text for marker in blueprint.message_markers):
+            return blueprint
+    return _fallback_section_blueprint(slide)
+
+
+def _ideal_long_section_count(slide_count: int) -> int:
+    return len(_LONG_DECK_SECTION_BLUEPRINTS)
+
+
+def _select_long_deck_blueprints(
+    deck_plan: DeckPlan | None,
+    slide_count: int,
+) -> list[_LongDeckSectionBlueprint]:
+    if deck_plan is None:
+        return list(_LONG_DECK_SECTION_BLUEPRINTS[: _ideal_long_section_count(slide_count)])
+
+    selected: list[_LongDeckSectionBlueprint] = []
+    used_slugs: set[str] = set()
+    for slide in deck_plan.slides:
+        blueprint = _section_blueprint_for_slide(slide)
+        if blueprint.slug in used_slugs:
+            continue
+        selected.append(blueprint)
+        used_slugs.add(blueprint.slug)
+
+    if not selected:
+        selected = list(_LONG_DECK_SECTION_BLUEPRINTS[: _ideal_long_section_count(slide_count)])
+
+    if selected[0].slug != _LONG_DECK_SECTION_BLUEPRINTS[0].slug:
+        selected.insert(0, _LONG_DECK_SECTION_BLUEPRINTS[0])
+        used_slugs.add(_LONG_DECK_SECTION_BLUEPRINTS[0].slug)
+    if selected[-1].slug != _LONG_DECK_SECTION_BLUEPRINTS[-1].slug:
+        selected.append(_LONG_DECK_SECTION_BLUEPRINTS[-1])
+        used_slugs.add(_LONG_DECK_SECTION_BLUEPRINTS[-1].slug)
+
+    ideal_count = _ideal_long_section_count(slide_count)
+    for blueprint in _LONG_DECK_SECTION_BLUEPRINTS:
+        if len(selected) >= ideal_count:
+            break
+        if blueprint.slug not in used_slugs:
+            insert_at = max(1, len(selected) - 1)
+            selected.insert(insert_at, blueprint)
+            used_slugs.add(blueprint.slug)
+
+    ordered = sorted(
+        selected,
+        key=lambda blueprint: next(
+            index for index, candidate in enumerate(_LONG_DECK_SECTION_BLUEPRINTS) if candidate.slug == blueprint.slug
+        ),
+    )
+    if ordered[-1].slug != _LONG_DECK_SECTION_BLUEPRINTS[-1].slug:
+        ordered = [item for item in ordered if item.slug != _LONG_DECK_SECTION_BLUEPRINTS[-1].slug]
+        ordered.append(_LONG_DECK_SECTION_BLUEPRINTS[-1])
+    return ordered
+
+
+def _allocate_section_counts(slide_count: int, section_count: int) -> list[int]:
+    counts = [1] * section_count
+    remaining = slide_count - section_count
+    cursor = 0
+    while remaining > 0:
+        counts[cursor % section_count] += 1
+        cursor += 1
+        remaining -= 1
+    return counts
+
+
+def _section_messages_for_blueprint(
+    blueprint: _LongDeckSectionBlueprint,
+    deck_plan: DeckPlan | None,
+    *,
+    index: int,
+    section_count: int,
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    if deck_plan is None:
+        return (
+            list(blueprint.key_questions),
+            list(blueprint.key_messages),
+            [],
+            [],
+        )
+
+    relevant_slides = [
+        slide
+        for slide in deck_plan.slides
+        if _section_blueprint_for_slide(slide).slug == blueprint.slug
+    ]
+    key_messages = [slide.key_message for slide in relevant_slides] or list(blueprint.key_messages)
+    key_questions = [
+        slide.content_goal
+        for slide in relevant_slides
+        if slide.content_goal not in key_messages
+    ] or list(blueprint.key_questions)
+    preferred_layouts = list(dict.fromkeys(
+        [slide.recommended_layout for slide in relevant_slides] + list(blueprint.preferred_layouts)
+    ))
+    must_not_repeat = [
+        message
+        for slide in relevant_slides
+        for message in slide.must_not_repeat
+    ]
+
+    if index == 0:
+        must_not_repeat.append("不要在开场之后重复背景页")
+    if index == section_count - 1:
+        must_not_repeat.extend(["不要重新引入背景铺垫", "不要在结尾后补背景"])
+
+    return (
+        list(dict.fromkeys(key_questions)),
+        list(dict.fromkeys(key_messages)),
+        preferred_layouts,
+        list(dict.fromkeys(must_not_repeat)),
+    )
+
+
+def _build_long_deck_sections(
+    brief: Any,
+    deck_plan: DeckPlan | None,
+    *,
+    slide_count: int,
+) -> list[SectionPlan]:
+    blueprints = _select_long_deck_blueprints(deck_plan, slide_count)
+    counts = _allocate_section_counts(slide_count, len(blueprints))
+
+    sections: list[SectionPlan] = []
+    current_start = 1
+    brief_must_include = list(_brief_value(brief, "must_include", []) or [])
+    brief_must_avoid = list(_brief_value(brief, "must_avoid", []) or [])
+    for index, (blueprint, count) in enumerate(zip(blueprints, counts, strict=True), start=1):
+        start_slide = current_start
+        end_slide = current_start + count - 1
+        key_questions, key_messages, preferred_layouts, local_must_avoid = _section_messages_for_blueprint(
+            blueprint,
+            deck_plan,
+            index=index - 1,
+            section_count=len(blueprints),
+        )
+        must_include = brief_must_include if index in {1, len(blueprints)} else []
+        if blueprint.slug == "metrics_evaluation":
+            must_include = must_include + ["说明指标如何衡量"]
+        if blueprint.slug == "risk_governance":
+            must_include = must_include + ["每个风险行都要有 risk / impact / mitigation"]
+        if blueprint.slug == "conclusion_action":
+            must_include = must_include + ["给目标受众可执行的下一步动作"]
+
+        sections.append(
+            SectionPlan(
+                section_id=f"section_{index:02d}_{blueprint.slug}",
+                title=blueprint.title,
+                purpose=blueprint.purpose,
+                start_slide=start_slide,
+                end_slide=end_slide,
+                target_slide_count=count,
+                key_questions=key_questions,
+                key_messages=key_messages,
+                preferred_layouts=preferred_layouts or list(blueprint.preferred_layouts),
+                must_include=list(dict.fromkeys(must_include)),
+                must_avoid=list(dict.fromkeys(local_must_avoid + brief_must_avoid)),
+            )
+        )
+        current_start = end_slide + 1
+    return sections
+
+
+def split_long_deck_into_batches(long_deck_plan: LongDeckPlan) -> list[BatchPlan]:
+    return list(long_deck_plan.batches)
+
+
+def get_batch_by_id(long_deck_plan: LongDeckPlan, batch_id: str) -> BatchPlan:
+    for batch in long_deck_plan.batches:
+        if batch.batch_id == batch_id:
+            return batch
+    raise ValueError(f"Unknown batch_id '{batch_id}'.")
+
+
+def get_batch_context(long_deck_plan: LongDeckPlan, batch_id: str) -> BatchContext:
+    batch = get_batch_by_id(long_deck_plan, batch_id)
+    sections = [section for section in long_deck_plan.sections if section.section_id in batch.section_ids]
+    first_section_index = next(
+        index for index, section in enumerate(long_deck_plan.sections) if section.section_id == sections[0].section_id
+    )
+    last_section_index = next(
+        index for index, section in enumerate(long_deck_plan.sections) if section.section_id == sections[-1].section_id
+    )
+
+    previous_section_summary = None
+    if first_section_index > 0:
+        previous = long_deck_plan.sections[first_section_index - 1]
+        previous_section_summary = f"{previous.title}: {previous.purpose}"
+
+    next_section_summary = None
+    if last_section_index < len(long_deck_plan.sections) - 1:
+        nxt = long_deck_plan.sections[last_section_index + 1]
+        next_section_summary = f"{nxt.title}: {nxt.purpose}"
+
+    return BatchContext(
+        batch_id=batch.batch_id,
+        start_slide=batch.start_slide,
+        end_slide=batch.end_slide,
+        section_ids=batch.section_ids,
+        batch_goal=batch.batch_goal,
+        context_summary=batch.context_summary,
+        must_include=batch.must_include,
+        must_not_repeat=batch.must_not_repeat,
+        expected_outputs=batch.expected_outputs,
+        sections=sections,
+        previous_section_summary=previous_section_summary,
+        next_section_summary=next_section_summary,
+    )
+
+
+def build_deterministic_long_deck_plan(
+    brief: Any,
+    deck_plan: DeckPlan | None = None,
+    *,
+    batch_size: int = 10,
+) -> LongDeckPlan:
+    """Build a deterministic LongDeckPlan without calling an LLM."""
+
+    slide_count = int(_brief_value(brief, "slide_count", 0))
+    if slide_count <= 20:
+        raise ValueError("LongDeckPlan is only used for slide_count > 20.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+
+    topic = str(_brief_value(brief, "topic"))
+    audience = str(_brief_value(brief, "audience"))
+    language = str(_brief_value(brief, "language", "zh-CN") or "zh-CN")
+    deck_type = _infer_long_deck_type(brief, deck_plan)
+    sections = _build_long_deck_sections(brief, deck_plan, slide_count=slide_count)
+
+    batches: list[BatchPlan] = []
+    batch_index = 1
+    for start_slide in range(1, slide_count + 1, batch_size):
+        end_slide = min(start_slide + batch_size - 1, slide_count)
+        overlapping_sections = [
+            section
+            for section in sections
+            if section.start_slide <= end_slide and start_slide <= section.end_slide
+        ]
+        batch_goal = "Carry the next narrative segment forward without repeating earlier sections."
+        if overlapping_sections:
+            batch_goal = (
+                f"Develop {overlapping_sections[0].title}"
+                if len(overlapping_sections) == 1
+                else f"Bridge {overlapping_sections[0].title} into {overlapping_sections[-1].title}"
+            )
+        context_summary = " ".join(section.purpose for section in overlapping_sections)
+        must_include = list(
+            dict.fromkeys(item for section in overlapping_sections for item in section.must_include)
+        )
+        must_not_repeat = list(
+            dict.fromkeys(item for section in overlapping_sections for item in section.must_avoid)
+        )
+        expected_outputs = [
+            f"Slides {start_slide}-{end_slide} stay inside the planned narrative stage.",
+            "Layouts stay aligned with the section semantics they cover.",
+            "No repeated conclusion or reopening background after the closing stage.",
+        ]
+        batches.append(
+            BatchPlan(
+                batch_id=f"batch_{batch_index:02d}",
+                start_slide=start_slide,
+                end_slide=end_slide,
+                section_ids=[section.section_id for section in overlapping_sections],
+                batch_goal=batch_goal,
+                context_summary=context_summary or "Continue the planned narrative without breaking section order.",
+                must_include=must_include,
+                must_not_repeat=must_not_repeat,
+                expected_outputs=expected_outputs,
+            )
+        )
+        batch_index += 1
+
+    narrative_summary = (
+        "The long deck moves from opening context through boundary framing, system design, "
+        "workflow, evaluation, risk control, and closes with an action-oriented conclusion."
+    )
+    global_style_notes = [
+        "Keep section order stable across batches so context does not reappear after conclusion.",
+        "Preserve layout diversity by mixing matrix, process, card, metric, and takeaway pages.",
+        "Treat batches as generation windows only; the audience should still feel one continuous narrative.",
+    ]
+    content_constraints = [
+        "Do not generate all slides in one LLM call.",
+        "Do not reopen background/context after the conclusion section begins.",
+        "Closing section must stay last and end with executable next steps.",
+    ]
+    return LongDeckPlan(
+        topic=topic,
+        audience=audience,
+        slide_count=slide_count,
+        language=language,
+        deck_type=deck_type,
+        sections=sections,
+        batches=batches,
+        narrative_summary=narrative_summary,
+        global_style_notes=global_style_notes,
+        content_constraints=content_constraints,
+    )
 
 
 def build_deterministic_deck_plan(brief: Any, seed: str | None = None) -> DeckPlan:

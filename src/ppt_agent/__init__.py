@@ -2,6 +2,8 @@
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
+    BatchGenerationArtifact,
+    BatchGenerationRequest,
     DeckBrief,
     DeckBriefArtifact,
     DeckGenerationRequest,
@@ -9,13 +11,18 @@ from ppt_agent.generation import (
     GenerationAttempt,
     GenerationResult,
     build_brief_from_user_prompt,
+    build_batch_generation_prompt,
+    build_batch_generation_request,
     build_deterministic_deck_brief,
     build_fallback_deck_brief,
     build_generation_prompt,
     generate_deck_with_model,
+    generate_batch_deck_with_model,
     generate_deck_with_quality_gate,
+    validate_batch_deck_ir_against_batch_range,
 )
 from ppt_agent.load import load_deck, load_patch, load_theme
+from ppt_agent.long_deck import merge_batch_deck_irs, validate_merged_long_deck_ir
 from ppt_agent.models import (
     BBox,
     Deck,
@@ -29,12 +36,21 @@ from ppt_agent.models import (
 )
 from ppt_agent.patch import PatchIssue, PatchOperation, PatchResult, SlidePatch, apply_patch
 from ppt_agent.planning import (
+    BatchContext,
+    BatchPlan,
     DeckPlan,
+    LongDeckPlan,
+    LongDeckPlanningRequest,
     PlanSource,
+    SectionPlan,
     SlidePlan,
     build_deck_plan_prompt,
     build_deterministic_deck_plan,
+    build_deterministic_long_deck_plan,
     generate_deck_plan_with_model,
+    get_batch_by_id,
+    get_batch_context,
+    split_long_deck_into_batches,
 )
 from ppt_agent.qa import QAIssue, QAReport, analyze_deck
 from ppt_agent.renderer import render_deck_to_pptx
@@ -57,31 +73,48 @@ __all__ = [
     "PatchResult",
     "apply_patch",
     "write_model_json",
+    "BatchGenerationRequest",
+    "BatchGenerationArtifact",
     "DeckBrief",
     "DeckBriefArtifact",
     "DeckGenerationRequest",
     "DeckPlan",
     "DeckPlanArtifact",
+    "SectionPlan",
+    "BatchPlan",
+    "LongDeckPlan",
+    "LongDeckPlanningRequest",
+    "BatchContext",
     "PlanSource",
     "GenerationAttempt",
     "GenerationResult",
     "SlidePlan",
     "build_brief_from_user_prompt",
+    "build_batch_generation_prompt",
+    "build_batch_generation_request",
     "build_deterministic_deck_brief",
     "build_fallback_deck_brief",
     "build_deck_plan_prompt",
     "build_deterministic_deck_plan",
+    "build_deterministic_long_deck_plan",
     "build_generation_prompt",
     "generate_deck_with_model",
+    "generate_batch_deck_with_model",
     "generate_deck_plan_with_model",
     "generate_deck_with_quality_gate",
+    "validate_batch_deck_ir_against_batch_range",
+    "split_long_deck_into_batches",
+    "get_batch_by_id",
+    "get_batch_context",
     "QAIssue",
     "QAReport",
     "analyze_deck",
     "load_deck",
     "load_patch",
     "load_theme",
+    "merge_batch_deck_irs",
     "render_deck_to_pptx",
+    "validate_merged_long_deck_ir",
 ]
 
 __version__ = "0.1.0"

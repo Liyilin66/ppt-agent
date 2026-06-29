@@ -4,10 +4,22 @@ from pathlib import Path
 
 import pytest
 
-from ppt_agent.generation import DeckBrief, DeckGenerationRequest, GenerationAttempt, GenerationResult
+from ppt_agent.generation import (
+    BatchGenerationArtifact,
+    DeckBrief,
+    DeckGenerationRequest,
+    GenerationAttempt,
+    GenerationResult,
+    build_batch_generation_request,
+)
 from ppt_agent.load import load_deck
+from ppt_agent.models import Deck
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
-from ppt_agent.planning import build_deterministic_deck_plan
+from ppt_agent.planning import (
+    LongDeckPlanningRequest,
+    build_deterministic_deck_plan,
+    build_deterministic_long_deck_plan,
+)
 from ppt_agent.qa import analyze_deck
 from ppt_agent.runtime import JobTimeoutError, LLMCallTimeoutError
 
@@ -78,6 +90,20 @@ def _request(tmp_path: Path, patch_path: Path | None = None) -> BuildPipelineReq
     )
 
 
+def _long_deck_request() -> LongDeckPlanningRequest:
+    return LongDeckPlanningRequest(
+        topic="AI Agent 产品经理",
+        audience="IT 硕士学生",
+        slide_count=30,
+        language="zh-CN",
+        purpose="技术产品分享",
+        content_focus="责任边界、工作流、指标和风险治理",
+        must_include=["closing section must stay actionable"],
+        must_avoid=["marketing slogans"],
+        user_requirements_raw="做一份 30 页长 deck 规划，按 section 和 batch 组织。",
+    )
+
+
 def _deck_plan_payload(slide_count: int = 3) -> dict:
     layouts = ["title_slide", "two_column", "closing_slide"]
     roles = ["cover", "context", "summary"]
@@ -102,6 +128,46 @@ def _deck_plan_payload(slide_count: int = 3) -> dict:
 
 def _artifact_names(result) -> list[str]:
     return [artifact.name for artifact in result.artifacts]
+
+
+def _batch_artifact(long_plan, batch_id: str) -> BatchGenerationArtifact:
+    batch = next(batch for batch in long_plan.batches if batch.batch_id == batch_id)
+    template = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
+    slides = []
+    for slide_number in range(batch.start_slide, batch.end_slide + 1):
+        layout = "two_column"
+        if slide_number == 1:
+            layout = "title_slide"
+        elif slide_number == long_plan.slide_count:
+            layout = "closing_slide"
+        slides.append(
+            {
+                "slide_id": f"slide_{slide_number:03d}",
+                "title": f"Slide {slide_number}",
+                "layout": layout,
+                "elements": [
+                    {
+                        "element_id": f"s{slide_number:03d}_e01",
+                        "type": "text",
+                        "bbox": {"x": 0.8, "y": 0.8, "width": 7.0, "height": 0.8},
+                        "text": f"Point for slide {slide_number}",
+                    }
+                ],
+            }
+        )
+    return BatchGenerationArtifact(
+        batch_id=batch_id,
+        deck_ir=Deck.model_validate(
+            {
+                "deck_id": "generated_long_deck",
+                "title": long_plan.topic,
+                "theme_name": template.theme_name,
+                "canvas_width_in": template.canvas_width_in,
+                "canvas_height_in": template.canvas_height_in,
+                "slides": slides,
+            }
+        ),
+    )
 
 
 def test_run_build_pipeline_accepted_outputs_generated_artifacts(tmp_path: Path, monkeypatch) -> None:
@@ -157,6 +223,74 @@ def test_run_build_pipeline_writes_brief_artifact_when_available(tmp_path: Path,
     assert brief_artifact["brief_fallback_used"] is True
     assert brief_artifact["brief"]["topic"] == "AI Agent 产品经理"
     assert "build_brief" in brief_artifact["brief_error_message"]
+
+
+def test_run_build_pipeline_writes_optional_long_deck_plan_artifact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+
+    request = _request(tmp_path).model_copy(
+        update={
+            "long_deck_request": _long_deck_request(),
+            "long_deck_batch_size": 10,
+        }
+    )
+
+    result = run_build_pipeline(object(), request)
+    long_plan_artifact = json.loads((tmp_path / "generated_long_deck_plan.json").read_text(encoding="utf-8"))
+
+    assert result.accepted is True
+    assert "generated_long_deck_plan" in _artifact_names(result)
+    assert long_plan_artifact["slide_count"] == 30
+    assert len(long_plan_artifact["batches"]) == 3
+    assert long_plan_artifact["batches"][0]["start_slide"] == 1
+    assert long_plan_artifact["batches"][0]["end_slide"] == 10
+    assert long_plan_artifact["sections"][-1]["section_id"].endswith("conclusion_action")
+
+
+def test_run_build_pipeline_writes_optional_batch_deck_artifact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_02")
+    monkeypatch.setattr(
+        pipeline,
+        "generate_batch_deck_with_model",
+        lambda *args, **kwargs: load_deck(EXAMPLES_DIR / "sample_slide_ir.json"),
+    )
+
+    request = _request(tmp_path).model_copy(update={"batch_generation_request": batch_request})
+
+    result = run_build_pipeline(object(), request)
+
+    assert result.accepted is True
+    assert "generated_batch_batch_02_deck_ir" in _artifact_names(result)
+    assert (tmp_path / "generated_batch_batch_02_deck_ir.json").exists()
+
+
+def test_run_build_pipeline_writes_optional_merged_long_deck_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(), batch_size=15)
+    batch_artifacts = [
+        _batch_artifact(long_plan, "batch_02"),
+        _batch_artifact(long_plan, "batch_01"),
+    ]
+
+    request = _request(tmp_path).model_copy(
+        update={
+            "long_deck_plan": long_plan,
+            "long_deck_batch_artifacts": batch_artifacts,
+        }
+    )
+
+    result = run_build_pipeline(object(), request)
+    merged_artifact = json.loads((tmp_path / "generated_long_deck_ir.json").read_text(encoding="utf-8"))
+
+    assert result.accepted is True
+    assert "generated_long_deck_ir" in _artifact_names(result)
+    assert merged_artifact["slides"][0]["slide_id"] == "slide_001"
+    assert merged_artifact["slides"][-1]["slide_id"] == "slide_030"
 
 
 def test_run_build_pipeline_defaults_to_deterministic_brief_and_plan(tmp_path: Path) -> None:

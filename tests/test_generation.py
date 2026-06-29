@@ -6,25 +6,34 @@ from pydantic import ValidationError
 
 import ppt_agent.generation as generation
 from ppt_agent.generation import (
+    BatchGenerationRequest,
     DeckBrief,
     DeckGenerationRequest,
+    build_batch_generation_prompt,
+    build_batch_generation_request,
     build_brief_from_user_prompt,
     build_deterministic_deck_brief,
     build_fallback_deck_brief,
     build_generation_prompt,
     format_qa_feedback_for_generation,
+    generate_batch_deck_with_model,
     generate_deck_with_model,
     generate_deck_with_quality_gate,
+    validate_batch_deck_ir_against_batch_range,
 )
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck
 from ppt_agent.planning import (
     DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA,
     DeckPlan,
+    LongDeckPlanningRequest,
     SlidePlan,
     build_deck_plan_prompt,
     build_deterministic_deck_plan,
+    build_deterministic_long_deck_plan,
     generate_deck_plan_with_model,
+    get_batch_by_id,
+    get_batch_context,
 )
 from ppt_agent.qa import QAIssue, QAReport, analyze_deck
 from ppt_agent.runtime import LLMCallTimeoutError
@@ -204,6 +213,20 @@ def _valid_deck_plan_payload(slide_count: int = 3) -> dict:
         "slide_count": slide_count,
         "slides": slides,
     }
+
+
+def _long_deck_request(slide_count: int = 30) -> LongDeckPlanningRequest:
+    return LongDeckPlanningRequest(
+        topic="AI Agent 产品经理",
+        audience="IT 硕士学生",
+        slide_count=slide_count,
+        language="zh-CN",
+        purpose="技术产品分享",
+        content_focus="责任边界、工作流、指标和风险治理",
+        must_include=["每页都要有明确观点"],
+        must_avoid=["营销口号"],
+        user_requirements_raw="做一份长 deck，按 section 和 batch 组织。",
+    )
 
 
 def test_deck_generation_request_validates_slide_count() -> None:
@@ -1113,6 +1136,66 @@ def test_build_generation_prompt_forbids_instruction_leakage() -> None:
     assert "Final slide content must be audience-facing content only" in prompt
     assert "Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text" in prompt
     assert "把这一点转化为明确的下一步行动" in prompt
+
+
+def test_build_batch_generation_prompt_includes_batch_range_and_context() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_02")
+    batch_context = batch_request.batch_context
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "batch_id: batch_02" in prompt
+    assert "absolute slide range: 11-20" in prompt
+    assert "Previous context summary:" in prompt
+    assert "Next context summary:" in prompt
+    assert "Must not repeat:" in prompt
+    assert f"section_ids: {', '.join(batch_context.section_ids)}" in prompt
+    assert (batch_context.previous_section_summary or "None") in prompt
+    assert (batch_context.next_section_summary or "None") in prompt
+    assert batch_context.must_not_repeat[0] in prompt
+    assert "Use absolute slide numbering logic for this batch" in prompt
+    assert "Generate only slides inside the absolute range 11-20" in prompt
+    assert "Do not generate slides before 11 or after 20" in prompt
+
+
+def test_get_batch_by_id_returns_target_batch() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+
+    batch = get_batch_by_id(long_plan, "batch_02")
+
+    assert batch.batch_id == "batch_02"
+    assert batch.start_slide == 11
+    assert batch.end_slide == 20
+
+
+def test_get_batch_by_id_rejects_unknown_batch() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+
+    with pytest.raises(ValueError, match="Unknown batch_id"):
+        get_batch_by_id(long_plan, "batch_99")
+
+
+def test_validate_batch_deck_ir_against_batch_range_rejects_wrong_slide_count() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_context = get_batch_context(long_plan, "batch_02")
+    wrong_deck = Deck.model_validate(_deck_payload_with_slide_count(2))
+
+    with pytest.raises(ValueError, match="generated 2 slides"):
+        validate_batch_deck_ir_against_batch_range(wrong_deck, batch_context)
+
+
+def test_generate_batch_deck_with_model_normalizes_absolute_slide_ids() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_02")
+    model = FakeModel(_deck_payload_with_slide_count(10))
+
+    deck = generate_batch_deck_with_model(model, batch_request)
+
+    assert len(deck.slides) == 10
+    assert deck.slides[0].slide_id == "slide_011"
+    assert deck.slides[-1].slide_id == "slide_020"
+    assert "absolute slide range: 11-20" in model.structured_model.prompts[0]
 
 
 def test_format_qa_feedback_for_generation_instructs_layout_diversity_fix() -> None:

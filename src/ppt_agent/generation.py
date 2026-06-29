@@ -11,10 +11,13 @@ from pydantic import Field
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
 from ppt_agent.planning import (
+    BatchContext,
     DeckPlan,
+    LongDeckPlan,
     PlanSource,
     build_deterministic_deck_plan,
     generate_deck_plan_with_model,
+    get_batch_context,
 )
 from ppt_agent.qa import QAReport, analyze_deck
 from ppt_agent.runtime import StageObserver, invoke_with_timeout, observed_stage, sanitize_error_message
@@ -147,6 +150,22 @@ class DeckPlanArtifact(StrictModel):
     plan_source: PlanSource
     plan_fallback_used: bool = False
     plan_error_message: str | None = None
+
+
+class BatchGenerationRequest(StrictModel):
+    topic: str = Field(..., min_length=1)
+    audience: str = Field(..., min_length=1)
+    language: str = Field(default=DEFAULT_LANGUAGE, min_length=1)
+    deck_type: str = Field(..., min_length=1)
+    long_deck_plan: LongDeckPlan
+    batch_context: BatchContext
+    global_style_notes: list[str] = Field(default_factory=list)
+    content_constraints: list[str] = Field(default_factory=list)
+
+
+class BatchGenerationArtifact(StrictModel):
+    batch_id: str = Field(..., min_length=1)
+    deck_ir: Deck
 
 
 BRIEF_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -403,6 +422,100 @@ def _brief_from_request(request: DeckGenerationRequest) -> DeckBrief:
 
 def _format_brief_items(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) or "- None provided"
+
+
+def _format_batch_generation_request_items(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items) or "- None"
+
+
+def _format_batch_sections(batch_context: BatchContext) -> str:
+    lines: list[str] = []
+    for section in batch_context.sections:
+        lines.extend(
+            [
+                f"- {section.section_id}: {section.title}",
+                f"  Purpose: {section.purpose}",
+                f"  Slide range: {section.start_slide}-{section.end_slide}",
+                f"  Key questions: {'; '.join(section.key_questions)}",
+                f"  Key messages: {'; '.join(section.key_messages)}",
+                f"  Preferred layouts: {', '.join(section.preferred_layouts)}",
+                f"  Must include: {', '.join(section.must_include) or 'None'}",
+                f"  Must avoid: {', '.join(section.must_avoid) or 'None'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _allowed_batch_layouts(batch_context: BatchContext) -> list[str]:
+    layouts = [
+        layout_name
+        for section in batch_context.sections
+        for layout_name in section.preferred_layouts
+    ]
+    return _dedupe_preserve_order(layouts)
+
+
+def build_batch_generation_prompt(request: BatchGenerationRequest) -> str:
+    batch = request.batch_context
+    allowed_layouts = ", ".join(_allowed_batch_layouts(batch))
+    previous_context = batch.previous_section_summary or "None"
+    next_context = batch.next_section_summary or "None"
+    return f"""Generate one long-deck batch as Deck IR JSON only.
+
+Batch identity:
+- batch_id: {batch.batch_id}
+- absolute slide range: {batch.start_slide}-{batch.end_slide}
+- generate exactly {batch.end_slide - batch.start_slide + 1} slides
+- section_ids: {', '.join(batch.section_ids)}
+- deck_type: {request.deck_type}
+- topic: {request.topic}
+- audience: {request.audience}
+- language: {request.language}
+
+Batch goal:
+- {batch.batch_goal}
+
+Batch expected outputs:
+{_format_batch_generation_request_items(batch.expected_outputs)}
+
+Current batch sections:
+{_format_batch_sections(batch)}
+
+Previous context summary:
+- {previous_context}
+
+Next context summary:
+- {next_context}
+
+Must include:
+{_format_batch_generation_request_items(batch.must_include)}
+
+Must not repeat:
+{_format_batch_generation_request_items(batch.must_not_repeat)}
+
+Global style notes:
+{_format_batch_generation_request_items(request.global_style_notes)}
+
+Content constraints:
+{_format_batch_generation_request_items(request.content_constraints)}
+
+Allowed or preferred layouts for this batch:
+- {allowed_layouts or 'two_column, three_column, four_cards, process_flow, metric_cards, comparison_matrix, risk_matrix, key_takeaway'}
+
+Batch generation rules:
+- Return only valid Deck IR JSON. Do not output markdown, explanations, comments, or any extra text.
+- Generate only slides inside the absolute range {batch.start_slide}-{batch.end_slide}.
+- Use absolute slide numbering logic for this batch. This batch is not slide 1-{batch.end_slide - batch.start_slide + 1}; it is slide {batch.start_slide}-{batch.end_slide} of the full deck.
+- Keep slide_id aligned to absolute order when possible, for example slide_{batch.start_slide:03d}.
+- Do not generate slides before {batch.start_slide} or after {batch.end_slide}.
+- Do not repeat content already covered in the previous context summary.
+- Do not prematurely expand content reserved for the next context summary.
+- Every slide must carry one clear viewpoint or judgment.
+- Use a Chinese technical product share style. Do not use marketing slogans.
+- Keep section boundaries clear: cover only the sections listed in this batch.
+- Prefer the listed layouts when they match the current section semantics.
+- Output must validate as Deck IR JSON.
+"""
 
 
 def _stringify_brief_value(value: Any) -> str:
@@ -750,6 +863,62 @@ def _unwrap_structured_response(response: Any) -> Any:
     return response
 
 
+def build_batch_generation_request(
+    long_deck_plan: LongDeckPlan,
+    batch_id: str,
+    *,
+    global_style_notes: list[str] | None = None,
+    content_constraints: list[str] | None = None,
+) -> BatchGenerationRequest:
+    batch_context = get_batch_context(long_deck_plan, batch_id)
+    return BatchGenerationRequest(
+        topic=long_deck_plan.topic,
+        audience=long_deck_plan.audience,
+        language=long_deck_plan.language,
+        deck_type=long_deck_plan.deck_type,
+        long_deck_plan=long_deck_plan,
+        batch_context=batch_context,
+        global_style_notes=global_style_notes or list(long_deck_plan.global_style_notes),
+        content_constraints=content_constraints or list(long_deck_plan.content_constraints),
+    )
+
+
+def validate_batch_deck_ir_against_batch_range(deck_ir: Deck, batch_context: BatchContext) -> Deck:
+    expected_count = batch_context.end_slide - batch_context.start_slide + 1
+    actual_count = len(deck_ir.slides)
+    if actual_count != expected_count:
+        raise ValueError(
+            f"Batch '{batch_context.batch_id}' generated {actual_count} slides, but the batch range "
+            f"{batch_context.start_slide}-{batch_context.end_slide} requires {expected_count}."
+        )
+
+    expected_slide_ids = [
+        f"slide_{slide_index:03d}"
+        for slide_index in range(batch_context.start_slide, batch_context.end_slide + 1)
+    ]
+    actual_slide_ids = [slide.slide_id for slide in deck_ir.slides]
+    if actual_slide_ids != expected_slide_ids:
+        raise ValueError(
+            f"Batch '{batch_context.batch_id}' slide_id values must match the absolute batch range "
+            f"{expected_slide_ids}; got {actual_slide_ids}."
+        )
+
+    for slide in deck_ir.slides:
+        if not slide.title.strip():
+            raise ValueError(f"Batch '{batch_context.batch_id}' produced an empty slide title.")
+        text_values = [
+            element.text.strip()
+            for element in slide.elements
+            if getattr(element, "type", None) == "text"
+        ]
+        if not any(text_values):
+            raise ValueError(
+                f"Batch '{batch_context.batch_id}' slide '{slide.slide_id}' is missing non-empty text content."
+            )
+
+    return deck_ir
+
+
 def _normalize_brief_payload(
     response: Any,
     *,
@@ -1025,7 +1194,7 @@ def _normalize_style_aliases(style: Any, element_type: Any) -> Any:
 
 def _normalize_deck_payload(
     response: Any,
-    request: DeckGenerationRequest,
+    request: Any,
     *,
     slide_index_offset: int = 0,
     total_slide_count: int | None = None,
@@ -1037,10 +1206,12 @@ def _normalize_deck_payload(
         return response
 
     payload = copy.deepcopy(response)
-    payload.setdefault("deck_id", _identifier_from_text(request.topic, "generated"))
-    payload.setdefault("title", request.topic)
-    if request.style is not None:
-        payload.setdefault("theme_name", request.style)
+    topic = getattr(request, "topic")
+    style = getattr(request, "style", None)
+    payload.setdefault("deck_id", _identifier_from_text(topic, "generated"))
+    payload.setdefault("title", topic)
+    if style is not None:
+        payload.setdefault("theme_name", style)
 
     slides = payload.get("slides")
     if not isinstance(slides, list):
@@ -1056,7 +1227,7 @@ def _normalize_deck_payload(
             slide["slide_id"] = f"slide_{global_slide_index:03d}"
         else:
             slide.setdefault("slide_id", f"slide_{global_slide_index:03d}")
-        slide.setdefault("title", f"{request.topic} {global_slide_index}")
+        slide.setdefault("title", f"{topic} {global_slide_index}")
         slide["layout"] = _normalize_generated_layout(
             slide.get("layout"),
             global_slide_index,
@@ -1082,12 +1253,65 @@ def _normalize_deck_payload(
 
 def _ensure_slide_count(deck: Deck, request: DeckGenerationRequest) -> Deck:
     actual_count = len(deck.slides)
-    if actual_count != request.slide_count:
+    expected_count = getattr(request, "slide_count")
+    if actual_count != expected_count:
         raise ValueError(
-            f"Generated Deck has {actual_count} slides, but request.slide_count is {request.slide_count}. "
-            f"Regenerate exactly {request.slide_count} slides."
+            f"Generated Deck has {actual_count} slides, but request.slide_count is {expected_count}. "
+            f"Regenerate exactly {expected_count} slides."
         )
     return deck
+
+
+def generate_batch_deck_with_model(
+    model: Any,
+    request: BatchGenerationRequest,
+    *,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+) -> Deck:
+    """Generate one long-deck batch as Deck IR JSON."""
+
+    prompt = build_batch_generation_prompt(request)
+    structured_model = model.with_structured_output(Deck)
+    batch = request.batch_context
+    response = None
+    with observed_stage(
+        stage_observer,
+        "generate_batch_deck",
+        batch_id=batch.batch_id,
+        slide_count=batch.end_slide - batch.start_slide + 1,
+        start_slide=batch.start_slide,
+        end_slide=batch.end_slide,
+    ):
+        response = _unwrap_structured_response(
+            invoke_with_timeout(
+                lambda: structured_model.invoke(prompt),
+                timeout_seconds=timeout_seconds,
+                stage_name="generate_batch_deck",
+                timeout_detail=batch.batch_id,
+            )
+        )
+
+    expected_count = batch.end_slide - batch.start_slide + 1
+    normalization_context = type(
+        "BatchNormalizationContext",
+        (),
+        {
+            "topic": request.topic,
+            "style": None,
+            "slide_count": expected_count,
+        },
+    )()
+    deck = Deck.model_validate(
+        _normalize_deck_payload(
+            response,
+            normalization_context,
+            slide_index_offset=batch.start_slide - 1,
+            total_slide_count=request.long_deck_plan.slide_count,
+            force_slide_ids=True,
+        )
+    )
+    return validate_batch_deck_ir_against_batch_range(deck, batch)
 
 
 def _generate_deck_once(

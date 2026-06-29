@@ -13,12 +13,16 @@ from pydantic import Field, ValidationError
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
+    BatchGenerationArtifact,
+    BatchGenerationRequest,
     DeckBriefArtifact,
     DeckGenerationRequest,
     DeckPlanArtifact,
     GenerationResult,
+    generate_batch_deck_with_model,
     generate_deck_with_quality_gate,
 )
+from ppt_agent.long_deck import merge_batch_deck_irs
 from ppt_agent.load import load_patch, load_theme
 from ppt_agent.models import StrictModel
 from ppt_agent.patch import (
@@ -27,6 +31,7 @@ from ppt_agent.patch import (
     build_patch_failure_result,
     build_patchable_elements_report,
 )
+from ppt_agent.planning import LongDeckPlan, LongDeckPlanningRequest, build_deterministic_long_deck_plan
 from ppt_agent.renderer import render_deck_to_pptx
 from ppt_agent.runtime import JobTimeoutError, StageObserver, observed_stage
 
@@ -42,6 +47,11 @@ class BuildPipelineRequest(StrictModel):
     max_attempts: int = Field(default=2, ge=1)
     assets_dir: Path | None = None
     patch_path: Path | None = None
+    long_deck_request: LongDeckPlanningRequest | None = None
+    long_deck_plan: LongDeckPlan | None = None
+    long_deck_batch_size: int = Field(default=10, ge=1)
+    batch_generation_request: BatchGenerationRequest | None = None
+    long_deck_batch_artifacts: list[BatchGenerationArtifact] | None = None
 
 
 class BuildArtifact(StrictModel):
@@ -134,6 +144,62 @@ def run_build_pipeline(
     if generation_request.style is None:
         generation_request = generation_request.model_copy(update={"style": theme.name})
 
+    resolved_long_deck_plan = request.long_deck_plan
+    if request.long_deck_request is not None and resolved_long_deck_plan is None:
+        resolved_long_deck_plan = _run_stage(
+            stage_observer,
+            started_at,
+            job_timeout_seconds,
+            "build_long_deck_plan",
+            lambda: build_deterministic_long_deck_plan(
+                request.long_deck_request,
+                batch_size=request.long_deck_batch_size,
+            ),
+            slide_count=request.long_deck_request.slide_count,
+            batch_size=request.long_deck_batch_size,
+            use_deck_plan=False,
+        )
+
+    batch_deck = None
+    if request.batch_generation_request is not None:
+        batch_request = request.batch_generation_request
+        batch_deck = _run_stage(
+            stage_observer,
+            started_at,
+            job_timeout_seconds,
+            "generate_batch_deck",
+            lambda: generate_batch_deck_with_model(
+                model,
+                batch_request,
+                timeout_seconds=llm_timeout_seconds,
+                stage_observer=stage_observer,
+            ),
+            batch_id=batch_request.batch_context.batch_id,
+            start_slide=batch_request.batch_context.start_slide,
+            end_slide=batch_request.batch_context.end_slide,
+            use_deck_plan=False,
+        )
+
+    merged_long_deck = None
+    if request.long_deck_batch_artifacts is not None:
+        if resolved_long_deck_plan is None:
+            raise ValueError(
+                "long_deck_batch_artifacts requires long_deck_plan or long_deck_request."
+            )
+        merged_long_deck = _run_stage(
+            stage_observer,
+            started_at,
+            job_timeout_seconds,
+            "merge_long_deck",
+            lambda: merge_batch_deck_irs(
+                resolved_long_deck_plan,
+                request.long_deck_batch_artifacts or [],
+            ),
+            slide_count=resolved_long_deck_plan.slide_count,
+            batch_count=len(request.long_deck_batch_artifacts),
+            use_deck_plan=False,
+        )
+
     generation_result = _run_stage(
         stage_observer,
         started_at,
@@ -179,6 +245,28 @@ def run_build_pipeline(
                 output_dir / "generated_deck_plan.json",
             )
             artifacts.append(_artifact("generated_deck_plan", plan_path, "json"))
+
+        if resolved_long_deck_plan is not None:
+            long_plan_path = write_model_json(
+                resolved_long_deck_plan,
+                output_dir / "generated_long_deck_plan.json",
+            )
+            artifacts.append(_artifact("generated_long_deck_plan", long_plan_path, "json"))
+
+        if batch_deck is not None and request.batch_generation_request is not None:
+            batch_id = request.batch_generation_request.batch_context.batch_id
+            batch_path = write_model_json(
+                batch_deck,
+                output_dir / f"generated_batch_{batch_id}_deck_ir.json",
+            )
+            artifacts.append(_artifact(f"generated_batch_{batch_id}_deck_ir", batch_path, "json"))
+
+        if merged_long_deck is not None:
+            merged_long_deck_path = write_model_json(
+                merged_long_deck,
+                output_dir / "generated_long_deck_ir.json",
+            )
+            artifacts.append(_artifact("generated_long_deck_ir", merged_long_deck_path, "json"))
 
         deck_path = write_model_json(generation_result.deck, output_dir / "generated_deck_ir.json")
         artifacts.append(_artifact("generated_deck_ir", deck_path, "json"))
