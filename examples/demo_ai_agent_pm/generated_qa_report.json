@@ -1,0 +1,293 @@
+{
+  "deck_id": "generated_ai_agent",
+  "score": 60,
+  "issues": [
+    {
+      "severity": "warning",
+      "slide_id": "slide_001",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_001' is very dense: element bbox area is 128.07% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_001",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's1_bg' and 's1_title' overlap by 9.72 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_001",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's1_bg' and 's1_subtitle' overlap by 6.36 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_001",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's1_bg' and 's1_focus' overlap by 11.99 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_002",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_002' is very dense: element bbox area is 149.47% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_002",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's2_bg' and 's2_title' overlap by 6.49 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_002",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's2_bg' and 's2_left' overlap by 17.85 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_002",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's2_bg' and 's2_right' overlap by 17.85 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_002",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's2_bg' and 's2_rule' overlap by 7.28 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_003",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_003' is very dense: element bbox area is 155.80% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_003",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's003_bg' and 's003_title' overlap by 7.67 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_003",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's003_bg' and 's003_col_1' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_003",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's003_bg' and 's003_col_2' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_003",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's003_bg' and 's003_col_3' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_004",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_004' is very dense: element bbox area is 155.80% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_004",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's004_bg' and 's004_title' overlap by 7.67 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_004",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's004_bg' and 's004_col_1' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_004",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's004_bg' and 's004_col_2' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_004",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's004_bg' and 's004_col_3' overlap by 16.04 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_005' is very dense: element bbox area is 120.86% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's005_bg' and 's005_title' overlap by 6.55 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's005_bg' and 's005_step_1' overlap by 3.51 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's005_bg' and 's005_step_2' overlap by 3.51 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's005_bg' and 's005_step_3' overlap by 3.51 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_005",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's005_bg' and 's005_step_4' overlap by 3.78 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_006' is very dense: element bbox area is 122.75% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's006_bg' and 's006_title' overlap by 6.55 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's006_bg' and 's006_metric_1' overlap by 4.12 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's006_bg' and 's006_metric_2' overlap by 4.12 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's006_bg' and 's006_metric_3' overlap by 4.12 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_006",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's006_bg' and 's006_metric_4' overlap by 3.83 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_007",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_007' is very dense: element bbox area is 156.82% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_007",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's007_bg' and 's007_title' overlap by 7.14 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_007",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's007_bg' and 's007_risk_01' overlap by 16.56 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_007",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's007_bg' and 's007_risk_02' overlap by 16.56 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_007",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's007_bg' and 's007_risk_03' overlap by 16.56 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_008",
+      "element_id": null,
+      "code": "SLIDE_TOO_DENSE",
+      "message": "Slide 'slide_008' is very dense: element bbox area is 131.22% of the slide area."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_008",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's008_bg' and 's008_title' overlap by 8.77 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_008",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's008_bg' and 's008_action_01' overlap by 7.48 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_008",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's008_bg' and 's008_action_02' overlap by 7.48 square inches (100% of the smaller bbox)."
+    },
+    {
+      "severity": "warning",
+      "slide_id": "slide_008",
+      "element_id": null,
+      "code": "BBOX_OVERLAP",
+      "message": "Elements 's008_bg' and 's008_action_03' overlap by 7.48 square inches (100% of the smaller bbox)."
+    }
+  ]
+}

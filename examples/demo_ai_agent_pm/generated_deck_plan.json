@@ -1,0 +1,112 @@
+{
+  "deck_plan": {
+    "topic": "AI 产品经理如何设计 Agent 产品",
+    "audience": "IT 硕士学生",
+    "slide_count": 8,
+    "slides": [
+      {
+        "slide_index": 1,
+        "slide_role": "cover",
+        "key_message": "AI 产品经理如何设计 Agent 产品 的核心判断",
+        "content_goal": "用一句清晰主线打开面向 IT 硕士学生 的分享。",
+        "recommended_layout": "title_slide",
+        "content_items": 1,
+        "must_not_repeat": [
+          "泛泛介绍和空洞口号"
+        ]
+      },
+      {
+        "slide_index": 2,
+        "slide_role": "comparison",
+        "key_message": "责任边界先被重新定义",
+        "content_goal": "对比普通 AI 与 Agent 产品在责任边界上的差异。",
+        "recommended_layout": "comparison_matrix",
+        "content_items": 2,
+        "must_not_repeat": [
+          "AI 产品经理如何设计 Agent 产品 的核心判断"
+        ]
+      },
+      {
+        "slide_index": 3,
+        "slide_role": "framework",
+        "key_message": "技术边界决定产品承诺",
+        "content_goal": "拆解模型能力、工具能力与系统约束的边界。",
+        "recommended_layout": "three_column",
+        "content_items": 3,
+        "must_not_repeat": [
+          "AI 产品经理如何设计 Agent 产品 的核心判断",
+          "责任边界先被重新定义"
+        ]
+      },
+      {
+        "slide_index": 4,
+        "slide_role": "framework",
+        "key_message": "需求分析要落到可执行任务",
+        "content_goal": "把用户目标、任务状态和成功条件拆成可设计对象。",
+        "recommended_layout": "three_column",
+        "content_items": 3,
+        "must_not_repeat": [
+          "AI 产品经理如何设计 Agent 产品 的核心判断",
+          "责任边界先被重新定义",
+          "技术边界决定产品承诺"
+        ]
+      },
+      {
+        "slide_index": 5,
+        "slide_role": "process",
+        "key_message": "工作流设计决定 Agent 可控性",
+        "content_goal": "说明从需求推导到工具调用与人工确认的流程。",
+        "recommended_layout": "process_flow",
+        "content_items": 4,
+        "must_not_repeat": [
+          "责任边界先被重新定义",
+          "技术边界决定产品承诺",
+          "需求分析要落到可执行任务"
+        ]
+      },
+      {
+        "slide_index": 6,
+        "slide_role": "metrics",
+        "key_message": "评估指标要同时看效果与风险",
+        "content_goal": "定义效率、准确性、可控性和用户信任等指标。",
+        "recommended_layout": "metric_cards",
+        "content_items": 3,
+        "must_not_repeat": [
+          "技术边界决定产品承诺",
+          "需求分析要落到可执行任务",
+          "工作流设计决定 Agent 可控性"
+        ]
+      },
+      {
+        "slide_index": 7,
+        "slide_role": "risk",
+        "key_message": "落地风险需要前置治理",
+        "content_goal": "列出权限、失败处理和责任归属的主要风险与缓解方式。",
+        "recommended_layout": "risk_matrix",
+        "content_items": 3,
+        "must_not_repeat": [
+          "需求分析要落到可执行任务",
+          "工作流设计决定 Agent 可控性",
+          "评估指标要同时看效果与风险"
+        ]
+      },
+      {
+        "slide_index": 8,
+        "slide_role": "summary",
+        "key_message": "下一步从可执行判断开始",
+        "content_goal": "收束关键观点，并给出可执行的行动方向。",
+        "recommended_layout": "closing_slide",
+        "content_items": 2,
+        "must_not_repeat": [
+          "工作流设计决定 Agent 可控性",
+          "评估指标要同时看效果与风险",
+          "落地风险需要前置治理"
+        ]
+      }
+    ],
+    "plan_source": "deterministic"
+  },
+  "plan_source": "deterministic",
+  "plan_fallback_used": false,
+  "plan_error_message": null
+}

@@ -1,14 +1,36 @@
 # ppt-agent
 
-`ppt-agent` 是一个用于生成、校验、修改并渲染可编辑 PowerPoint 的 Python 工具链。它的核心思路不是让大模型直接写 `.pptx`，而是让大模型只生成严格的 `Deck` 结构化 JSON；后续的校验、质量检查、补丁修改和 PowerPoint 渲染都由确定性的 Python 代码完成。
+`ppt-agent` 是一个 AI Presentation Agent：通过 `Deck IR`、QA gate、确定性 renderer 和结构化 Patch Edit，把用户需求生成可编辑 PPTX。
+
+它的核心思路不是让大模型直接写 `.pptx`，而是让大模型只生成严格的 `Deck` 结构化 JSON；后续的 schema validation、质量检查、补丁修改和 PowerPoint 渲染都由确定性的 Python 代码完成。
 
 当前项目更关注“可控生成”和“可编辑 PPTX”，而不是把页面截图塞进幻灯片。所有内置模板都会输出 PowerPoint 原生文本框、形状和线条。
 
-## 当前能力
+## 核心设计原则
+
+- LLM 不直接生成 PPTX。
+- LLM 生成结构化 `Deck IR`。
+- Pydantic 负责 schema validation，并拒绝 schema 外字段。
+- Rule-based QA gate 检查内容质量、布局容量、视觉风险和叙事问题。
+- `python-pptx` renderer 确定性输出可编辑 PPTX。
+- Patch Edit 使用结构化 JSON patch，不使用自然语言直接改 PPT。
+- 生成、QA、patch、渲染和 job runtime 都可以拆分检查。
+
+## Features
 
 已包含：
 
 - 基于 Pydantic v2 的严格 Slide IR：`Deck`、`Slide`、`BBox`、`TextStyle`、形状样式和元素类型。
+- editable PPTX generation。
+- Deck IR artifact。
+- `DeckBrief` / `DeckPlan` artifacts。
+- QA report。
+- attempts / diagnostics artifact。
+- structured patch edit。
+- FastAPI local backend。
+- Minimal Web UI。
+- SQLite job metadata。
+- local artifacts。
 - 中文优先的生成流程：默认 `zh-CN`，只有用户明确要求英文时才生成英文内容。
 - `DeckBrief` 快速路径和兜底模式：需求解析 LLM 超时或失败时，可用确定性 brief 继续生成。
 - `DeckPlan` 规划层：包含 `slide_role`、`recommended_layout`、`content_items` 和叙事顺序约束。
@@ -21,32 +43,36 @@
 - 结构化 JSON Patch Edit：支持更新文本、移动元素、缩放元素和更新形状样式。
 - `python-pptx` 可编辑 `.pptx` 渲染。
 - 产品 CLI：`generate`、`qa`、`render`、`patch`、`build`。
-- 本地私有 beta FastAPI：创建任务、查询状态、查看当前阶段、列出和下载产物。
+- 本地 private beta FastAPI：创建任务、查询状态、查看当前阶段、列出和下载产物。
 
-当前不包含：
+## Current Limitations / 当前限制
 
-- LangGraph 工作流编排。
-- RAG 或外部文档 grounding。
-- image-to-PPT / image-to-editable-PPT。
-- 多模型选择 UI。
-- 用户在 Web UI 输入 API key。
-- React、Next.js、Streamlit 或完整前端框架。
-- 外部数据库或生产级托管。
-- ppt-master runtime 集成。
+- 当前不是商业 SaaS。
+- 不支持登录。
+- 不支持多租户。
+- 不支持 RAG。
+- 不支持 image-to-PPT / image-to-editable-PPT。
+- 不支持 30/50/100 页 batch generation；当前页数上限是 10。
+- 不支持多模型选择 UI。
+- 不支持用户在 Web UI 输入 API key；API key 只从服务端环境变量读取。
+- 不支持 React、Next.js、Streamlit 或完整前端框架。
+- 不支持复杂品牌模板系统。
+- 不支持外部数据库或生产级托管。
+- 不集成 ppt-master runtime。
+- 当前目标是 local private beta / portfolio demo。
 
-## 工作流
+## Architecture Pipeline
 
 ```mermaid
-flowchart LR
-    A["用户主题、受众、详细要求"] --> B["DeckBrief 解析或兜底模式"]
-    B --> C["DeckPlan 叙事规划"]
-    C --> D["LangChain structured output"]
-    D --> E["Validated Deck IR"]
-    E --> F["确定性 QA gate"]
-    F --> G["python-pptx 模板渲染"]
-    F --> H{"可选 JSON Patch"}
-    H --> G
-    G --> I["可编辑 PPTX 产物"]
+flowchart TD
+    A["User Requirements"] --> B["DeckBrief"]
+    B --> C["DeckPlan"]
+    C --> D["Chunked LLM Deck IR"]
+    D --> E["Pydantic Validation"]
+    E --> F["Rule-based QA Gate"]
+    F --> G["Deterministic PPTX Renderer"]
+    G --> H["Editable PPTX + Artifacts"]
+    H --> I["Structured Patch Edit"]
 ```
 
 ## 快速开始
@@ -57,6 +83,22 @@ flowchart LR
 uv sync
 uv run pytest
 ```
+
+设置服务端环境变量：
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+启动本地 Web UI：
+
+```bash
+uv run uvicorn ppt_agent.api:app --reload
+```
+
+打开：
+
+[http://127.0.0.1:8000](http://127.0.0.1:8000/)
 
 推荐的一步生成命令：
 
@@ -89,6 +131,79 @@ uv run ppt-agent build \
 | `patched_deck_ir.json` | 应用结构化 patch 后的 Deck IR。 |
 | `patch_result.json` | patch 执行结果和问题列表。 |
 | `patched_deck.pptx` | patch 后重新渲染的可编辑 PowerPoint。 |
+
+## Demo
+
+官方可复现 demo 位于：
+
+```text
+examples/demo_ai_agent_pm/
+```
+
+固定输入：
+
+- `input.json`：AI Agent 产品经理中文技术分享，8 页，面向准备进入 AI 产品岗位的 IT 硕士学生。
+
+本目录已包含一组来自本地 private-beta run 的真实 artifacts：
+
+- `generated_deck_brief.json`
+- `generated_deck_plan.json`
+- `generated_deck_ir.json`
+- `generated_qa_report.json`
+- `generated_attempts.json`
+- `generated_deck.pptx`
+
+重新生成：
+
+```bash
+uv run ppt-agent build \
+  --topic "AI 产品经理如何设计 Agent 产品" \
+  --audience "准备进入 AI 产品岗位的 IT 硕士学生" \
+  --slides 8 \
+  --language zh-CN \
+  --theme examples/theme.json \
+  --output-dir examples/demo_ai_agent_pm/output \
+  --requirements "中文技术产品分享，面向准备进入 AI 产品岗位的 IT 硕士学生，重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格像技术产品分享，不像营销材料。每页有明确观点，少用空泛口号。背景色极淡蓝绿色。PPT 必须可编辑。" \
+  --min-qa-score 80 \
+  --max-attempts 1
+```
+
+## Patch Edit Demo
+
+Patch demo 位于：
+
+```text
+examples/demo_ai_agent_pm/patches/
+```
+
+`sample_patch.json` 会修改官方 demo 第 1 页封面副标题，证明系统支持结构化局部修改，而不是整份 PPT 重新生成。
+
+独立应用 patch：
+
+```bash
+uv run ppt-agent patch examples/demo_ai_agent_pm/generated_deck_ir.json \
+  --patch examples/demo_ai_agent_pm/patches/sample_patch.json \
+  --output examples/demo_ai_agent_pm/patched_deck_ir.json \
+  --result-output examples/demo_ai_agent_pm/patch_result.json
+
+uv run ppt-agent render examples/demo_ai_agent_pm/patched_deck_ir.json \
+  --theme examples/theme.json \
+  --output examples/demo_ai_agent_pm/patched_deck.pptx
+```
+
+在完整 build pipeline 中应用 patch：
+
+```bash
+uv run ppt-agent build \
+  --topic "AI 产品经理如何设计 Agent 产品" \
+  --audience "准备进入 AI 产品岗位的 IT 硕士学生" \
+  --slides 8 \
+  --language zh-CN \
+  --theme examples/theme.json \
+  --output-dir examples/demo_ai_agent_pm/output \
+  --requirements "中文技术产品分享，重点讲技术边界、用户需求分析、工作流设计、评估指标和落地风险。PPT 必须可编辑。" \
+  --patch examples/demo_ai_agent_pm/patches/sample_patch.json
+```
 
 ## CLI 用法
 
@@ -152,6 +267,12 @@ http://127.0.0.1:8000
 ```
 
 这个页面用于本地私有 beta：提交 build job、轮询状态、显示当前阶段、展示错误信息和下载产物。它不是完整产品前端。
+
+private beta 操作说明见：
+
+```text
+docs/private_beta.md
+```
 
 创建任务：
 

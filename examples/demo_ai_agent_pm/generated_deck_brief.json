@@ -1,0 +1,30 @@
+{
+  "brief": {
+    "topic": "AI 产品经理如何设计 Agent 产品",
+    "audience": "IT 硕士学生",
+    "slide_count": 8,
+    "language": "zh-CN",
+    "purpose": "technical_product_share",
+    "tone": "professional / educational",
+    "visual_style": "clean_business, light blue-green background",
+    "content_focus": "我要做一份中文分享 PPT，面向准备进入 AI 产品岗位的 IT 硕士学生。重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格要像技术产品分享，不要像营销材料。每页内容要有明确观点，少用空泛口号。背景色要极淡蓝绿色",
+    "must_include": [
+      "AI Agent 产品经理需要理解的技术边界",
+      "用户需求分析",
+      "工作流设计",
+      "评估指标",
+      "落地风险",
+      "AI Agent",
+      "Agent",
+      "产品经理",
+      "技术边界"
+    ],
+    "must_avoid": [
+      "营销材料"
+    ],
+    "user_requirements_raw": "我要做一份中文分享 PPT，面向准备进入 AI 产品岗位的 IT 硕士学生。重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格要像技术产品分享，不要像营销材料。每页内容要有明确观点，少用空泛口号。背景色要极淡蓝绿色"
+  },
+  "brief_source": "deterministic",
+  "brief_fallback_used": false,
+  "brief_error_message": null
+}

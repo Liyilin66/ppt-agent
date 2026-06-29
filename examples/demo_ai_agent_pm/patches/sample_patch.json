@@ -1,0 +1,11 @@
+{
+  "patch_id": "demo_ai_agent_pm_update_cover_subtitle",
+  "operations": [
+    {
+      "op": "update_text",
+      "slide_id": "slide_001",
+      "element_id": "s1_subtitle",
+      "text": "从需求到工作流：用边界、指标和风险控制设计可落地 Agent"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "topic": "AI 产品经理如何设计 Agent 产品",
+  "audience": "准备进入 AI 产品岗位的 IT 硕士学生",
+  "slide_count": 8,
+  "language": "zh-CN",
+  "theme_path": "examples/theme.json",
+  "style": "clean_business",
+  "min_qa_score": 80,
+  "max_attempts": 1,
+  "requirements": "中文技术产品分享，面向准备进入 AI 产品岗位的 IT 硕士学生，重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格像技术产品分享，不像营销材料。每页有明确观点，少用空泛口号。背景色极淡蓝绿色。PPT 必须可编辑。"
+}
