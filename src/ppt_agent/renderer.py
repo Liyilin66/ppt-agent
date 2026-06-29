@@ -199,6 +199,17 @@ def _title_slide_title_metrics(title: str) -> tuple[float, float]:
     return 36, 0.88
 
 
+def _title_slide_subtitle_metrics(subtitle: str) -> tuple[float, float]:
+    char_count = len(subtitle)
+    word_count = len(subtitle.split())
+
+    if word_count > 24 or char_count > 110:
+        return 13.2, 1.05
+    if word_count > 16 or char_count > 76:
+        return 14.5, 0.9
+    return 16, 0.72
+
+
 def _split_heading_body(text: str) -> tuple[str, str]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
@@ -241,6 +252,25 @@ def _keywords_from_title(title: str) -> list[str]:
     ]
     keywords = [word for word in words if len(word) <= 14][:3]
     return keywords or ["Overview"]
+
+
+def _cover_keywords(title: str, body: list[str], deck: Deck) -> list[str]:
+    source = " ".join([title, *body])
+    if any("\u4e00" <= char <= "\u9fff" for char in source):
+        candidates = [
+            token.strip(" ，。,:;!?")
+            for token in source.replace("/", " ").replace("｜", " ").split()
+            if token.strip(" ，。,:;!?")
+        ]
+        compact = [token for token in candidates if 2 <= len(token) <= 8]
+        if compact:
+            return compact[:3]
+        cjk_chars = [char for char in title if "\u4e00" <= char <= "\u9fff"]
+        if len(cjk_chars) >= 6:
+            return ["".join(cjk_chars[:4]), "".join(cjk_chars[4:8]), "".join(cjk_chars[8:12])][:3]
+        return [_surface_label(deck, "Product", "产品"), _surface_label(deck, "Workflow", "工作流"), _surface_label(deck, "AI", "AI")]
+
+    return _keywords_from_title(title)
 
 
 def _is_sparse_card_text(text: str) -> bool:
@@ -383,48 +413,39 @@ def _render_heading_body_card(
 def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
     subtitle = body[0] if body else deck_slide.title
-    keywords = _keywords_from_title(title)
+    keywords = _cover_keywords(title, body, deck)
     margin = 0.8
-    title_y = 1.42
+    title_y = 1.34
     title_font_size, title_height = _title_slide_title_metrics(title)
-    subtitle_y = title_y + title_height + 0.28
-    subtitle_height = 0.78
-    accent_y = subtitle_y + subtitle_height + 0.28
+    subtitle_font_size, subtitle_height = _title_slide_subtitle_metrics(subtitle)
+    subtitle_y = title_y + title_height + 0.34
+    accent_y = subtitle_y + subtitle_height + 0.34
+    right_x = 8.96
+    right_width = deck.canvas_width_in - right_x - 0.72
+    label = _surface_label(deck, "Product Briefing", "技术产品分享")
 
-    _add_rect(
-        slide,
-        x=deck.canvas_width_in - 3.25,
-        y=0,
-        width=3.25,
-        height=deck.canvas_height_in,
-        fill_color=theme.colors.surface,
-        stroke_color=theme.colors.surface,
-    )
+    _add_rect(slide, x=0, y=0, width=deck.canvas_width_in, height=deck.canvas_height_in, fill_color=theme.colors.background)
+    _add_rect(slide, x=right_x + 0.1, y=0.7, width=right_width, height=5.95, fill_color=theme.colors.surface, stroke_color=theme.colors.surface)
+    _add_rect(slide, x=right_x + 0.48, y=1.08, width=right_width - 0.72, height=2.08, fill_color=theme.colors.background, stroke_color=theme.colors.surface, stroke_width_pt=1.0)
+    _add_rect(slide, x=right_x + right_width - 0.92, y=0.36, width=0.72, height=2.1, fill_color=theme.colors.primary, stroke_color=theme.colors.primary)
+    _add_rect(slide, x=right_x + 0.18, y=5.58, width=1.35, height=0.14, fill_color=theme.colors.accent)
+    _add_rect(slide, x=margin, y=0.92, width=0.9, height=0.08, fill_color=theme.colors.accent)
+    _add_rect(slide, x=margin, y=accent_y, width=3.6, height=0.08, fill_color=theme.colors.primary)
+
     _add_textbox(
         slide,
-        x=deck.canvas_width_in - 2.92,
-        y=1.0,
-        width=2.32,
-        height=0.35,
-        text="Focus",
-        style=_theme_text_style(theme, font_size_pt=10, color=theme.colors.primary, bold=True),
+        x=margin,
+        y=0.64,
+        width=3.2,
+        height=0.24,
+        text=label,
+        style=_theme_text_style(theme, font_size_pt=9.5, color=theme.colors.primary, bold=True),
     )
-    _add_textbox(
-        slide,
-        x=deck.canvas_width_in - 2.92,
-        y=1.55,
-        width=2.35,
-        height=1.15,
-        text="\n".join(keywords),
-        style=_theme_text_style(theme, font_size_pt=20 if len(keywords) >= 3 else 24, color=theme.colors.muted_text, bold=True, font_family=theme.fonts.heading),
-    )
-    _add_rect(slide, x=deck.canvas_width_in - 2.92, y=3.0, width=0.9, height=0.08, fill_color=theme.colors.accent)
-    _add_rect(slide, x=margin, y=accent_y, width=3.4, height=0.08, fill_color=theme.colors.primary)
     _add_textbox(
         slide,
         x=margin,
         y=title_y,
-        width=deck.canvas_width_in - 4.65,
+        width=7.85,
         height=title_height,
         text=title,
         style=_theme_text_style(theme, font_size_pt=title_font_size, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
@@ -433,21 +454,87 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         slide,
         x=margin,
         y=subtitle_y,
-        width=deck.canvas_width_in - 4.75,
+        width=7.58,
         height=subtitle_height,
-        text=_safe_text(subtitle, 118),
-        style=_theme_text_style(theme, font_size_pt=17, color=theme.colors.muted_text),
+        text=subtitle,
+        style=_theme_text_style(theme, font_size_pt=subtitle_font_size, color=theme.colors.muted_text),
     )
+
+    for index, keyword in enumerate(keywords[:3]):
+        chip_width = min(2.25, max(1.0, 0.42 + len(keyword) * 0.16))
+        _add_rect(
+            slide,
+            x=margin + index * 2.02,
+            y=5.72,
+            width=chip_width,
+            height=0.36,
+            fill_color=theme.colors.surface,
+            stroke_color=theme.colors.surface,
+        )
+        _add_textbox(
+            slide,
+            x=margin + index * 2.02 + 0.16,
+            y=5.82,
+            width=chip_width - 0.32,
+            height=0.14,
+            text=_safe_text(keyword, 16),
+            style=_theme_text_style(theme, font_size_pt=8.4, color=theme.colors.primary, bold=True),
+        )
+
+    hero_keyword = _safe_text(keywords[0] if keywords else title, 16)
+    _add_textbox(
+        slide,
+        x=right_x + 0.62,
+        y=1.5,
+        width=right_width - 1.1,
+        height=0.82,
+        text=hero_keyword,
+        style=_theme_text_style(theme, font_size_pt=27, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
+    )
+    _add_textbox(
+        slide,
+        x=right_x + 0.64,
+        y=2.42,
+        width=right_width - 1.16,
+        height=0.36,
+        text=_surface_label(deck, "Workflow-ready perspective", "面向工作流的产品视角"),
+        style=_theme_text_style(theme, font_size_pt=11.5, color=theme.colors.muted_text),
+    )
+    for index, keyword in enumerate(keywords[1:3], start=1):
+        _add_textbox(
+            slide,
+            x=right_x + 0.62,
+            y=3.58 + (index - 1) * 0.56,
+            width=right_width - 1.1,
+            height=0.2,
+            text=f"{index:02d}  {_safe_text(keyword, 18)}",
+            style=_theme_text_style(theme, font_size_pt=11, color=theme.colors.muted_text, bold=True),
+        )
 
 
 def _render_section_divider_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
+    keywords = _cover_keywords(title, body, deck)
+    label = _surface_label(deck, "Section", "章节过渡")
+
+    _add_rect(slide, x=9.35, y=0.78, width=2.9, height=5.7, fill_color=theme.colors.surface, stroke_color=theme.colors.surface)
+    _add_rect(slide, x=10.0, y=1.42, width=1.45, height=1.45, fill_color=theme.colors.background, stroke_color=theme.colors.surface, stroke_width_pt=1.0)
+    _add_rect(slide, x=10.78, y=4.75, width=1.18, height=0.12, fill_color=theme.colors.accent)
     _add_rect(slide, x=0.75, y=1.05, width=0.12, height=5.4, fill_color=theme.colors.primary)
     _add_textbox(
         slide,
         x=1.15,
-        y=2.25,
-        width=deck.canvas_width_in - 2.1,
+        y=1.68,
+        width=2.4,
+        height=0.24,
+        text=label,
+        style=_theme_text_style(theme, font_size_pt=9.5, color=theme.colors.primary, bold=True),
+    )
+    _add_textbox(
+        slide,
+        x=1.15,
+        y=2.1,
+        width=8.0,
         height=0.9,
         text=title,
         style=_theme_text_style(theme, font_size_pt=34, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
@@ -456,11 +543,32 @@ def _render_section_divider_template(slide, deck_slide, deck: Deck, theme: Theme
         _add_textbox(
             slide,
             x=1.17,
-            y=3.25,
-            width=deck.canvas_width_in - 2.3,
+            y=3.18,
+            width=7.65,
             height=0.7,
             text=body[0],
             style=_theme_text_style(theme, font_size_pt=18, color=theme.colors.muted_text),
+        )
+
+    for index, keyword in enumerate(keywords[:3]):
+        chip_width = min(2.1, max(1.0, 0.42 + len(keyword) * 0.16))
+        _add_rect(
+            slide,
+            x=1.17 + index * 2.2,
+            y=4.62,
+            width=chip_width,
+            height=0.34,
+            fill_color=theme.colors.surface,
+            stroke_color=theme.colors.surface,
+        )
+        _add_textbox(
+            slide,
+            x=1.31 + index * 2.2,
+            y=4.71,
+            width=chip_width - 0.28,
+            height=0.14,
+            text=_safe_text(keyword, 16),
+            style=_theme_text_style(theme, font_size_pt=8.2, color=theme.colors.primary, bold=True),
         )
 
 
@@ -770,33 +878,62 @@ def _render_process_flow_template(slide, deck_slide, deck: Deck, theme: Theme) -
     row_gap = 0.52
     top = 1.72 if len(columns_by_row) > 1 else 2.05
     step_index = 0
-    previous_center: tuple[float, float] | None = None
+    rows: list[list[tuple[int, float, float, float, float, str]]] = []
 
     for row_index, column_count in enumerate(columns_by_row):
         row_steps = steps[step_index : step_index + column_count]
         gutter = 0.34
-        step_width = (deck.canvas_width_in - margin * 2 - gutter * (column_count - 1)) / column_count
+        available_width = deck.canvas_width_in - margin * 2
+        step_width = (available_width - gutter * (column_count - 1)) / column_count
         y = top + row_index * (card_height + row_gap)
         row_offset = 0.0
         if len(row_steps) == 2 and len(steps) == 5:
-            row_offset = (step_width + gutter) / 2
+            step_width = (available_width - gutter * 2) / 3
+            row_offset = (available_width - (step_width * 2 + gutter)) / 2
 
+        row_positions: list[tuple[int, float, float, float, float, str]] = []
         for column_index, text in enumerate(row_steps):
             index = step_index + column_index + 1
             x = margin + row_offset + column_index * (step_width + gutter)
-            center = (x + step_width / 2, y + 0.12)
-            if previous_center is not None:
-                connector = slide.shapes.add_connector(
-                    MSO_CONNECTOR.STRAIGHT,
-                    Inches(previous_center[0]),
-                    Inches(previous_center[1]),
-                    Inches(center[0]),
-                    Inches(center[1]),
-                )
-                connector.line.color.rgb = _rgb_color(theme.colors.surface)
-                connector.line.width = Pt(1.0)
-            previous_center = center
+            row_positions.append((index, x, y, step_width, card_height, text))
+        rows.append(row_positions)
+        step_index += column_count
 
+    def add_connector(x1: float, y1: float, x2: float, y2: float) -> None:
+        if abs(y1 - y2) < 0.001 and x2 < x1:
+            x1, x2 = x2, x1
+        if abs(x1 - x2) < 0.001 and y2 < y1:
+            y1, y2 = y2, y1
+        connector = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Inches(x1),
+            Inches(y1),
+            Inches(x2),
+            Inches(y2),
+        )
+        connector.line.color.rgb = _rgb_color(theme.colors.surface)
+        connector.line.width = Pt(1.0)
+
+    for row_positions in rows:
+        for current, following in zip(row_positions, row_positions[1:]):
+            _index, x, y, width, _height, _text = current
+            _next_index, next_x, _next_y, _next_width, _next_height, _next_text = following
+            connector_y = y + 0.36
+            add_connector(x + width + 0.06, connector_y, next_x - 0.06, connector_y)
+
+    if len(rows) == 2 and len(steps) == 5:
+        last_top = rows[0][-1]
+        first_bottom = rows[1][0]
+        _index, x, y, width, height, _text = last_top
+        _bottom_index, bottom_x, bottom_y, _bottom_width, _bottom_height, _bottom_text = first_bottom
+        turn_x = deck.canvas_width_in - margin - 0.16
+        gap_y = y + height + row_gap * 0.46
+        add_connector(x + width + 0.06, gap_y, turn_x, gap_y)
+        add_connector(turn_x, gap_y, turn_x, bottom_y - 0.18)
+        add_connector(turn_x, bottom_y - 0.18, bottom_x + 0.28, bottom_y - 0.18)
+
+    for row_positions in rows:
+        for index, x, y, step_width, card_height, text in row_positions:
             accent = theme.colors.primary if index % 2 else theme.colors.secondary
             _add_rect(
                 slide,
@@ -848,8 +985,6 @@ def _render_process_flow_template(slide, deck_slide, deck: Deck, theme: Theme) -
                 text=_safe_text(body_text, 58),
                 style=_theme_text_style(theme, font_size_pt=10.8, color=theme.colors.muted_text),
             )
-
-        step_index += column_count
 
 
 def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:

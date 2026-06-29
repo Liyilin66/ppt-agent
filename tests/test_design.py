@@ -42,6 +42,15 @@ def test_layout_contract_registry_includes_professional_layouts() -> None:
     assert contracts["key_takeaway"].max_items == 4
 
 
+def test_section_divider_contract_is_transition_only() -> None:
+    contract = get_layout_contract("section_divider")
+
+    assert "chapter transition" in contract.best_for
+    assert "section break" in contract.best_for
+    assert "ordinary content explanation" in contract.avoid_when
+    assert "single key_message plus one explanation" in contract.avoid_when
+
+
 def test_get_layout_contract_rejects_unsupported_layout_with_clear_error() -> None:
     with pytest.raises(ValueError) as exc_info:
         get_layout_contract("timeline")

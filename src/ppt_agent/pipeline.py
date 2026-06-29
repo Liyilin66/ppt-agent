@@ -11,7 +11,13 @@ from typing import Any, Generator, Literal, TypeVar
 from pydantic import Field
 
 from ppt_agent.export import write_model_json
-from ppt_agent.generation import DeckGenerationRequest, GenerationResult, generate_deck_with_quality_gate
+from ppt_agent.generation import (
+    DeckBriefArtifact,
+    DeckGenerationRequest,
+    DeckPlanArtifact,
+    GenerationResult,
+    generate_deck_with_quality_gate,
+)
 from ppt_agent.load import load_patch, load_theme
 from ppt_agent.models import StrictModel
 from ppt_agent.patch import PatchResult, apply_patch
@@ -144,6 +150,30 @@ def run_build_pipeline(
     artifacts: list[BuildArtifact] = []
 
     with _pipeline_stage(stage_observer, started_at, job_timeout_seconds, "save_artifacts"):
+        if generation_result.brief is not None:
+            brief_path = write_model_json(
+                DeckBriefArtifact(
+                    brief=generation_result.brief,
+                    brief_source=generation_result.brief_source,
+                    brief_fallback_used=generation_result.brief_fallback_used,
+                    brief_error_message=generation_result.brief_error_message,
+                ),
+                output_dir / "generated_deck_brief.json",
+            )
+            artifacts.append(_artifact("generated_deck_brief", brief_path, "json"))
+
+        if generation_result.deck_plan is not None:
+            plan_path = write_model_json(
+                DeckPlanArtifact(
+                    deck_plan=generation_result.deck_plan,
+                    plan_source=generation_result.plan_source,
+                    plan_fallback_used=generation_result.plan_fallback_used,
+                    plan_error_message=generation_result.plan_error_message,
+                ),
+                output_dir / "generated_deck_plan.json",
+            )
+            artifacts.append(_artifact("generated_deck_plan", plan_path, "json"))
+
         deck_path = write_model_json(generation_result.deck, output_dir / "generated_deck_ir.json")
         artifacts.append(_artifact("generated_deck_ir", deck_path, "json"))
 

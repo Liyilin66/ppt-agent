@@ -108,6 +108,7 @@ def invoke_with_timeout(
     *,
     timeout_seconds: float | None,
     stage_name: str,
+    timeout_detail: str | None = None,
 ) -> T:
     """Run a blocking model call with an optional per-call timeout guard."""
 
@@ -127,8 +128,9 @@ def invoke_with_timeout(
     try:
         status, payload = result_queue.get(timeout=timeout_seconds)
     except queue.Empty as exc:
+        detail = f" {timeout_detail}" if timeout_detail else ""
         raise LLMCallTimeoutError(
-            f"LLM call timed out in stage '{stage_name}' after {timeout_seconds:g} seconds."
+            f"LLM call timed out in stage '{stage_name}'{detail} after {timeout_seconds:g} seconds."
         ) from exc
 
     if status == "error":

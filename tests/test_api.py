@@ -140,7 +140,22 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "currentStage" in response.text
     assert "elapsedSeconds" in response.text
+    assert "generate_deck_chunk_" in response.text
+    assert "正在快速解析需求" in response.text
+    assert "正在快速规划大纲" in response.text
+    assert "正在生成 Deck：第" in response.text
     assert "任务运行时间较长，请检查后端日志" in response.text
+
+
+def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    assert 'id="patch_path" name="patch_path"' in response.text
+    assert 'name="patch_path" placeholder="可选：examples/sample_patch.json"' in response.text
+    assert 'name="patch_path" value=' not in response.text
+    assert "sample_patch.js\"" not in response.text
+    assert "sample_patch.js<" not in response.text
 
 
 def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
@@ -184,6 +199,8 @@ def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> No
     generation_request = captured_request["request"].generation_request
     assert generation_request.language == "zh-CN"
     assert generation_request.user_requirements == "做一份中文课堂展示，提醒学术诚信风险。"
+    assert generation_request.use_llm_brief is False
+    assert generation_request.use_llm_plan is False
 
 
 def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:

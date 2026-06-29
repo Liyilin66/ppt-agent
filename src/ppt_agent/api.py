@@ -177,7 +177,7 @@ INDEX_HTML = """<!doctype html>
           </label>
           <label>
             Patch 文件路径
-            <input id="patch_path" name="patch_path" placeholder="examples/sample_patch.json">
+            <input id="patch_path" name="patch_path" placeholder="可选：examples/sample_patch.json">
           </label>
         </div>
         <label class="full">
@@ -232,7 +232,11 @@ INDEX_HTML = """<!doctype html>
         create_job: "正在创建任务",
         running: "正在启动生成任务",
         build_brief: "正在解析需求",
+        build_brief_fast_path: "正在快速解析需求",
+        build_brief_fallback: "需求解析超时，使用快速模式继续",
         generate_deck_plan: "正在规划大纲",
+        generate_deck_plan_fast_path: "正在快速规划大纲",
+        generate_deck_plan_fallback: "大纲规划超时，使用快速模式继续",
         generate_deck: "正在生成 Deck",
         qa_attempt: "正在执行 QA 检查",
         render_pptx: "正在渲染 PPTX",
@@ -245,8 +249,16 @@ INDEX_HTML = """<!doctype html>
         jobStatus.textContent = statusText[status] || status;
       }
 
+      function stageLabel(stage) {
+        const chunkMatch = /^generate_deck_chunk_(\\d+)_of_(\\d+)$/.exec(stage || "");
+        if (chunkMatch) {
+          return `正在生成 Deck：第 ${chunkMatch[1]}/${chunkMatch[2]} 组`;
+        }
+        return stageText[stage] || stage || "暂无";
+      }
+
       function setProgress(job) {
-        currentStage.textContent = stageText[job.current_stage] || job.current_stage || "暂无";
+        currentStage.textContent = stageLabel(job.current_stage);
         elapsedSeconds.textContent = String(job.elapsed_seconds || 0);
         const isTerminal = job.status === "succeeded" || job.status === "failed";
         if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
@@ -442,7 +454,14 @@ def _log_job_stage(
     metadata: dict,
 ) -> None:
     if event == "start":
-        store.update_progress(job_id, current_stage=stage_name)
+        chunk_index = metadata.get("chunk_index")
+        total_chunks = metadata.get("total_chunks")
+        current_stage = (
+            f"generate_deck_chunk_{chunk_index}_of_{total_chunks}"
+            if stage_name == "generate_deck" and chunk_index and total_chunks
+            else stage_name
+        )
+        store.update_progress(job_id, current_stage=current_stage)
 
     error_message = metadata.get("error_message")
     record = {
@@ -457,6 +476,7 @@ def _log_job_stage(
         "use_deck_plan": metadata.get("use_deck_plan", use_deck_plan),
         "attempt_index": metadata.get("attempt_index"),
         "chunk_index": metadata.get("chunk_index"),
+        "total_chunks": metadata.get("total_chunks"),
         "error_message": sanitize_error_message(error_message) if error_message else None,
     }
     logger.info("job_stage %s", json.dumps(record, ensure_ascii=False))

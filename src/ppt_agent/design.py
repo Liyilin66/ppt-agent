@@ -67,15 +67,22 @@ SUPPORTED_LAYOUT_CONTRACTS: tuple[LayoutContract, ...] = (
     ),
     LayoutContract(
         layout_name="section_divider",
-        best_for=["context", "framework", "process"],
+        best_for=[
+            "chapter transition",
+            "section break",
+            "agenda divider",
+        ],
         required_slots=["section_title"],
         optional_slots=["section_subtitle"],
         min_items=1,
         max_items=2,
         avoid_when=[
             "short decks",
+            "ordinary content explanation",
+            "single key_message plus one explanation",
             "data-heavy slides",
             "standalone tactical recommendations",
+            "decks with 8 or fewer slides unless the user asks for transition pages",
         ],
     ),
     LayoutContract(

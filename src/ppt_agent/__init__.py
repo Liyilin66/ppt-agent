@@ -3,10 +3,14 @@
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
     DeckBrief,
+    DeckBriefArtifact,
     DeckGenerationRequest,
+    DeckPlanArtifact,
     GenerationAttempt,
     GenerationResult,
     build_brief_from_user_prompt,
+    build_deterministic_deck_brief,
+    build_fallback_deck_brief,
     build_generation_prompt,
     generate_deck_with_model,
     generate_deck_with_quality_gate,
@@ -26,8 +30,10 @@ from ppt_agent.models import (
 from ppt_agent.patch import PatchIssue, PatchOperation, PatchResult, SlidePatch, apply_patch
 from ppt_agent.planning import (
     DeckPlan,
+    PlanSource,
     SlidePlan,
     build_deck_plan_prompt,
+    build_deterministic_deck_plan,
     generate_deck_plan_with_model,
 )
 from ppt_agent.qa import QAIssue, QAReport, analyze_deck
@@ -52,13 +58,19 @@ __all__ = [
     "apply_patch",
     "write_model_json",
     "DeckBrief",
+    "DeckBriefArtifact",
     "DeckGenerationRequest",
     "DeckPlan",
+    "DeckPlanArtifact",
+    "PlanSource",
     "GenerationAttempt",
     "GenerationResult",
     "SlidePlan",
     "build_brief_from_user_prompt",
+    "build_deterministic_deck_brief",
+    "build_fallback_deck_brief",
     "build_deck_plan_prompt",
+    "build_deterministic_deck_plan",
     "build_generation_prompt",
     "generate_deck_with_model",
     "generate_deck_plan_with_model",

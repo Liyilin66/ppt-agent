@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+import hashlib
+from dataclasses import dataclass
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -21,6 +23,7 @@ SLIDE_ROLES: tuple[str, ...] = (
     "risk",
     "summary",
 )
+PlanSource = Literal["llm", "deterministic", "fallback", "provided", "none"]
 
 
 class SlidePlan(StrictModel):
@@ -38,6 +41,7 @@ class DeckPlan(StrictModel):
     audience: str = Field(..., min_length=1)
     slide_count: int = Field(..., ge=1, le=10)
     slides: list[SlidePlan] = Field(..., min_length=1)
+    plan_source: PlanSource = "llm"
 
     @model_validator(mode="after")
     def validate_slide_plan_relationships(self) -> Self:
@@ -85,6 +89,7 @@ DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
         "topic": {"type": "string"},
         "audience": {"type": "string"},
         "slide_count": {"type": "integer"},
+        "plan_source": {"type": "string"},
         "slides": {
             "type": "array",
             "items": {
@@ -201,6 +206,301 @@ def _format_role_layout_guidance() -> str:
     )
 
 
+@dataclass(frozen=True)
+class _ArcStep:
+    key_message: str
+    slide_role: SlideRole
+    content_goal: str
+    layout_hint: str | None = None
+
+
+_PLAN_RECIPES: dict[str, dict[str, tuple[_ArcStep, ...]]] = {
+    "technical_product_share": {
+        "problem_to_method": (
+            _ArcStep("责任边界先被重新定义", "comparison", "对比普通 AI 与 Agent 产品在责任边界上的差异。"),
+            _ArcStep("技术边界决定产品承诺", "framework", "拆解模型能力、工具能力与系统约束的边界。"),
+            _ArcStep("需求分析要落到可执行任务", "framework", "把用户目标、任务状态和成功条件拆成可设计对象。"),
+            _ArcStep("工作流设计决定 Agent 可控性", "process", "说明从需求推导到工具调用与人工确认的流程。"),
+            _ArcStep("评估指标要同时看效果与风险", "metrics", "定义效率、准确性、可控性和用户信任等指标。"),
+            _ArcStep("落地风险需要前置治理", "risk", "列出权限、失败处理和责任归属的主要风险与缓解方式。"),
+            _ArcStep("小场景验证比大而全更可靠", "summary", "给出从低风险场景启动的落地建议。"),
+        ),
+        "workflow_first": (
+            _ArcStep("真实场景先于能力清单", "context", "从用户任务场景解释为什么需要 Agent 产品。"),
+            _ArcStep("任务拆解决定 Agent 边界", "framework", "把复杂需求拆成目标、输入、状态和输出。"),
+            _ArcStep("工作流是产品经理的核心设计物", "process", "呈现需求到步骤、工具、确认点的流程。"),
+            _ArcStep("权限设计保护用户与系统", "risk", "说明工具权限、数据权限和人工接管边界。"),
+            _ArcStep("评估必须覆盖过程质量", "metrics", "说明任务完成率、回退率、误触发和满意度。"),
+            _ArcStep("失败处理决定真实可用性", "risk", "列出失败场景、影响和可恢复策略。"),
+            _ArcStep("落地从可观测闭环开始", "summary", "总结如何用日志、QA 和反馈形成迭代闭环。"),
+        ),
+        "risk_first": (
+            _ArcStep("先定义不能做什么", "comparison", "对比能力展示与产品责任之间的差异。"),
+            _ArcStep("风险约束不是上线后的补丁", "risk", "说明高风险场景、影响和治理动作。"),
+            _ArcStep("系统约束让 Agent 可被信任", "framework", "拆解规则、权限、状态和审计四类约束。"),
+            _ArcStep("工作流要暴露关键确认点", "process", "展示用户确认、工具调用和回滚路径。"),
+            _ArcStep("指标要衡量可控而不只衡量效率", "metrics", "用效果、稳定性和安全性指标约束产品判断。"),
+            _ArcStep("取舍来自场景优先级", "comparison", "对比自动化收益与风险成本的产品取舍。"),
+            _ArcStep("落地路径需要渐进放权", "summary", "总结从建议型到执行型 Agent 的推进节奏。"),
+        ),
+    },
+    "classroom_teaching": {
+        "concept_to_practice": (
+            _ArcStep("先建立共同问题", "context", "用学习或课堂场景引入主题。"),
+            _ArcStep("核心概念需要边界感", "framework", "解释关键概念、适用范围和常见误解。"),
+            _ArcStep("方法要能被学生复用", "process", "把理解主题的方法拆成可操作步骤。"),
+            _ArcStep("例子帮助连接真实任务", "comparison", "通过对比或案例展示好做法与坏做法。"),
+            _ArcStep("风险提醒比口号更重要", "risk", "说明学术诚信、依赖风险或安全边界。"),
+            _ArcStep("练习建议让知识落地", "summary", "给出课后行动或检查清单。"),
+        ),
+        "problem_example_action": (
+            _ArcStep("问题意识决定学习方向", "context", "说明为什么这个主题值得学生理解。"),
+            _ArcStep("具体例子降低理解门槛", "comparison", "用两个场景或前后变化说明主题价值。"),
+            _ArcStep("方法框架提供操作路径", "framework", "归纳学生可以复用的关键方法。"),
+            _ArcStep("注意事项保护学习质量", "risk", "列出误用、过度依赖和诚信风险。"),
+            _ArcStep("行动建议要具体可执行", "summary", "给出下一步学习和实践建议。"),
+        ),
+    },
+    "business_pitch": {
+        "pain_solution_market": (
+            _ArcStep("用户痛点需要被量化", "context", "说明目标客户面临的高频问题。"),
+            _ArcStep("市场机会来自明确人群", "metrics", "用机会规模、频次或价值指标说明吸引力。"),
+            _ArcStep("方案要直接回应痛点", "comparison", "对比现状与方案后的体验变化。"),
+            _ArcStep("产品能力构成差异化", "framework", "拆解核心能力、壁垒和交付方式。"),
+            _ArcStep("商业模式要可验证", "metrics", "说明收入、成本或增长指标。"),
+            _ArcStep("竞争优势来自执行路径", "comparison", "对比竞品或替代方案的差异。"),
+            _ArcStep("Roadmap 聚焦近期验证", "process", "展示从试点到扩张的阶段路径。"),
+        ),
+        "customer_value": (
+            _ArcStep("客户问题定义价值边界", "context", "说明目标客户、任务和未满足需求。"),
+            _ArcStep("价值主张必须一句话说清", "summary", "提炼核心价值与用户收益。"),
+            _ArcStep("使用场景证明需求真实", "process", "展示典型客户使用流程。"),
+            _ArcStep("方案能力服务关键场景", "framework", "拆解产品能力与场景的对应关系。"),
+            _ArcStep("指标验证商业可行性", "metrics", "说明采用率、留存、效率或转化指标。"),
+            _ArcStep("商业化节奏需要取舍", "comparison", "对比不同客户或渠道路径。"),
+            _ArcStep("下一步聚焦可交付承诺", "summary", "给出试点、合作或行动请求。"),
+        ),
+    },
+    "project_report": {
+        "goal_process_result": (
+            _ArcStep("项目目标定义交付标准", "context", "说明项目背景、目标和评价标准。"),
+            _ArcStep("方法选择回应约束条件", "framework", "解释技术、资源或时间约束下的方法选择。"),
+            _ArcStep("实现过程需要可追踪", "process", "展示关键模块或工作流程。"),
+            _ArcStep("结果要和目标对应", "metrics", "呈现成果、指标或完成情况。"),
+            _ArcStep("问题暴露下一步改进空间", "risk", "列出遇到的问题、影响和处理方式。"),
+            _ArcStep("改进方向形成后续计划", "summary", "总结复盘结论和下一步。"),
+        ),
+        "before_after_learning": (
+            _ArcStep("背景说明为什么要做", "context", "介绍项目起点与核心挑战。"),
+            _ArcStep("方案设计体现关键判断", "framework", "说明方案结构与核心设计取舍。"),
+            _ArcStep("关键实现支撑最终效果", "process", "展示实现步骤或模块协作。"),
+            _ArcStep("前后对比说明变化", "comparison", "对比项目实施前后的状态。"),
+            _ArcStep("收获来自真实问题", "summary", "总结能力提升和经验教训。"),
+            _ArcStep("风险和不足需要诚实呈现", "risk", "说明限制、风险和未来修正方式。"),
+        ),
+    },
+    "risk_analysis": {
+        "risk_map": (
+            _ArcStep("背景决定风险边界", "context", "说明风险分析对象和适用范围。"),
+            _ArcStep("风险分类帮助排序", "framework", "把风险拆成可管理类别。"),
+            _ArcStep("高风险场景需要优先处理", "risk", "列出最关键风险、影响和缓解措施。"),
+            _ArcStep("影响路径决定治理优先级", "comparison", "对比不同风险的影响范围和严重度。"),
+            _ArcStep("缓解措施要能执行", "process", "展示预防、监控和响应流程。"),
+            _ArcStep("监控指标让风险可见", "metrics", "定义触发阈值、质量指标和复盘指标。"),
+        ),
+        "control_framework": (
+            _ArcStep("问题定义控制目标", "context", "说明控制目标和失败后果。"),
+            _ArcStep("权限是第一道边界", "risk", "列出权限风险、影响和缓解措施。"),
+            _ArcStep("审计让过程可追责", "process", "展示记录、检查和复盘流程。"),
+            _ArcStep("回滚能力降低失败成本", "risk", "说明失败处理和恢复策略。"),
+            _ArcStep("指标监测治理效果", "metrics", "定义风险暴露、响应速度和误报指标。"),
+            _ArcStep("落地建议需要分阶段", "summary", "总结控制框架的实施顺序。"),
+        ),
+    },
+    "general_knowledge_share": {
+        "background_concept_application": (
+            _ArcStep("背景说明主题价值", "context", "说明主题与听众的关系。"),
+            _ArcStep("核心概念建立共同语言", "framework", "解释关键概念和边界。"),
+            _ArcStep("重点一提供主要判断", "framework", "展开第一个核心观点。"),
+            _ArcStep("重点二补足实践视角", "comparison", "对比不同做法或场景。"),
+            _ArcStep("应用场景帮助迁移理解", "process", "说明如何把概念应用到实际任务。"),
+            _ArcStep("风险边界避免误用", "risk", "说明限制、风险和注意事项。"),
+        ),
+    },
+}
+
+
+def _brief_text(brief: Any) -> str:
+    values = [
+        getattr(brief, "topic", ""),
+        getattr(brief, "audience", ""),
+        getattr(brief, "purpose", ""),
+        getattr(brief, "content_focus", ""),
+        getattr(brief, "user_requirements_raw", "") or "",
+        " ".join(getattr(brief, "must_include", []) or []),
+    ]
+    return " ".join(str(value) for value in values if value).lower()
+
+
+def _classify_plan_purpose(brief: Any) -> str:
+    text = _brief_text(brief)
+    if any(marker in text for marker in ["风险", "安全", "合规", "失败处理", "risk", "security", "compliance"]):
+        if not any(marker in text for marker in ["产品经理", "agent 产品", "技术产品", "product manager"]):
+            return "risk_analysis"
+    if any(marker in text for marker in ["pitch", "商业计划", "融资", "投资", "市场机会", "商业模式"]):
+        return "business_pitch"
+    if any(marker in text for marker in ["项目总结", "作业汇报", "实习", "开发项目", "project report"]):
+        return "project_report"
+    if any(marker in text for marker in ["课堂", "教学", "学生", "学习", "classroom", "teaching", "students"]):
+        if not any(marker in text for marker in ["产品经理", "agent 产品", "技术产品", "产品方法论"]):
+            return "classroom_teaching"
+    if any(marker in text for marker in ["ai 产品经理", "agent", "技术产品", "产品方法论", "product manager"]):
+        return "technical_product_share"
+    return "general_knowledge_share"
+
+
+def _stable_variant_name(purpose: str, brief: Any, seed: str | None) -> str:
+    variants = sorted(_PLAN_RECIPES[purpose])
+    seed_material = seed or "|".join(
+        [
+            str(getattr(brief, "topic", "")),
+            str(getattr(brief, "audience", "")),
+            str(getattr(brief, "slide_count", "")),
+            str(getattr(brief, "user_requirements_raw", "") or ""),
+            str(getattr(brief, "content_focus", "") or ""),
+        ]
+    )
+    digest = hashlib.sha256(seed_material.encode("utf-8")).hexdigest()
+    return variants[int(digest[:8], 16) % len(variants)]
+
+
+def _content_items_for_layout(layout_name: str) -> int:
+    contract = get_layout_contract(layout_name)
+    preferred = {
+        "title_slide": 1,
+        "closing_slide": 2,
+        "comparison_matrix": 2,
+        "process_flow": 4,
+        "risk_matrix": 3,
+        "metric_cards": 3,
+        "key_takeaway": 3,
+        "four_cards": 4,
+        "three_column": 3,
+        "two_column": 2,
+        "section_divider": 1,
+    }.get(layout_name, contract.min_items)
+    return min(max(preferred, contract.min_items), contract.max_items)
+
+
+def _layout_for_step(step: _ArcStep, slide_index: int, slide_count: int) -> str:
+    if slide_index == 1:
+        return "title_slide"
+    if slide_index == slide_count:
+        return "closing_slide"
+    if step.layout_hint:
+        return step.layout_hint
+    if step.slide_role == "comparison":
+        return "comparison_matrix"
+    if step.slide_role == "process":
+        return "process_flow"
+    if step.slide_role == "risk":
+        return "risk_matrix"
+    if step.slide_role == "metrics":
+        return "metric_cards"
+    if step.slide_role == "summary":
+        return "key_takeaway"
+    if step.slide_role == "framework":
+        return "four_cards" if any(marker in step.key_message for marker in ["能力", "分类", "框架"]) else "three_column"
+    return "two_column"
+
+
+def _alternate_layout(role: SlideRole, current_layout: str) -> str:
+    alternatives = {
+        "context": ["two_column", "three_column", "key_takeaway"],
+        "comparison": ["comparison_matrix", "two_column", "metric_cards"],
+        "framework": ["three_column", "four_cards", "key_takeaway"],
+        "process": ["process_flow", "four_cards", "three_column"],
+        "metrics": ["metric_cards", "comparison_matrix", "three_column"],
+        "risk": ["risk_matrix", "two_column", "three_column"],
+        "summary": ["key_takeaway", "closing_slide", "four_cards"],
+    }.get(role, [current_layout])
+    for layout in alternatives:
+        if layout != current_layout:
+            return layout
+    return current_layout
+
+
+def _fit_steps_to_count(steps: tuple[_ArcStep, ...], count: int) -> list[_ArcStep]:
+    if count <= 0:
+        return []
+    if count <= len(steps):
+        return list(steps[:count])
+
+    result = list(steps)
+    extension_pool = _PLAN_RECIPES["general_knowledge_share"]["background_concept_application"]
+    cursor = 0
+    while len(result) < count:
+        result.append(extension_pool[cursor % len(extension_pool)])
+        cursor += 1
+    return result
+
+
+def build_deterministic_deck_plan(brief: Any, seed: str | None = None) -> DeckPlan:
+    """Build a deterministic DeckPlan without calling an LLM."""
+
+    slide_count = int(_brief_value(brief, "slide_count", 1))
+    topic = str(_brief_value(brief, "topic"))
+    audience = str(_brief_value(brief, "audience"))
+    purpose = _classify_plan_purpose(brief)
+    variant_name = _stable_variant_name(purpose, brief, seed)
+    body_steps = _fit_steps_to_count(_PLAN_RECIPES[purpose][variant_name], max(slide_count - 2, 0))
+
+    slides: list[SlidePlan] = []
+    used_messages: set[str] = set()
+
+    for index in range(1, slide_count + 1):
+        if index == 1:
+            step = _ArcStep(f"{topic} 的核心判断", "cover", f"用一句清晰主线打开面向 {audience} 的分享。")
+        elif index == slide_count:
+            step = _ArcStep("下一步从可执行判断开始", "summary", "收束关键观点，并给出可执行的行动方向。")
+        else:
+            step = body_steps[index - 2]
+
+        key_message = step.key_message
+        if key_message in used_messages:
+            key_message = f"{key_message} {index}"
+        used_messages.add(key_message)
+
+        layout_name = _layout_for_step(step, index, slide_count)
+        if len(slides) >= 2 and slides[-1].recommended_layout == slides[-2].recommended_layout == layout_name:
+            layout_name = _alternate_layout(step.slide_role, layout_name)
+
+        must_not_repeat = [
+            prior.key_message
+            for prior in slides[-3:]
+        ] or ["泛泛介绍和空洞口号"]
+
+        slides.append(
+            SlidePlan(
+                slide_index=index,
+                slide_role=step.slide_role,
+                key_message=key_message,
+                content_goal=step.content_goal,
+                recommended_layout=layout_name,
+                content_items=_content_items_for_layout(layout_name),
+                must_not_repeat=must_not_repeat,
+            )
+        )
+
+    return DeckPlan(
+        topic=topic,
+        audience=audience,
+        slide_count=slide_count,
+        slides=slides,
+        plan_source="deterministic",
+    )
+
+
 def build_deck_plan_prompt(brief: Any) -> str:
     """Build the planning prompt from a DeckBrief-like object."""
 
@@ -247,7 +547,9 @@ Planning rules:
 - Set content_items to the estimated number of major content blocks, excluding the slide title.
 - Do not let content_items exceed the selected layout max_items.
 - For 3-slide short decks, do not prioritize section_divider.
-- Use section_divider only when it creates real story structure, especially in decks with 5 or more slides.
+- Use section_divider only for true chapter transition or section break pages, not ordinary content explanation pages.
+- For decks with 8 slides or fewer, do not recommend section_divider unless the user explicitly asks for divider, transition, or section break pages.
+- If a slide has only one key_message plus one explanation sentence, recommend key_takeaway, two_column, or three_column instead of section_divider.
 - For long decks, keep layout diversity; for 8-slide decks, mix at least three useful layouts when the content allows it.
 - Avoid repeating content listed in each slide's must_not_repeat.
 - Keep the plan concise enough that the generator can follow it exactly.

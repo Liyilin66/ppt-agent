@@ -4,21 +4,30 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
-from ppt_agent.planning import DeckPlan, generate_deck_plan_with_model
+from ppt_agent.planning import (
+    DeckPlan,
+    PlanSource,
+    build_deterministic_deck_plan,
+    generate_deck_plan_with_model,
+)
 from ppt_agent.qa import QAReport, analyze_deck
-from ppt_agent.runtime import StageObserver, invoke_with_timeout, observed_stage
+from ppt_agent.runtime import StageObserver, invoke_with_timeout, observed_stage, sanitize_error_message
 from ppt_agent.theme import Theme
 
 
 DEFAULT_LANGUAGE = "zh-CN"
-MAX_SINGLE_GENERATION_SLIDES = 4
-MAX_QA_FEEDBACK_ISSUES = 8
+MAX_SINGLE_GENERATION_SLIDES = 3
+LONG_DECK_CHUNK_SLIDES = 2
+LONG_DECK_SLIDE_THRESHOLD = 6
+MAX_QA_FEEDBACK_ISSUES = 5
+
+BriefSource = Literal["llm", "deterministic", "fallback", "provided", "none"]
 
 
 QA_FEEDBACK_FIX_INSTRUCTIONS = {
@@ -61,6 +70,20 @@ class DeckBrief(StrictModel):
     user_requirements_raw: str | None = Field(default=None, min_length=1)
 
 
+class DeckBriefArtifact(StrictModel):
+    brief: DeckBrief
+    brief_source: BriefSource
+    brief_fallback_used: bool = False
+    brief_error_message: str | None = None
+
+
+class DeckPlanArtifact(StrictModel):
+    deck_plan: DeckPlan
+    plan_source: PlanSource
+    plan_fallback_used: bool = False
+    plan_error_message: str | None = None
+
+
 BRIEF_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
     "title": "DeckBrief",
     "description": "Structured brief extracted from detailed presentation requirements.",
@@ -92,6 +115,11 @@ class DeckGenerationRequest(StrictModel):
     key_points: list[str] = Field(default_factory=list)
     user_requirements: str | None = Field(default=None, min_length=1)
     brief: DeckBrief | None = None
+    brief_source: BriefSource = "none"
+    brief_fallback_used: bool = False
+    brief_error_message: str | None = None
+    use_llm_brief: bool = False
+    use_llm_plan: bool = False
 
 
 class GenerationAttempt(StrictModel):
@@ -107,6 +135,13 @@ class GenerationResult(StrictModel):
     attempts: list[GenerationAttempt] = Field(..., min_length=1)
     accepted: bool
     deck_plan: DeckPlan | None = None
+    brief: DeckBrief | None = None
+    brief_source: BriefSource = "none"
+    brief_fallback_used: bool = False
+    brief_error_message: str | None = None
+    plan_source: PlanSource = "none"
+    plan_fallback_used: bool = False
+    plan_error_message: str | None = None
 
 
 def format_qa_feedback_for_generation(qa_report: QAReport) -> str:
@@ -164,37 +199,69 @@ Regenerate the Deck IR and fix this issue before optimizing style.
 """
 
 
-def _format_deck_plan(deck_plan: DeckPlan | None) -> str:
+def _compact_prompt_text(text: str | None, max_chars: int) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _format_deck_plan(
+    deck_plan: DeckPlan | None,
+    *,
+    focus_start: int | None = None,
+    focus_count: int | None = None,
+) -> str:
     if deck_plan is None:
         return ""
 
+    focus_end = None if focus_start is None or focus_count is None else focus_start + focus_count - 1
+    focus_slides = [
+        slide
+        for slide in deck_plan.slides
+        if focus_start is None or focus_end is None or focus_start <= slide.slide_index <= focus_end
+    ]
+    if not focus_slides:
+        focus_slides = deck_plan.slides
+
+    outline_lines = [
+        f"- {slide.slide_index}: {slide.key_message} ({slide.recommended_layout})"
+        for slide in deck_plan.slides
+    ]
     slide_lines: list[str] = []
-    for slide in deck_plan.slides:
+    for slide in focus_slides:
         must_not_repeat = ", ".join(slide.must_not_repeat) or "None"
         slide_lines.append(
             "\n".join(
                 [
                     f"- Slide {slide.slide_index}:",
-                    f"  role: {slide.slide_role}",
+                    f"  title_hint: {slide.key_message}",
                     f"  key_message: {slide.key_message}",
-                    f"  content_goal: {slide.content_goal}",
                     f"  recommended_layout: {slide.recommended_layout}",
-                    f"  content_items: {slide.content_items if slide.content_items is not None else 'Not specified'}",
                     f"  must_not_repeat: {must_not_repeat}",
                 ]
             )
         )
 
     slides_text = "\n".join(slide_lines)
+    outline_text = "\n".join(outline_lines)
+    segment_note = ""
+    if focus_start is not None and focus_end is not None:
+        segment_note = f"- Current chunk must follow only SlidePlan entries {focus_start}-{focus_end}.\n"
 
     return f"""
 
 DeckPlan guidance:
 - Follow this deck-level plan when generating Deck IR.
-- slide.title, slide.layout, and slide content must align with each slide's key_message and content_goal.
+- Use the global outline only for story continuity; do not generate slides outside the requested segment.
+- slide.title, slide.layout, and slide content must align with each slide's key_message.
 - Use each slide's recommended_layout as the slide.layout unless schema repair is absolutely required.
 - Do not repeat any topic listed in must_not_repeat for that slide.
 - Preserve distinct slide roles so the deck does not repeat the same point.
+{segment_note}Global slide key_messages:
+{outline_text}
+
+Current segment SlidePlan:
 {slides_text}
 """
 
@@ -236,6 +303,153 @@ def _string_list_value(value: Any) -> list[str]:
     return [str(value)]
 
 
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = " ".join(value.split()).strip(" ，。,:;!?.")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _fallback_language(user_requirements: str, language: str) -> str:
+    normalized_language = language.strip().lower()
+    normalized_requirements = user_requirements.lower()
+    if normalized_language.startswith("en") or "english" in normalized_language:
+        return "en"
+    if "英文" in user_requirements or "英语" in user_requirements or " in english" in normalized_requirements:
+        return "en"
+    return DEFAULT_LANGUAGE
+
+
+def _combined_request_text(*values: str | None) -> str:
+    return " ".join(value for value in values if value).lower()
+
+
+def _fallback_purpose(topic: str, audience: str, user_requirements: str) -> str:
+    text = _combined_request_text(topic, audience, user_requirements)
+    if any(marker in text for marker in ["pitch", "商业计划", "融资", "投资", "市场机会", "商业模式"]):
+        return "business_pitch"
+    if any(marker in text for marker in ["项目总结", "作业汇报", "实习", "开发项目", "project report"]):
+        return "project_report"
+    if any(marker in text for marker in ["风险评估", "安全", "合规", "失败处理", "risk analysis"]):
+        if not any(marker in text for marker in ["产品经理", "agent 产品", "技术产品"]):
+            return "risk_analysis"
+    if any(marker in text for marker in ["课堂", "教学", "学生", "学习", "classroom", "teaching"]):
+        if not any(marker in text for marker in ["产品经理", "agent 产品", "技术产品"]):
+            return "classroom_teaching"
+    if any(marker in text for marker in ["产品", "产品经理", "agent", "技术产品", "产品方法论"]):
+        return "technical_product_share"
+    return "general_knowledge_share"
+
+
+def _fallback_visual_style(user_requirements: str, style: str | None) -> str:
+    base = style or "clean modern"
+    if any(marker in user_requirements for marker in ["蓝绿", "蓝绿色", "blue-green", "blue green"]):
+        return f"{base}, light blue-green background"
+    if any(marker in user_requirements for marker in ["淡蓝绿", "科技风", "技术风"]):
+        return f"{base}, modern technology style"
+    return base
+
+
+def _extract_requirement_phrases(user_requirements: str) -> list[str]:
+    matches = re.findall(
+        r"(?:重点讲|必须包含|包括|需要讲)([^。；;\n]{1,96})",
+        user_requirements,
+    )
+    values: list[str] = []
+    for match in matches:
+        for part in re.split(r"[、,，/]|以及|和", match):
+            value = part.strip(" ：:的内容重点")
+            if 1 <= len(value) <= 32:
+                values.append(value)
+    return values
+
+
+def _fallback_must_include(user_requirements: str, key_points: list[str] | None) -> list[str]:
+    known_topics = [
+        "AI Agent",
+        "Agent",
+        "产品经理",
+        "技术边界",
+        "用户需求分析",
+        "工作流设计",
+        "评估指标",
+        "落地风险",
+        "学术诚信",
+        "风险控制",
+    ]
+    values = list(key_points or [])
+    values.extend(_extract_requirement_phrases(user_requirements))
+    values.extend(topic for topic in known_topics if topic in user_requirements)
+    return _dedupe_preserve_order(values)
+
+
+def _fallback_must_avoid(user_requirements: str) -> list[str]:
+    matches = re.findall(r"(?:不要|避免|不能|不应)([^。；;，,\n]{1,32})", user_requirements)
+    cleaned = []
+    for match in matches:
+        value = match.strip(" 像是做成变得")
+        if value:
+            cleaned.append(value)
+    return _dedupe_preserve_order(cleaned)
+
+
+def build_deterministic_deck_brief(
+    *,
+    topic: str,
+    audience: str,
+    slide_count: int,
+    user_requirements: str | None = None,
+    style: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
+    key_points: list[str] | None = None,
+) -> DeckBrief:
+    """Build a deterministic DeckBrief without calling an LLM."""
+
+    raw_requirements = user_requirements or ""
+    content_focus = _compact_prompt_text(raw_requirements, 520) or _compact_prompt_text("\n".join(key_points or []), 360)
+    return DeckBrief(
+        topic=topic,
+        audience=audience,
+        slide_count=slide_count,
+        language=_fallback_language(raw_requirements, language),
+        purpose=_fallback_purpose(topic, audience, raw_requirements),
+        tone="professional / educational",
+        visual_style=_fallback_visual_style(raw_requirements, style),
+        content_focus=content_focus or topic,
+        must_include=_fallback_must_include(raw_requirements, key_points),
+        must_avoid=_fallback_must_avoid(raw_requirements),
+        user_requirements_raw=raw_requirements or None,
+    )
+
+
+def build_fallback_deck_brief(
+    user_requirements: str,
+    *,
+    topic: str,
+    audience: str,
+    slide_count: int,
+    style: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
+    key_points: list[str] | None = None,
+) -> DeckBrief:
+    """Build a deterministic DeckBrief when LLM brief extraction is unavailable."""
+
+    return build_deterministic_deck_brief(
+        topic=topic,
+        audience=audience,
+        slide_count=slide_count,
+        user_requirements=user_requirements,
+        style=style,
+        language=language,
+        key_points=key_points,
+    )
+
+
 def _language_instruction(language: str) -> str:
     normalized = language.strip().lower()
     if normalized.startswith("en") or "english" in normalized:
@@ -258,6 +472,8 @@ def build_generation_prompt(
     generation_feedback: str | None = None,
     segment_instruction: str | None = None,
     deck_plan: DeckPlan | None = None,
+    deck_plan_focus_start: int | None = None,
+    deck_plan_focus_count: int | None = None,
 ) -> str:
     key_points = "\n".join(f"- {point}" for point in request.key_points) or "- None provided"
     style = request.style or "clean_business"
@@ -289,7 +505,7 @@ DeckBrief:
 - Must avoid:
 {_format_brief_items(brief.must_avoid)}
 - Raw user requirements: {brief.user_requirements_raw or "None provided"}
-{_format_deck_plan(deck_plan)}
+{_format_deck_plan(deck_plan, focus_start=deck_plan_focus_start, focus_count=deck_plan_focus_count)}
 
 Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
@@ -306,7 +522,9 @@ Hard schema and layout rules:
   slide 2: comparison_matrix, process_flow, risk_matrix, key_takeaway, two_column, three_column, four_cards, or metric_cards.
   slide 3: closing_slide, key_takeaway, two_column, or four_cards.
 - Do not use section_divider by default in a short 3-slide deck.
-- Use section_divider only for decks with 5 or more slides, or when the user explicitly asks for section divider pages.
+- Use section_divider only for true chapter transition or section break pages, never for ordinary content explanation pages.
+- For decks with 8 slides or fewer, do not use section_divider unless the user explicitly asks for divider, transition, or section break pages.
+- If a slide has only one key_message plus one explanation sentence, use key_takeaway, two_column, or three_column instead of section_divider.
 - Use four_cards for four parallel concepts, four steps, four capabilities, or four recommendations.
 - Use comparison_matrix for two-option comparisons, before/after views, or normal AI vs Agent; provide two major body text elements, one per side, and optionally one short decision_rule.
 - Use process_flow for workflows, pipelines, or step-by-step processes; provide 3-5 step text elements in order.
@@ -412,26 +630,26 @@ def build_brief_from_user_prompt(
     """Extract a structured DeckBrief from detailed user requirements."""
 
     key_points_text = _format_brief_items(key_points or [])
-    prompt = f"""Extract a DeckBrief for an AI presentation generation request.
+    compact_requirements = _compact_prompt_text(user_requirements, 1200)
+    prompt = f"""Extract a DeckBrief.
 
-Base fields:
+Fixed request fields:
 - topic: {topic}
 - audience: {audience}
 - slide_count: {slide_count}
 - style: {style or "Not specified"}
-- requested_language: {language}
+- requested_language: {language or DEFAULT_LANGUAGE}
 - key_points:
 {key_points_text}
 
-Detailed user requirements:
-{user_requirements}
+User requirements:
+{compact_requirements}
 
 Rules:
 - Return only structured data matching DeckBrief.
 - Keep slide_count exactly {slide_count}; it is the product request value.
-- Default language to zh-CN unless the detailed requirements explicitly ask for English.
-- If the detailed requirements ask for English, set language to en.
-- Extract purpose, tone, visual_style, content_focus, must_include, and must_avoid when present.
+- Default language to zh-CN unless the user explicitly asks for English.
+- Extract only these fields: topic, audience, slide_count, language, purpose, tone, visual_style, content_focus, must_include, must_avoid, user_requirements_raw.
 - Preserve the raw detailed request in user_requirements_raw.
 """
     structured_model = model.with_structured_output(BRIEF_STRUCTURED_OUTPUT_SCHEMA)
@@ -467,24 +685,76 @@ def _request_with_brief(
     timeout_seconds: float | None = None,
     stage_observer: StageObserver | None = None,
 ) -> DeckGenerationRequest:
-    if request.brief is not None or not request.user_requirements:
+    if request.brief is not None:
+        if request.brief_source == "none":
+            return request.model_copy(update={"brief_source": "provided"})
         return request
 
-    brief = build_brief_from_user_prompt(
-        model,
-        request.user_requirements,
-        topic=request.topic,
-        audience=request.audience,
-        slide_count=request.slide_count,
-        style=request.style,
-        language=request.language,
-        key_points=request.key_points,
-        timeout_seconds=timeout_seconds,
-        stage_observer=stage_observer,
-    )
+    brief_source: BriefSource = "deterministic"
+    brief_error_message: str | None = None
+    brief_fallback_used = False
+    raw_requirements = request.user_requirements or ""
+
+    if request.use_llm_brief and request.user_requirements:
+        brief_source = "llm"
+        try:
+            brief = build_brief_from_user_prompt(
+                model,
+                request.user_requirements,
+                topic=request.topic,
+                audience=request.audience,
+                slide_count=request.slide_count,
+                style=request.style,
+                language=request.language,
+                key_points=request.key_points,
+                timeout_seconds=timeout_seconds,
+                stage_observer=stage_observer,
+            )
+        except Exception as exc:
+            brief_error_message = sanitize_error_message(exc)
+            brief_source = "fallback"
+            brief_fallback_used = True
+            with observed_stage(
+                stage_observer,
+                "build_brief_fallback",
+                slide_count=request.slide_count,
+                use_deck_plan=False,
+                error_message=brief_error_message,
+                brief_source=brief_source,
+            ):
+                brief = build_fallback_deck_brief(
+                    request.user_requirements,
+                    topic=request.topic,
+                    audience=request.audience,
+                    slide_count=request.slide_count,
+                    style=request.style,
+                    language=request.language,
+                    key_points=request.key_points,
+                )
+    else:
+        with observed_stage(
+            stage_observer,
+            "build_brief_fast_path",
+            slide_count=request.slide_count,
+            use_deck_plan=False,
+            brief_source=brief_source,
+        ):
+            brief = build_deterministic_deck_brief(
+                topic=request.topic,
+                audience=request.audience,
+                slide_count=request.slide_count,
+                user_requirements=raw_requirements,
+                style=request.style,
+                language=request.language,
+                key_points=request.key_points,
+            )
+
     return request.model_copy(
         update={
             "brief": brief,
+            "brief_source": brief_source,
+            "brief_fallback_used": brief_fallback_used,
+            "brief_error_message": brief_error_message,
             "topic": brief.topic,
             "audience": brief.audience,
             "language": brief.language,
@@ -665,6 +935,9 @@ def _generate_deck_once(
     stage_observer: StageObserver | None = None,
     attempt_index: int | None = None,
     chunk_index: int | None = None,
+    total_chunks: int | None = None,
+    deck_plan_focus_start: int | None = None,
+    deck_plan_focus_count: int | None = None,
 ) -> Deck:
     prompt = build_generation_prompt(
         request,
@@ -672,8 +945,15 @@ def _generate_deck_once(
         generation_feedback=generation_feedback,
         segment_instruction=segment_instruction,
         deck_plan=deck_plan,
+        deck_plan_focus_start=deck_plan_focus_start,
+        deck_plan_focus_count=deck_plan_focus_count,
     )
     structured_model = model.with_structured_output(Deck)
+    timeout_detail = (
+        f"chunk {chunk_index}/{total_chunks}"
+        if chunk_index is not None and total_chunks is not None
+        else None
+    )
     with observed_stage(
         stage_observer,
         "generate_deck",
@@ -681,12 +961,14 @@ def _generate_deck_once(
         use_deck_plan=deck_plan is not None,
         attempt_index=attempt_index,
         chunk_index=chunk_index,
+        total_chunks=total_chunks,
     ):
         response = _unwrap_structured_response(
             invoke_with_timeout(
                 lambda: structured_model.invoke(prompt),
                 timeout_seconds=timeout_seconds,
                 stage_name="generate_deck",
+                timeout_detail=timeout_detail,
             )
         )
 
@@ -702,7 +984,7 @@ def _generate_deck_once(
         return _ensure_slide_count(deck, request)
 
 
-def _segment_instruction(start: int, count: int, total: int) -> str:
+def _segment_instruction(start: int, count: int, total: int, chunk_index: int, total_chunks: int) -> str:
     end = start + count - 1
     content_layouts = "comparison_matrix, process_flow, risk_matrix, key_takeaway, two_column, three_column, four_cards, or metric_cards"
     first_layout = "title_slide" if start == 1 else content_layouts
@@ -710,7 +992,7 @@ def _segment_instruction(start: int, count: int, total: int) -> str:
     return f"""
 
 Segmented generation rules:
-- This response is one segment of a larger {total}-slide deck.
+- This response is chunk {chunk_index}/{total_chunks} of a larger {total}-slide deck.
 - Generate only global slides {start} through {end}; do not generate slides outside this range.
 - This response must contain exactly {count} slides.
 - The first slide in this segment should use one of: {first_layout}.
@@ -719,12 +1001,19 @@ Segmented generation rules:
 """
 
 
+def _chunk_size_for_slide_count(slide_count: int) -> int:
+    if slide_count >= LONG_DECK_SLIDE_THRESHOLD:
+        return LONG_DECK_CHUNK_SLIDES
+    return min(MAX_SINGLE_GENERATION_SLIDES, slide_count)
+
+
 def _chunked_request(request: DeckGenerationRequest, start: int, count: int) -> DeckGenerationRequest:
     brief = _brief_from_request(request)
     segment_focus = (
-        f"{brief.content_focus}\n"
+        f"{_compact_prompt_text(brief.content_focus, 360)}\n"
         f"Segment: generate global slides {start}-{start + count - 1} of {request.slide_count}."
     ).strip()
+    raw_requirements = _compact_prompt_text(brief.user_requirements_raw, 520)
     return request.model_copy(
         update={
             "slide_count": count,
@@ -732,6 +1021,7 @@ def _chunked_request(request: DeckGenerationRequest, start: int, count: int) -> 
                 update={
                     "slide_count": count,
                     "content_focus": segment_focus,
+                    "user_requirements_raw": raw_requirements or None,
                 }
             ),
         }
@@ -767,17 +1057,19 @@ def _generate_deck_in_chunks(
     attempt_index: int | None = None,
 ) -> Deck:
     chunks: list[Deck] = []
+    chunk_size = _chunk_size_for_slide_count(request.slide_count)
+    total_chunks = (request.slide_count + chunk_size - 1) // chunk_size
     start = 1
     chunk_index = 1
     while start <= request.slide_count:
-        count = min(MAX_SINGLE_GENERATION_SLIDES, request.slide_count - start + 1)
+        count = min(chunk_size, request.slide_count - start + 1)
         chunk_request = _chunked_request(request, start, count)
         chunk = _generate_deck_once(
             model,
             chunk_request,
             qa_feedback=qa_feedback,
             generation_feedback=generation_feedback,
-            segment_instruction=_segment_instruction(start, count, request.slide_count),
+            segment_instruction=_segment_instruction(start, count, request.slide_count, chunk_index, total_chunks),
             deck_plan=deck_plan,
             slide_index_offset=start - 1,
             total_slide_count=request.slide_count,
@@ -786,6 +1078,9 @@ def _generate_deck_in_chunks(
             stage_observer=stage_observer,
             attempt_index=attempt_index,
             chunk_index=chunk_index,
+            total_chunks=total_chunks,
+            deck_plan_focus_start=start,
+            deck_plan_focus_count=count,
         )
         chunks.append(chunk)
         start += count
@@ -812,7 +1107,8 @@ def generate_deck_with_model(
         timeout_seconds=timeout_seconds,
         stage_observer=stage_observer,
     )
-    if request.slide_count > MAX_SINGLE_GENERATION_SLIDES:
+    chunk_size = _chunk_size_for_slide_count(request.slide_count)
+    if request.slide_count > chunk_size:
         return _generate_deck_in_chunks(
             model,
             request,
@@ -834,7 +1130,51 @@ def generate_deck_with_model(
         stage_observer=stage_observer,
         attempt_index=attempt_index,
         chunk_index=1,
+        total_chunks=1,
+        deck_plan_focus_start=1,
+        deck_plan_focus_count=request.slide_count,
     )
+
+
+def _resolve_deck_plan(
+    model: Any,
+    request: DeckGenerationRequest,
+    *,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+) -> tuple[DeckPlan, PlanSource, bool, str | None]:
+    brief = _brief_from_request(request)
+    if request.use_llm_plan:
+        try:
+            deck_plan = generate_deck_plan_with_model(
+                model,
+                brief,
+                timeout_seconds=timeout_seconds,
+                stage_observer=stage_observer,
+            ).model_copy(update={"plan_source": "llm"})
+            return deck_plan, "llm", False, None
+        except Exception as exc:
+            plan_error_message = sanitize_error_message(exc)
+            with observed_stage(
+                stage_observer,
+                "generate_deck_plan_fallback",
+                slide_count=request.slide_count,
+                use_deck_plan=True,
+                plan_source="fallback",
+                error_message=plan_error_message,
+            ):
+                deck_plan = build_deterministic_deck_plan(brief).model_copy(update={"plan_source": "fallback"})
+            return deck_plan, "fallback", True, plan_error_message
+
+    with observed_stage(
+        stage_observer,
+        "generate_deck_plan_fast_path",
+        slide_count=request.slide_count,
+        use_deck_plan=True,
+        plan_source="deterministic",
+    ):
+        deck_plan = build_deterministic_deck_plan(brief)
+    return deck_plan, "deterministic", False, None
 
 
 def generate_deck_with_quality_gate(
@@ -862,15 +1202,12 @@ def generate_deck_with_quality_gate(
         timeout_seconds=timeout_seconds,
         stage_observer=stage_observer,
     )
-    try:
-        deck_plan = generate_deck_plan_with_model(
-            model,
-            _brief_from_request(request),
-            timeout_seconds=timeout_seconds,
-            stage_observer=stage_observer,
-        )
-    except Exception as exc:
-        raise ValueError(f"DeckPlan generation failed: {exc}") from exc
+    deck_plan, plan_source, plan_fallback_used, plan_error_message = _resolve_deck_plan(
+        model,
+        request,
+        timeout_seconds=timeout_seconds,
+        stage_observer=stage_observer,
+    )
 
     for attempt_index in range(1, max_attempts + 1):
         with observed_stage(
@@ -918,6 +1255,13 @@ def generate_deck_with_quality_gate(
                     attempts=attempts,
                     accepted=True,
                     deck_plan=deck_plan,
+                    brief=request.brief,
+                    brief_source=request.brief_source,
+                    brief_fallback_used=request.brief_fallback_used,
+                    brief_error_message=request.brief_error_message,
+                    plan_source=plan_source,
+                    plan_fallback_used=plan_fallback_used,
+                    plan_error_message=plan_error_message,
                 )
 
             qa_feedback = qa_report
@@ -930,4 +1274,11 @@ def generate_deck_with_quality_gate(
         attempts=attempts,
         accepted=False,
         deck_plan=deck_plan,
+        brief=request.brief,
+        brief_source=request.brief_source,
+        brief_fallback_used=request.brief_fallback_used,
+        brief_error_message=request.brief_error_message,
+        plan_source=plan_source,
+        plan_fallback_used=plan_fallback_used,
+        plan_error_message=plan_error_message,
     )

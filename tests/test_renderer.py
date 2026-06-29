@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
 
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
@@ -172,10 +173,20 @@ def _visible_texts(presentation: Presentation) -> list[str]:
     ]
 
 
+def _overlap_area(shape_a, shape_b) -> int:
+    left = max(shape_a.left, shape_b.left)
+    right = min(shape_a.left + shape_a.width, shape_b.left + shape_b.width)
+    top = max(shape_a.top, shape_b.top)
+    bottom = min(shape_a.top + shape_a.height, shape_b.top + shape_b.height)
+    if right <= left or bottom <= top:
+        return 0
+    return int((right - left) * (bottom - top))
+
+
 def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
-    long_title = "Template Guided Presentations Improve Visual Quality for Complex Business Audiences"
-    subtitle = "A short subtitle stays below the wrapped title"
+    long_title = "AI 产品经理如何设计可落地的 Agent 工作流"
+    subtitle = "从用户需求、工具调用、状态管理到风险控制的技术产品分享"
     deck = Deck.model_validate(
         {
             "deck_id": "title_spacing_demo",
@@ -217,8 +228,13 @@ def test_title_slide_long_title_keeps_subtitle_below_title_bbox(tmp_path: Path) 
     ]
 
     assert subtitle_shape.top >= title_shape.top + title_shape.height + Inches(0.25)
-    assert any(text == "Template\nGuided\nPresentations" for text in visible_texts)
-    assert all(len(line) > 1 for text in visible_texts for line in text.splitlines() if line.strip())
+    assert title_shape.left < Inches(1.0)
+    assert title_shape.width >= Inches(7.5)
+    assert visible_texts.count(long_title) == 1
+    assert visible_texts.count(subtitle) == 1
+    assert "Focus" not in visible_texts
+    assert "Editable PPTX" not in visible_texts
+    assert "TEMPLATE-GUIDED" not in visible_texts
 
 
 def test_title_slide_does_not_duplicate_subtitle_in_side_panel(tmp_path: Path) -> None:
@@ -543,8 +559,9 @@ def test_process_flow_renders_readable_step_counts(tmp_path: Path, step_count: i
     )
 
     output_path = render_deck_to_pptx(deck, theme, tmp_path / f"process_{step_count}.pptx")
-    rendered_slide = Presentation(output_path).slides[0]
-    visible_texts = _visible_texts(Presentation(output_path))
+    presentation = Presentation(output_path)
+    rendered_slide = presentation.slides[0]
+    visible_texts = _visible_texts(presentation)
     step_numbers = {f"{index:02d}" for index in range(1, step_count + 1)}
     card_backgrounds = [
         shape
@@ -556,6 +573,32 @@ def test_process_flow_renders_readable_step_counts(tmp_path: Path, step_count: i
 
     assert step_numbers <= set(visible_texts)
     assert len(card_backgrounds) >= step_count
+    if step_count == 5:
+        for card in card_backgrounds:
+            assert card.left >= 0
+            assert card.top >= 0
+            assert card.left + card.width <= presentation.slide_width
+            assert card.top + card.height <= presentation.slide_height
+
+        connectors = [
+            shape
+            for shape in rendered_slide.shapes
+            if shape.shape_type == MSO_SHAPE_TYPE.LINE
+        ]
+        core_text_shapes = [
+            shape
+            for shape in rendered_slide.shapes
+            if getattr(shape, "has_text_frame", False)
+            and "Complete focused action" in shape.text
+        ]
+
+        assert connectors
+        assert core_text_shapes
+        assert all(
+            _overlap_area(connector, text_shape) == 0
+            for connector in connectors
+            for text_shape in core_text_shapes
+        )
 
 
 def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:
