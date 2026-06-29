@@ -123,12 +123,12 @@ SUPPORTED_LAYOUT_CONTRACTS: tuple[LayoutContract, ...] = (
         layout_name="metric_cards",
         best_for=["metrics", "comparison"],
         required_slots=["metric_1", "metric_2"],
-        optional_slots=["metric_3"],
+        optional_slots=["metric_3", "metric_4"],
         min_items=2,
-        max_items=3,
+        max_items=4,
         avoid_when=[
             "non-quantified ideas",
-            "more than three KPIs",
+            "more than four KPIs",
         ],
     ),
     LayoutContract(

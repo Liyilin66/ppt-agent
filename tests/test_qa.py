@@ -472,6 +472,69 @@ def test_visual_preflight_warns_on_title_wrapping_risk() -> None:
     assert "title_wrapping_risk" in _issue_codes(report)
 
 
+def test_warning_only_issues_do_not_zero_qa_score() -> None:
+    layouts = ["title_slide", *["four_cards"] * 6, "closing_slide"]
+    deck = _deck_with_layouts(layouts, titles=["同一主题"] * len(layouts))
+
+    report = analyze_deck(deck)
+
+    assert report.issues
+    assert all(issue.severity != "error" for issue in report.issues)
+    assert report.score >= 60
+
+
+def test_risk_matrix_missing_mitigation_warns_without_hard_failure() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "qa_missing_mitigation_deck",
+            "title": "QA Missing Mitigation Deck",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Risk Matrix",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 0.5, "width": 8.0, "height": 0.5},
+                            "text": "Risk Matrix",
+                        },
+                        {
+                            "element_id": "risk_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.5, "width": 8.0, "height": 0.8},
+                            "text": "权限过大\n误操作影响用户数据",
+                        },
+                        {
+                            "element_id": "risk_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.4, "width": 8.0, "height": 0.8},
+                            "text": "错误输出\n影响用户判断\n设置人工确认和操作日志",
+                        },
+                        {
+                            "element_id": "risk_3",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 3.3, "width": 8.0, "height": 0.8},
+                            "text": "过度自动化\n降低可控性\n限制高风险自动执行",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "risk_matrix_missing_mitigation"]
+
+    assert issues
+    assert issues[0].severity == "warning"
+    assert issues[0].element_id == "risk_1"
+    assert report.score > 0
+
+
 def test_analyze_deck_does_not_warn_short_deck_for_low_layout_diversity() -> None:
     deck = _deck_with_layouts(
         ["title_slide", "two_column", "closing_slide"],

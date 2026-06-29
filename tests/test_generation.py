@@ -1192,12 +1192,32 @@ def test_quality_gate_falls_back_when_llm_plan_fails() -> None:
     assert "generate_deck_plan" in (result.plan_error_message or "")
 
 
-def test_quality_gate_retries_and_accepts_second_attempt() -> None:
+def test_quality_gate_retries_and_accepts_second_attempt(monkeypatch) -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
     model = FakeModel([
         _low_quality_deck_payload(),
         _valid_deck_payload(),
     ])
+    reports = [
+        QAReport(
+            deck_id="low_quality_deck",
+            score=50,
+            issues=[
+                QAIssue(
+                    severity="warning",
+                    slide_id="slide_001",
+                    code="SLIDE_TOO_EMPTY",
+                    message="Slide has too little content.",
+                )
+            ],
+        ),
+        QAReport(deck_id="generated_demo_deck", score=100, issues=[]),
+    ]
+
+    def fake_analyze_deck(deck, theme=None):
+        return reports.pop(0)
+
+    monkeypatch.setattr(generation, "analyze_deck", fake_analyze_deck)
 
     result = generate_deck_with_quality_gate(model, request, min_score=99, max_attempts=2)
 
@@ -1265,12 +1285,17 @@ def test_quality_gate_retry_prompt_includes_actionable_layout_feedback(monkeypat
     assert "Make adjacent slide titles and key messages clearly distinct" in retry_prompt
 
 
-def test_quality_gate_returns_last_attempt_when_all_attempts_fail() -> None:
+def test_quality_gate_returns_last_attempt_when_all_attempts_fail(monkeypatch) -> None:
     request = DeckGenerationRequest(topic="AI roadmap", audience="executives", slide_count=2)
     model = FakeModel([
         _low_quality_deck_payload(),
         _low_quality_deck_payload(),
     ])
+    monkeypatch.setattr(
+        generation,
+        "analyze_deck",
+        lambda deck, theme=None: QAReport(deck_id=deck.deck_id, score=50, issues=[]),
+    )
 
     result = generate_deck_with_quality_gate(model, request, min_score=100, max_attempts=2)
 

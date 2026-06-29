@@ -144,6 +144,7 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert "正在快速解析需求" in response.text
     assert "正在快速规划大纲" in response.text
     assert "正在生成 Deck：第" in response.text
+    assert "已生成，但未通过 QA" in response.text
     assert "任务运行时间较长，请检查后端日志" in response.text
 
 
@@ -219,6 +220,25 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["current_stage"] == "complete_job"
     assert body["last_updated_at"] == body["updated_at"]
     assert body["elapsed_seconds"] >= 0
+
+
+def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_backend(monkeypatch, accepted=False)
+    client = _client(tmp_path)
+    job_id = client.post("/api/jobs", json=_job_payload()).json()["job_id"]
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+
+    assert body["status"] == "succeeded"
+    assert body["accepted"] is False
+    assert "QA score gate" in body["error_message"]
+    assert {artifact["name"] for artifact in artifacts} >= {
+        "generated_deck_ir",
+        "generated_qa_report",
+        "generated_attempts",
+        "generated_deck",
+    }
 
 
 def test_job_failure_marks_failed_instead_of_running(tmp_path: Path, monkeypatch) -> None:

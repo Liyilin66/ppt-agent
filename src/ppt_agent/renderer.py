@@ -257,6 +257,18 @@ def _keywords_from_title(title: str) -> list[str]:
 def _cover_keywords(title: str, body: list[str], deck: Deck) -> list[str]:
     source = " ".join([title, *body])
     if any("\u4e00" <= char <= "\u9fff" for char in source):
+        known_terms = [
+            "Agent",
+            "工作流",
+            "边界",
+            "评估",
+            "风险",
+            "需求",
+            "产品",
+        ]
+        matched_terms = [term for term in known_terms if term.lower() in source.lower()]
+        if matched_terms:
+            return matched_terms[:3]
         candidates = [
             token.strip(" ，。,:;!?")
             for token in source.replace("/", " ").replace("｜", " ").split()
@@ -302,6 +314,69 @@ def _heading_body_with_fallback(text: str, fallback: str) -> tuple[str, str]:
     if not body:
         body = fallback
     return heading, body
+
+
+def _strip_leading_index(text: str) -> str:
+    return text.strip().lstrip("0123456789.、)） ").strip()
+
+
+def _action_fallback(deck: Deck, heading: str) -> str:
+    if _is_english_language(deck):
+        return "Turn this point into a concrete owner, boundary, and next step."
+    if "边界" in heading:
+        return "明确 Agent 能做、不能做、必须确认什么。"
+    if "闭环" in heading or "工作流" in heading:
+        return "把任务拆成输入、执行、校验、回滚和交付。"
+    if "风险" in heading or "指标" in heading:
+        return "用成功率、接管率和错误成本判断是否值得落地。"
+    return "把这一点转化为明确的下一步行动。"
+
+
+def _action_pairs_from_body(body_texts: list[str], deck: Deck, limit: int = 3) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for text in body_texts:
+        heading, body = _split_heading_body(text)
+        heading = _strip_leading_index(heading)
+        if not heading:
+            continue
+        if not body:
+            body = _action_fallback(deck, heading)
+        pairs.append((heading, body))
+        if len(pairs) >= limit:
+            return pairs
+
+    lines = [_strip_leading_index(line) for line in _body_lines(body_texts)]
+    lines = [line for line in lines if line]
+    index = 0
+    while len(pairs) < limit and index < len(lines):
+        heading = lines[index]
+        body = lines[index + 1] if index + 1 < len(lines) else _action_fallback(deck, heading)
+        pairs.append((heading, body))
+        index += 2
+    return pairs
+
+
+def _risk_cells_from_text(text: str, deck: Deck) -> tuple[str, str, str]:
+    lines = [line.strip(" -•\t") for line in text.splitlines() if line.strip(" -•\t")]
+    if len(lines) == 1 and "|" in lines[0]:
+        lines = [part.strip() for part in lines[0].split("|") if part.strip()]
+    cells: list[str] = []
+    for line in lines[:3]:
+        cleaned = line
+        for prefix in ["Risk:", "Impact:", "Mitigation:", "风险：", "影响：", "缓解措施：", "缓解：", "Risk：", "Impact：", "Mitigation："]:
+            if cleaned.lower().startswith(prefix.lower()):
+                cleaned = cleaned[len(prefix) :].strip()
+                break
+        cells.append(cleaned)
+    while len(cells) < 3:
+        cells.append("")
+    if not cells[2]:
+        cells[2] = _surface_label(
+            deck,
+            "Set permission boundaries, human review, and operation logs.",
+            "设置权限边界、人工确认和操作日志。",
+        )
+    return cells[0] or " ", cells[1] or " ", cells[2]
 
 
 def _is_english_language(deck: Deck) -> bool:
@@ -460,55 +535,46 @@ def _render_title_slide_template(slide, deck_slide, deck: Deck, theme: Theme) ->
         style=_theme_text_style(theme, font_size_pt=subtitle_font_size, color=theme.colors.muted_text),
     )
 
-    for index, keyword in enumerate(keywords[:3]):
-        chip_width = min(2.25, max(1.0, 0.42 + len(keyword) * 0.16))
-        _add_rect(
-            slide,
-            x=margin + index * 2.02,
-            y=5.72,
-            width=chip_width,
-            height=0.36,
-            fill_color=theme.colors.surface,
-            stroke_color=theme.colors.surface,
-        )
-        _add_textbox(
-            slide,
-            x=margin + index * 2.02 + 0.16,
-            y=5.82,
-            width=chip_width - 0.32,
-            height=0.14,
-            text=_safe_text(keyword, 16),
-            style=_theme_text_style(theme, font_size_pt=8.4, color=theme.colors.primary, bold=True),
-        )
-
     hero_keyword = _safe_text(keywords[0] if keywords else title, 16)
     _add_textbox(
         slide,
         x=right_x + 0.62,
-        y=1.5,
+        y=1.62,
         width=right_width - 1.1,
         height=0.82,
         text=hero_keyword,
-        style=_theme_text_style(theme, font_size_pt=27, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
+        style=_theme_text_style(theme, font_size_pt=30, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
     )
     _add_textbox(
         slide,
         x=right_x + 0.64,
-        y=2.42,
+        y=2.58,
         width=right_width - 1.16,
         height=0.36,
-        text=_surface_label(deck, "Workflow-ready perspective", "面向工作流的产品视角"),
+        text=_surface_label(deck, "Technical product perspective", "技术产品视角"),
         style=_theme_text_style(theme, font_size_pt=11.5, color=theme.colors.muted_text),
     )
-    for index, keyword in enumerate(keywords[1:3], start=1):
+    for index, keyword in enumerate(keywords[1:3]):
+        chip_width = min(1.35, max(0.82, 0.46 + len(keyword) * 0.12))
+        chip_x = right_x + 0.64 + index * 1.48
+        _add_rect(
+            slide,
+            x=chip_x,
+            y=3.54,
+            width=chip_width,
+            height=0.34,
+            fill_color=theme.colors.background,
+            stroke_color=theme.colors.surface,
+            stroke_width_pt=0.8,
+        )
         _add_textbox(
             slide,
-            x=right_x + 0.62,
-            y=3.58 + (index - 1) * 0.56,
-            width=right_width - 1.1,
-            height=0.2,
-            text=f"{index:02d}  {_safe_text(keyword, 18)}",
-            style=_theme_text_style(theme, font_size_pt=11, color=theme.colors.muted_text, bold=True),
+            x=chip_x + 0.12,
+            y=3.64,
+            width=chip_width - 0.24,
+            height=0.14,
+            text=_safe_text(keyword, 12),
+            style=_theme_text_style(theme, font_size_pt=8.1, color=theme.colors.primary, bold=True),
         )
 
 
@@ -657,9 +723,8 @@ def _render_four_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -> 
 def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
     margin = 0.72
-    card_count = 3
+    card_count = 4 if len(body) >= 4 else 3
     gutter = 0.32
-    card_width = (deck.canvas_width_in - margin * 2 - gutter * (card_count - 1)) / card_count
     slots = _slot_texts(body, card_count, fallback=" ")
 
     _add_textbox(
@@ -673,20 +738,33 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme) -
     )
 
     for index, text in enumerate(slots):
-        x = margin + index * (card_width + gutter)
+        if card_count == 4:
+            card_width = (deck.canvas_width_in - margin * 2 - gutter) / 2
+            card_height = 1.72
+            row = index // 2
+            column = index % 2
+            x = margin + column * (card_width + gutter)
+            y = 1.46 + row * (card_height + 0.34)
+            inset = 0.12
+        else:
+            card_width = (deck.canvas_width_in - margin * 2 - gutter * 2) / 3
+            card_height = 2.75
+            x = margin + index * (card_width + gutter)
+            y = 1.68
+            inset = 0.28
         _render_heading_body_card(
             slide,
-            x=x + 0.28,
-            y=1.68,
-            width=card_width - 0.56,
-            height=2.75,
+            x=x + inset,
+            y=y,
+            width=card_width - inset * 2,
+            height=card_height,
             text=text,
             theme=theme,
             accent_color=theme.colors.primary,
             number=index + 1,
             label=_surface_label(deck, "Priority", "重点"),
-            heading_size_pt=18,
-            body_size_pt=14,
+            heading_size_pt=17 if card_count == 4 else 18,
+            body_size_pt=12.6 if card_count == 4 else 14,
         )
 
 
@@ -1050,9 +1128,7 @@ def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme) ->
             stroke_color=theme.colors.surface,
             stroke_width_pt=0.8,
         )
-        parts = _compact_lines(risk_text, 3)
-        while len(parts) < 3:
-            parts.append("")
+        parts = _risk_cells_from_text(risk_text, deck)
         x = table_x
         for col_index, (text, width) in enumerate(zip(parts, widths)):
             color = theme.colors.text if col_index == 0 else theme.colors.muted_text
@@ -1062,7 +1138,7 @@ def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme) ->
                 x=x + 0.18,
                 y=y + 0.18,
                 width=width - 0.36,
-                height=0.42,
+                height=0.5,
                 text=_safe_text(text, max_chars),
                 style=_theme_text_style(theme, font_size_pt=11.2, color=color, bold=col_index == 0),
             )
@@ -1166,7 +1242,7 @@ def _render_key_takeaway_template(slide, deck_slide, deck: Deck, theme: Theme) -
 
 def _render_closing_slide_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
-    actions = _body_lines(body)[:3]
+    actions = _action_pairs_from_body(body, deck, limit=3)
     _add_rect(slide, x=4.9, y=1.6, width=3.5, height=0.08, fill_color=theme.colors.accent)
     _add_textbox(
         slide,
@@ -1178,8 +1254,8 @@ def _render_closing_slide_template(slide, deck_slide, deck: Deck, theme: Theme) 
         style=_theme_text_style(theme, font_size_pt=34, color=theme.colors.text, bold=True, font_family=theme.fonts.heading),
     )
     if actions:
-        for index, action in enumerate(actions, start=1):
-            y = 3.15 + (index - 1) * 0.58
+        for index, (action_heading, action_body) in enumerate(actions, start=1):
+            y = 3.05 + (index - 1) * 0.76
             _add_rect(
                 slide,
                 x=2.55,
@@ -1203,9 +1279,18 @@ def _render_closing_slide_template(slide, deck_slide, deck: Deck, theme: Theme) 
                 x=3.24,
                 y=y - 0.01,
                 width=deck.canvas_width_in - 6.1,
-                height=0.38,
-                text=_short_phrase(action, max_chars=56),
-                style=_theme_text_style(theme, font_size_pt=16, color=theme.colors.muted_text),
+                height=0.22,
+                text=_safe_text(action_heading, 42),
+                style=_theme_text_style(theme, font_size_pt=14.5, color=theme.colors.text, bold=True),
+            )
+            _add_textbox(
+                slide,
+                x=3.24,
+                y=y + 0.26,
+                width=deck.canvas_width_in - 6.1,
+                height=0.26,
+                text=_safe_text(action_body, 76),
+                style=_theme_text_style(theme, font_size_pt=11.6, color=theme.colors.muted_text),
             )
     elif body:
         _add_textbox(

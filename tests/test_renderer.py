@@ -282,6 +282,66 @@ def test_title_slide_does_not_duplicate_subtitle_in_side_panel(tmp_path: Path) -
     assert subtitle_shapes[0].left < Inches(8.0)
 
 
+def test_title_slide_keeps_side_panel_minimal_without_numbered_keyword_stack(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    title = "AI 产品经理如何设计 Agent 工作流"
+    deck = Deck.model_validate(
+        {
+            "deck_id": "title_minimal_side_panel_demo",
+            "title": "Title Minimal Side Panel Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Title Minimal Side Panel Demo",
+                    "layout": "title_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": title,
+                        },
+                        {
+                            "element_id": "subtitle",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 1.3, "width": 6.0, "height": 0.5},
+                            "text": "从边界、工作流、评估指标到落地风险",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "title_minimal_side_panel.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert visible_texts.count(title) == 1
+    assert "技术产品视角" in visible_texts
+    assert "01  工作流" not in visible_texts
+    assert "02  边界" not in visible_texts
+
+
+def test_rendered_slide_background_uses_pale_blue_green_theme(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "background_demo",
+            "title": "Background Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [_template_slide_payload("two_column", 1)],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "background_demo.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+
+    assert str(rendered_slide.background.fill.fore_color.rgb) == "F3FBF8"
+
+
 def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     deck = Deck.model_validate(
@@ -624,6 +684,44 @@ def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:
     assert any("workflow ownership" in text for text in visible_texts)
 
 
+def test_metric_cards_renders_four_metrics_as_four_separate_cards(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    slide_payload = _template_slide_payload("metric_cards", 1)
+    slide_payload["elements"].append(
+        {
+            "element_id": "s1_body_4",
+            "type": "text",
+            "bbox": {"x": 4.8, "y": 2.6, "width": 3.0, "height": 1.0},
+            "text": "用户信任度\n观察解释清晰度和可控性感知",
+        }
+    )
+    deck = Deck.model_validate(
+        {
+            "deck_id": "metric_cards_four_demo",
+            "title": "Metric Cards Four Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [slide_payload],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "metric_cards_four.pptx")
+    rendered_slide = Presentation(output_path).slides[0]
+    visible_texts = _visible_texts(Presentation(output_path))
+    card_backgrounds = [
+        shape
+        for shape in rendered_slide.shapes
+        if not getattr(shape, "text", "").strip()
+        and shape.width >= Inches(5.0)
+        and shape.height >= Inches(1.5)
+    ]
+
+    assert "用户信任度" in visible_texts
+    assert "观察解释清晰度和可控性感知" in visible_texts
+    assert {"01", "02", "03", "04"} <= set(visible_texts)
+    assert len(card_backgrounds) >= 4
+
+
 @pytest.mark.parametrize("risk_count", [3, 4])
 def test_risk_matrix_renders_three_to_four_risks(tmp_path: Path, risk_count: int) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
@@ -646,6 +744,84 @@ def test_risk_matrix_renders_three_to_four_risks(tmp_path: Path, risk_count: int
     assert "Impact" in visible_texts
     assert "Mitigation" in visible_texts
     assert any("Hallucination" in text for text in visible_texts)
+
+
+def test_risk_matrix_renders_fallback_mitigation_when_missing(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    slide_payload = _template_slide_payload("risk_matrix", 1)
+    slide_payload["elements"][1]["text"] = "权限过大\n误操作影响用户数据"
+    deck = Deck.model_validate(
+        {
+            "deck_id": "risk_matrix_missing_mitigation_demo",
+            "title": "Risk Matrix Missing Mitigation Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [slide_payload],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "risk_missing_mitigation.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "权限过大" in visible_texts
+    assert "误操作影响用户数据" in visible_texts
+    assert "设置权限边界、人工确认和操作日志。" in visible_texts
+
+
+def test_closing_slide_renders_action_items_as_heading_body_pairs(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "closing_action_pairs_demo",
+            "title": "Closing Action Pairs Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "Closing Action Pairs Demo",
+                    "layout": "closing_slide",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "让 Agent 产品先可控，再扩张",
+                        },
+                        {
+                            "element_id": "action_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.6},
+                            "text": "01 定义边界",
+                        },
+                        {
+                            "element_id": "action_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.0, "width": 5.0, "height": 0.6},
+                            "text": "02 设计闭环\n把任务拆成输入、执行、校验、回滚和交付。",
+                        },
+                        {
+                            "element_id": "action_3",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.6, "width": 5.0, "height": 0.6},
+                            "text": "03 量化风险",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "closing_action_pairs.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert "定义边界" in visible_texts
+    assert "明确 Agent 能做、不能做、必须确认什么。" in visible_texts
+    assert "设计闭环" in visible_texts
+    assert "把任务拆成输入、执行、校验、回滚和交付。" in visible_texts
+    assert "量化风险" in visible_texts
+    assert "用成功率、接管率和错误成本判断是否值得落地。" in visible_texts
+    assert "01 定义边界" not in visible_texts
 
 
 def test_key_takeaway_renders_fallback_explanations(tmp_path: Path) -> None:

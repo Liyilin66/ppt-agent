@@ -528,14 +528,17 @@ Hard schema and layout rules:
 - Use four_cards for four parallel concepts, four steps, four capabilities, or four recommendations.
 - Use comparison_matrix for two-option comparisons, before/after views, or normal AI vs Agent; provide two major body text elements, one per side, and optionally one short decision_rule.
 - Use process_flow for workflows, pipelines, or step-by-step processes; provide 3-5 step text elements in order.
-- Use risk_matrix for risk governance pages; provide 3-4 risk text elements where each item includes risk, impact, and mitigation.
+- Use metric_cards for 2-4 metrics. If there are 4 metrics, keep each as its own metric item; do not merge the fourth metric into another card.
+- Use risk_matrix for risk governance pages; provide 3-4 risk text elements where each item has exactly three concise lines: Risk, Impact, Mitigation.
 - Use key_takeaway for strong conclusion or pre-closing summary pages; provide 2-4 takeaways or next actions.
 - Prefer these professional layouts over card variants when the slide role is comparison, process, risk, or summary and the content fits.
 - Professional layouts must keep text short enough for the chosen layout; do not rely on the renderer to hide long prose.
 - Do not squeeze 5 process steps into one narrow row; keep each process_flow step to a concise title plus one short description sentence.
 - For key_takeaway, every takeaway must include both a concise title and a one-sentence explanation.
 - For comparison_matrix, prefer aligned comparison rows over two sparse cards; put matching points in the same order on both sides.
-- For risk_matrix, keep each risk, impact, and mitigation cell concise.
+- For risk_matrix, every row must include a concrete mitigation; never leave mitigation implicit or mixed into the impact text.
+- For risk_matrix, keep each risk, impact, and mitigation cell concise while preserving all three cells.
+- For closing_slide, each action item must include a concise heading plus one explanatory sentence.
 - Do not rely on freeform bbox placement for visual design. The renderer will apply deterministic template positions and styles.
 - Focus on semantic content: slide titles, concise section text, column content, metric labels/values, and closing message.
 - Match each slide's content to its chosen layout. Do not create empty cards or placeholder-only cards.

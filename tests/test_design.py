@@ -38,6 +38,8 @@ def test_layout_contract_registry_includes_professional_layouts() -> None:
     assert contracts["process_flow"].max_items == 5
     assert contracts["risk_matrix"].min_items == 3
     assert contracts["risk_matrix"].max_items == 4
+    assert contracts["metric_cards"].max_items == 4
+    assert "metric_4" in contracts["metric_cards"].optional_slots
     assert contracts["key_takeaway"].min_items == 2
     assert contracts["key_takeaway"].max_items == 4
 

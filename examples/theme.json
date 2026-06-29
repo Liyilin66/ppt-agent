@@ -6,8 +6,8 @@
     "height_in": 7.5
   },
   "colors": {
-    "background": "#FFFFFF",
-    "surface": "#F9FAFB",
+    "background": "#F3FBF8",
+    "surface": "#E6F4F1",
     "text": "#111827",
     "muted_text": "#4B5563",
     "primary": "#2563EB",

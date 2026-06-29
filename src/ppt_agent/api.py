@@ -245,7 +245,11 @@ INDEX_HTML = """<!doctype html>
         complete_job: "正在完成任务"
       };
 
-      function setStatus(status) {
+      function setStatus(status, accepted) {
+        if (status === "succeeded" && accepted === false) {
+          jobStatus.textContent = "已生成，但未通过 QA";
+          return;
+        }
         jobStatus.textContent = statusText[status] || status;
       }
 
@@ -315,7 +319,7 @@ INDEX_HTML = """<!doctype html>
 
       async function pollJob(id) {
         const job = await requestJson(`/api/jobs/${id}`);
-        setStatus(job.status);
+        setStatus(job.status, job.accepted);
         setProgress(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
@@ -352,7 +356,7 @@ INDEX_HTML = """<!doctype html>
             body: JSON.stringify(buildPayload())
           });
           jobId.textContent = job.job_id;
-          setStatus(job.status);
+          setStatus(job.status, job.accepted);
           const finished = await pollJob(job.job_id);
           if (!finished) {
             pollTimer = setInterval(() => pollJob(job.job_id).catch((error) => {
@@ -553,10 +557,11 @@ def _run_job(
                 store.add_artifact(job_id, name=artifact.name, kind=artifact.kind, path=artifact.path)
 
         error_message = "\n".join(result.messages) if result.messages else None
+        completed_with_artifacts = any(artifact.name == "generated_deck" for artifact in result.artifacts)
         with observed_stage(stage_observer, "complete_job"):
             store.update_job(
                 job_id,
-                status="succeeded" if result.status_code == 0 else "failed",
+                status="succeeded" if completed_with_artifacts else "failed",
                 error_message=error_message,
                 accepted=result.accepted,
                 qa_score=result.generation_result.qa_report.score,

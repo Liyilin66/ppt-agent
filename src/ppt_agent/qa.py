@@ -55,13 +55,29 @@ def _overlap_area(first: BBox, second: BBox) -> float:
 
 
 def _score_for_issues(issues: list[QAIssue]) -> int:
-    penalty_by_severity = {
-        "info": 1,
-        "warning": 8,
-        "error": 25,
+    error_penalty = sum(25 for issue in issues if issue.severity == "error")
+    soft_penalty = 0
+    light_feedback_codes = {
+        "visual_density_too_low",
+        "visual_density_too_high",
+        "text_overflow_risk",
+        "title_wrapping_risk",
+        "SLIDE_TOO_EMPTY",
     }
-    penalty = sum(penalty_by_severity[issue.severity] for issue in issues)
-    return max(0, 100 - penalty)
+    for issue in issues:
+        if issue.severity == "error":
+            continue
+        if issue.severity == "info":
+            soft_penalty += 0
+        elif issue.code in light_feedback_codes:
+            soft_penalty += 1
+        else:
+            soft_penalty += 2
+
+    # Warnings guide regeneration and polish, but should not make a rendered PPTX
+    # look like a runtime failure. Hard errors remain the only path to severe scores.
+    soft_penalty = min(soft_penalty, 40)
+    return max(0, 100 - error_penalty - soft_penalty)
 
 
 def _content_layout(slide_layout: str) -> str | None:
@@ -241,6 +257,41 @@ def _bullet_line_count(text: str) -> int:
     )
 
 
+def _risk_matrix_parts(text: str) -> tuple[str, str, str]:
+    lines = [line.strip(" -•\t") for line in text.splitlines() if line.strip(" -•\t")]
+    if len(lines) == 1 and "|" in lines[0]:
+        lines = [part.strip() for part in lines[0].split("|") if part.strip()]
+    cleaned = []
+    for line in lines[:3]:
+        cleaned.append(re.sub(r"^(risk|impact|mitigation|风险|影响|缓解措施|缓解)[:：]\s*", "", line, flags=re.I))
+    while len(cleaned) < 3:
+        cleaned.append("")
+    return cleaned[0], cleaned[1], cleaned[2]
+
+
+def _append_risk_matrix_semantic_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        if slide.layout != "risk_matrix":
+            continue
+        for element in _body_texts(slide)[:4]:
+            _risk, _impact, mitigation = _risk_matrix_parts(element.text)
+            if mitigation:
+                continue
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    element_id=element.element_id,
+                    code="risk_matrix_missing_mitigation",
+                    message=(
+                        f"Risk matrix row '{element.element_id}' on slide '{slide.slide_id}' "
+                        "is missing a clear mitigation. Each risk row should include risk, "
+                        "impact, and mitigation."
+                    ),
+                )
+            )
+
+
 def _body_texts(slide) -> list[TextElement]:
     text_elements = _text_elements(slide)
     return text_elements[1:] if text_elements else []
@@ -341,6 +392,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_layout_repetition_issues(deck, issues)
     _append_adjacent_title_similarity_issues(deck, issues)
     _append_layout_contract_issues(deck, issues)
+    _append_risk_matrix_semantic_issues(deck, issues)
     _append_visual_preflight_issues(deck, issues)
 
     for slide in deck.slides:
