@@ -157,6 +157,33 @@ examples/demo_ai_agent_pm/
 - `patch_report.json`
 - `patched_deck.pptx`
 
+这些 PPTX 对应的预览截图位于：
+
+- `examples/demo_ai_agent_pm/screenshots/`
+- `examples/demo_ai_agent_pm/patches/screenshots/`
+
+README 里的图片只是 demo artifact，方便陌生人直接看到生成效果；核心输出仍然是可编辑 PPTX 和 JSON artifacts。
+
+### Demo Preview
+
+Deck IR -> PPTX -> QA -> Patch 的闭环可以直接从官方 demo 截图里看到：
+
+封面页：
+
+![Cover](examples/demo_ai_agent_pm/screenshots/slide_01.png)
+
+工作流页：
+
+![Workflow](examples/demo_ai_agent_pm/screenshots/slide_05.png)
+
+风险治理页：
+
+![Risk Matrix](examples/demo_ai_agent_pm/screenshots/slide_07.png)
+
+Patch 前后对比：
+
+![Patch Before After](examples/demo_ai_agent_pm/patches/screenshots/patch_before_after.png)
+
 重新生成：
 
 ```bash
@@ -400,18 +427,6 @@ renderer 使用模板和确定性视觉变体：
 - `metric_cards`：支持 2-4 个 KPI，4 个指标使用 2x2 或 KPI board 风格。
 - `key_takeaway`：强结论页，包含核心结论和下一步。
 - `closing_slide`：行动清单结构，保持 heading + explanation 成对。
-
-## 演示截图
-
-这些截图来自 `examples/output/` 下已有 PPTX 产物，不是 AI 生成图片、设计稿或占位图。
-
-### 示例 deck 第 1 页
-
-![示例 deck 第 1 页](docs/assets/sample_deck_slide_1.png)
-
-### patch 后 deck 第 1 页
-
-![patch 后 deck 第 1 页](docs/assets/patched_deck_slide_1.png)
 
 ## 演示辅助脚本
 

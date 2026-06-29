@@ -26,7 +26,34 @@
 - `patch_report.json`
 - `patched_deck.pptx`
 
+另外，仓库已提交一组可选 demo screenshots：
+
+- `screenshots/slide_01.png` 到 `screenshots/slide_08.png`
+- `screenshots/contact_sheet.png`
+- `patches/screenshots/patched_slide_01.png`
+- `patches/screenshots/patch_before_after.png`
+
 这些产物用于 GitHub / 简历 / private beta 演示。由于 LLM 输出可能随模型版本变化，重新运行同一输入不保证字词完全一致；但本项目的 DeckBrief 快速路径、DeckPlan、QA、renderer 和 patch 逻辑都保持可复现、可检查。
+
+## Demo preview
+
+这些截图只是 demo artifact，方便在 README 中直接展示生成结果；核心输出仍然是 editable PPTX 和 JSON artifacts。
+
+封面页：
+
+![Demo Cover](screenshots/slide_01.png)
+
+工作流页：
+
+![Demo Workflow](screenshots/slide_05.png)
+
+风险治理页：
+
+![Demo Risk Matrix](screenshots/slide_07.png)
+
+Patch 前后对比：
+
+![Demo Patch Before After](patches/screenshots/patch_before_after.png)
 
 ## 重新生成
 
@@ -48,6 +75,23 @@ uv run ppt-agent build \
 ```
 
 如果 QA 分数未达到门槛，`build` 仍会输出可检查的 JSON 和 PPTX artifacts，并返回非零状态码。Web UI 会显示“已生成，但未通过 QA”，这和 runtime failed 不同。
+
+## 生成 screenshots
+
+如果本机已有 `soffice` 和 `pdftoppm`，可以用下面的可选脚本重新生成 README 预览图：
+
+```bash
+uv run python scripts/generate_demo_screenshots.py --include-patch-demo
+```
+
+默认行为：
+
+- 从 `generated_deck.pptx` 生成 `screenshots/slide_01.png` 到 `slide_08.png`
+- 生成 `screenshots/contact_sheet.png`
+- 额外从 `patched_deck.pptx` 导出 `patches/screenshots/patched_slide_01.png`
+- 生成 `patches/screenshots/patch_before_after.png`
+
+这一步不属于主生成链路。缺少外部工具时，脚本会给出清晰错误并退出，但不会影响 `ppt-agent build`、`generate`、`render`、`patch` 或现有 pytest。
 
 ## Patch demo
 
