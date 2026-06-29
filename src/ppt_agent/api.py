@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -14,10 +17,15 @@ from ppt_agent.generation import DeckGenerationRequest
 from ppt_agent.job_store import ArtifactRecord, JobRecord, JobStore
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
+from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODEL = "gpt-5.5"
+JOB_TIMEOUT_SECONDS = 600
+LLM_TIMEOUT_SECONDS = 120
+
+logger = logging.getLogger(__name__)
 
 
 INDEX_HTML = """<!doctype html>
@@ -113,6 +121,15 @@ INDEX_HTML = """<!doctype html>
         font-weight: 700;
       }
 
+      #currentStage {
+        font-weight: 700;
+      }
+
+      #longRunningNotice {
+        color: #8a5a00;
+        font-weight: 600;
+      }
+
       #errorMessage {
         color: #9d2f2f;
         white-space: pre-wrap;
@@ -174,6 +191,9 @@ INDEX_HTML = """<!doctype html>
         <h2>任务状态</h2>
         <p>任务 ID：<span id="jobId">暂无</span></p>
         <p>状态：<span id="jobStatus">未开始</span></p>
+        <p>当前阶段：<span id="currentStage">暂无</span></p>
+        <p>运行时间：<span id="elapsedSeconds">0</span> 秒</p>
+        <p id="longRunningNotice"></p>
         <p id="errorMessage"></p>
       </section>
 
@@ -188,6 +208,9 @@ INDEX_HTML = """<!doctype html>
       const button = document.getElementById("generateButton");
       const jobId = document.getElementById("jobId");
       const jobStatus = document.getElementById("jobStatus");
+      const currentStage = document.getElementById("currentStage");
+      const elapsedSeconds = document.getElementById("elapsedSeconds");
+      const longRunningNotice = document.getElementById("longRunningNotice");
       const errorMessage = document.getElementById("errorMessage");
       const artifacts = document.getElementById("artifacts");
       let pollTimer = null;
@@ -205,8 +228,32 @@ INDEX_HTML = """<!doctype html>
         failed: "失败"
       };
 
+      const stageText = {
+        create_job: "正在创建任务",
+        running: "正在启动生成任务",
+        build_brief: "正在解析需求",
+        generate_deck_plan: "正在规划大纲",
+        generate_deck: "正在生成 Deck",
+        qa_attempt: "正在执行 QA 检查",
+        render_pptx: "正在渲染 PPTX",
+        apply_patch: "正在处理 Patch",
+        save_artifacts: "正在保存文件",
+        complete_job: "正在完成任务"
+      };
+
       function setStatus(status) {
         jobStatus.textContent = statusText[status] || status;
+      }
+
+      function setProgress(job) {
+        currentStage.textContent = stageText[job.current_stage] || job.current_stage || "暂无";
+        elapsedSeconds.textContent = String(job.elapsed_seconds || 0);
+        const isTerminal = job.status === "succeeded" || job.status === "failed";
+        if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
+          longRunningNotice.textContent = "任务运行时间较长，请检查后端日志。";
+        } else {
+          longRunningNotice.textContent = "";
+        }
       }
 
       function clearArtifacts() {
@@ -257,11 +304,14 @@ INDEX_HTML = """<!doctype html>
       async function pollJob(id) {
         const job = await requestJson(`/api/jobs/${id}`);
         setStatus(job.status);
+        setProgress(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
         }
         if (job.status === "succeeded" || job.status === "failed") {
-          clearInterval(pollTimer);
+          if (pollTimer) {
+            clearInterval(pollTimer);
+          }
           pollTimer = null;
           setBusy(false);
           await loadArtifacts(id);
@@ -277,6 +327,9 @@ INDEX_HTML = """<!doctype html>
         }
         setBusy(true);
         setStatus("submitting");
+        currentStage.textContent = "正在提交任务";
+        elapsedSeconds.textContent = "0";
+        longRunningNotice.textContent = "";
         errorMessage.textContent = "";
         clearArtifacts();
 
@@ -294,6 +347,7 @@ INDEX_HTML = """<!doctype html>
               errorMessage.textContent = error.message;
               setBusy(false);
               clearInterval(pollTimer);
+              pollTimer = null;
             }), 2000);
           }
         } catch (error) {
@@ -365,6 +419,59 @@ def _path_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _model_name(model) -> str:
+    return str(getattr(model, "model_name", None) or getattr(model, "model", None) or model.__class__.__name__)
+
+
+def _validate_patch_path(path: Path) -> None:
+    if path.suffix.lower() != ".json":
+        raise ValueError(f"Patch file must be a .json file: {path}")
+    if not path.is_file():
+        raise ValueError(f"Patch file not found: {path}")
+
+
+def _log_job_stage(
+    store: JobStore,
+    job_id: str,
+    *,
+    stage_name: str,
+    event: StageEvent,
+    model_name: str,
+    slide_count: int,
+    use_deck_plan: bool,
+    metadata: dict,
+) -> None:
+    if event == "start":
+        store.update_progress(job_id, current_stage=stage_name)
+
+    error_message = metadata.get("error_message")
+    record = {
+        "job_id": job_id,
+        "stage": stage_name,
+        "event": event,
+        "started_at": metadata.get("started_at"),
+        "finished_at": metadata.get("finished_at"),
+        "duration_ms": metadata.get("duration_ms"),
+        "model_name": model_name,
+        "slide_count": metadata.get("slide_count", slide_count),
+        "use_deck_plan": metadata.get("use_deck_plan", use_deck_plan),
+        "attempt_index": metadata.get("attempt_index"),
+        "chunk_index": metadata.get("chunk_index"),
+        "error_message": sanitize_error_message(error_message) if error_message else None,
+    }
+    logger.info("job_stage %s", json.dumps(record, ensure_ascii=False))
+
+
+def _expire_stale_job(store: JobStore, job: JobRecord) -> JobRecord:
+    if job.status not in {"pending", "running"} or job.elapsed_seconds <= JOB_TIMEOUT_SECONDS:
+        return job
+
+    stage = job.current_stage or "unknown"
+    error_message = f"Job timed out after {JOB_TIMEOUT_SECONDS:g} seconds while running stage '{stage}'."
+    store.update_job(job.job_id, status="failed", error_message=error_message, accepted=False)
+    return store.get_job(job.job_id) or job
+
+
 def _run_job(
     store: JobStore,
     jobs_root: Path,
@@ -372,10 +479,30 @@ def _run_job(
     model,
     payload: CreateJobRequest,
 ) -> None:
-    store.update_job(job_id, status="running")
+    started_at = time.monotonic()
+    model_name = _model_name(model)
+
+    def stage_observer(stage_name: str, event: StageEvent, metadata: dict) -> None:
+        _log_job_stage(
+            store,
+            job_id,
+            stage_name=stage_name,
+            event=event,
+            model_name=model_name,
+            slide_count=payload.slides,
+            use_deck_plan=True,
+            metadata=metadata,
+        )
+
+    store.update_job(job_id, status="running", current_stage="running")
 
     try:
         output_dir = jobs_root / job_id
+        patch_path = Path(payload.patch_path) if payload.patch_path else None
+        if patch_path is not None:
+            with observed_stage(stage_observer, "apply_patch", patch_path=str(patch_path)):
+                _validate_patch_path(patch_path)
+
         request = BuildPipelineRequest(
             generation_request=DeckGenerationRequest(
                 topic=payload.topic,
@@ -390,23 +517,35 @@ def _run_job(
             output_dir=output_dir,
             min_qa_score=payload.min_qa_score,
             max_attempts=payload.max_attempts,
-            patch_path=Path(payload.patch_path) if payload.patch_path else None,
+            patch_path=patch_path,
         )
-        result = run_build_pipeline(model, request)
+        result = run_build_pipeline(
+            model,
+            request,
+            stage_observer=stage_observer,
+            llm_timeout_seconds=LLM_TIMEOUT_SECONDS,
+            job_timeout_seconds=JOB_TIMEOUT_SECONDS,
+            started_at_monotonic=started_at,
+        )
 
-        for artifact in result.artifacts:
-            store.add_artifact(job_id, name=artifact.name, kind=artifact.kind, path=artifact.path)
+        with observed_stage(stage_observer, "save_artifacts"):
+            for artifact in result.artifacts:
+                store.add_artifact(job_id, name=artifact.name, kind=artifact.kind, path=artifact.path)
 
         error_message = "\n".join(result.messages) if result.messages else None
-        store.update_job(
-            job_id,
-            status="succeeded" if result.status_code == 0 else "failed",
-            error_message=error_message,
-            accepted=result.accepted,
-            qa_score=result.generation_result.qa_report.score,
-        )
+        with observed_stage(stage_observer, "complete_job"):
+            store.update_job(
+                job_id,
+                status="succeeded" if result.status_code == 0 else "failed",
+                error_message=error_message,
+                accepted=result.accepted,
+                qa_score=result.generation_result.qa_report.score,
+                current_stage="complete_job",
+            )
     except Exception as exc:  # Keep failed jobs inspectable instead of surfacing background tracebacks.
-        store.update_job(job_id, status="failed", error_message=str(exc), accepted=False)
+        error_message = sanitize_error_message(exc)
+        logger.error("job_failed job_id=%s error=%s", job_id, error_message)
+        store.update_job(job_id, status="failed", error_message=error_message, accepted=False)
 
 
 def create_app(data_dir: str | Path | None = None, store: JobStore | None = None) -> FastAPI:
@@ -433,9 +572,26 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         try:
             model = _create_chat_model()
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {exc}") from exc
+            detail = sanitize_error_message(exc)
+            raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
 
         job = app.state.job_store.create_job()
+        model_name = _model_name(model)
+
+        def create_stage_observer(stage_name: str, event: StageEvent, metadata: dict) -> None:
+            _log_job_stage(
+                app.state.job_store,
+                job.job_id,
+                stage_name=stage_name,
+                event=event,
+                model_name=model_name,
+                slide_count=payload.slides,
+                use_deck_plan=True,
+                metadata=metadata,
+            )
+
+        with observed_stage(create_stage_observer, "create_job"):
+            pass
         background_tasks.add_task(_run_job, app.state.job_store, app.state.jobs_root, job.job_id, model, payload)
         return CreateJobResponse(job_id=job.job_id, status=job.status)
 
@@ -444,6 +600,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         job = app.state.job_store.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
+        job = _expire_stale_job(app.state.job_store, job)
         return JobResponse.model_validate(job.model_dump())
 
     @app.get("/api/jobs/{job_id}/artifacts", response_model=ArtifactListResponse)

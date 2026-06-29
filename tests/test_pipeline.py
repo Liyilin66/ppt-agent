@@ -1,10 +1,14 @@
 import json
+import time
 from pathlib import Path
+
+import pytest
 
 from ppt_agent.generation import DeckGenerationRequest, GenerationAttempt, GenerationResult
 from ppt_agent.load import load_deck
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
 from ppt_agent.qa import analyze_deck
+from ppt_agent.runtime import JobTimeoutError
 
 import ppt_agent.pipeline as pipeline
 
@@ -125,3 +129,56 @@ def test_run_build_pipeline_with_patch_issue_writes_last_legal_artifacts(tmp_pat
     assert (tmp_path / "patched_deck_ir.json").exists()
     assert (tmp_path / "patch_result.json").exists()
     assert (tmp_path / "patched_deck.pptx").exists()
+
+
+def test_run_build_pipeline_missing_patch_fails_before_generation(tmp_path: Path, monkeypatch) -> None:
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("generation should not run for an invalid patch path")
+
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", fail_if_called)
+
+    with pytest.raises(ValueError, match="Patch file not found"):
+        run_build_pipeline(object(), _request(tmp_path, patch_path=tmp_path / "missing_patch.json"))
+
+
+def test_run_build_pipeline_rejects_non_json_patch(tmp_path: Path, monkeypatch) -> None:
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("generation should not run for an invalid patch extension")
+
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", fail_if_called)
+    patch_path = tmp_path / "sample_patch.js"
+    patch_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Patch file must be a"):
+        run_build_pipeline(object(), _request(tmp_path, patch_path=patch_path))
+
+
+def test_run_build_pipeline_timeout_guard_fails_before_generation(tmp_path: Path, monkeypatch) -> None:
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("generation should not run after total job timeout")
+
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", fail_if_called)
+
+    with pytest.raises(JobTimeoutError, match="timed out"):
+        run_build_pipeline(
+            object(),
+            _request(tmp_path),
+            job_timeout_seconds=1,
+            started_at_monotonic=time.monotonic() - 2,
+        )
+
+
+def test_run_build_pipeline_emits_stage_events(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline, "generate_deck_with_quality_gate", lambda *args, **kwargs: _generation_result(True))
+    events = []
+
+    result = run_build_pipeline(
+        object(),
+        _request(tmp_path),
+        stage_observer=lambda stage, event, metadata: events.append((stage, event, metadata)),
+    )
+
+    assert result.accepted is True
+    assert ("generate_deck", "start") in [(stage, event) for stage, event, _metadata in events]
+    assert ("render_pptx", "finish") in [(stage, event) for stage, event, _metadata in events]
+    assert any(metadata.get("duration_ms") is not None for _stage, event, metadata in events if event == "finish")

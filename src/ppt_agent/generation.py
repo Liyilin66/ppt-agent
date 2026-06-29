@@ -12,6 +12,7 @@ from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
 from ppt_agent.planning import DeckPlan, generate_deck_plan_with_model
 from ppt_agent.qa import QAReport, analyze_deck
+from ppt_agent.runtime import StageObserver, invoke_with_timeout, observed_stage
 from ppt_agent.theme import Theme
 
 
@@ -405,6 +406,8 @@ def build_brief_from_user_prompt(
     style: str | None = None,
     language: str = DEFAULT_LANGUAGE,
     key_points: list[str] | None = None,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
 ) -> DeckBrief:
     """Extract a structured DeckBrief from detailed user requirements."""
 
@@ -432,25 +435,38 @@ Rules:
 - Preserve the raw detailed request in user_requirements_raw.
 """
     structured_model = model.with_structured_output(BRIEF_STRUCTURED_OUTPUT_SCHEMA)
-    response = _unwrap_structured_response(structured_model.invoke(prompt))
-    normalized = _normalize_brief_payload(
-        response,
-        topic=topic,
-        audience=audience,
-        slide_count=slide_count,
-        language=language,
-        user_requirements=user_requirements,
-    )
-    brief = DeckBrief.model_validate(normalized)
-    return brief.model_copy(
-        update={
-            "slide_count": slide_count,
-            "user_requirements_raw": user_requirements,
-        }
-    )
+    with observed_stage(stage_observer, "build_brief", slide_count=slide_count, use_deck_plan=False):
+        response = _unwrap_structured_response(
+            invoke_with_timeout(
+                lambda: structured_model.invoke(prompt),
+                timeout_seconds=timeout_seconds,
+                stage_name="build_brief",
+            )
+        )
+        normalized = _normalize_brief_payload(
+            response,
+            topic=topic,
+            audience=audience,
+            slide_count=slide_count,
+            language=language,
+            user_requirements=user_requirements,
+        )
+        brief = DeckBrief.model_validate(normalized)
+        return brief.model_copy(
+            update={
+                "slide_count": slide_count,
+                "user_requirements_raw": user_requirements,
+            }
+        )
 
 
-def _request_with_brief(model: Any, request: DeckGenerationRequest) -> DeckGenerationRequest:
+def _request_with_brief(
+    model: Any,
+    request: DeckGenerationRequest,
+    *,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+) -> DeckGenerationRequest:
     if request.brief is not None or not request.user_requirements:
         return request
 
@@ -463,6 +479,8 @@ def _request_with_brief(model: Any, request: DeckGenerationRequest) -> DeckGener
         style=request.style,
         language=request.language,
         key_points=request.key_points,
+        timeout_seconds=timeout_seconds,
+        stage_observer=stage_observer,
     )
     return request.model_copy(
         update={
@@ -643,6 +661,10 @@ def _generate_deck_once(
     slide_index_offset: int = 0,
     total_slide_count: int | None = None,
     force_slide_ids: bool = False,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+    attempt_index: int | None = None,
+    chunk_index: int | None = None,
 ) -> Deck:
     prompt = build_generation_prompt(
         request,
@@ -652,18 +674,32 @@ def _generate_deck_once(
         deck_plan=deck_plan,
     )
     structured_model = model.with_structured_output(Deck)
-    response = _unwrap_structured_response(structured_model.invoke(prompt))
-
-    deck = Deck.model_validate(
-        _normalize_deck_payload(
-            response,
-            request,
-            slide_index_offset=slide_index_offset,
-            total_slide_count=total_slide_count,
-            force_slide_ids=force_slide_ids,
+    with observed_stage(
+        stage_observer,
+        "generate_deck",
+        slide_count=request.slide_count,
+        use_deck_plan=deck_plan is not None,
+        attempt_index=attempt_index,
+        chunk_index=chunk_index,
+    ):
+        response = _unwrap_structured_response(
+            invoke_with_timeout(
+                lambda: structured_model.invoke(prompt),
+                timeout_seconds=timeout_seconds,
+                stage_name="generate_deck",
+            )
         )
-    )
-    return _ensure_slide_count(deck, request)
+
+        deck = Deck.model_validate(
+            _normalize_deck_payload(
+                response,
+                request,
+                slide_index_offset=slide_index_offset,
+                total_slide_count=total_slide_count,
+                force_slide_ids=force_slide_ids,
+            )
+        )
+        return _ensure_slide_count(deck, request)
 
 
 def _segment_instruction(start: int, count: int, total: int) -> str:
@@ -726,9 +762,13 @@ def _generate_deck_in_chunks(
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
     deck_plan: DeckPlan | None = None,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+    attempt_index: int | None = None,
 ) -> Deck:
     chunks: list[Deck] = []
     start = 1
+    chunk_index = 1
     while start <= request.slide_count:
         count = min(MAX_SINGLE_GENERATION_SLIDES, request.slide_count - start + 1)
         chunk_request = _chunked_request(request, start, count)
@@ -742,9 +782,14 @@ def _generate_deck_in_chunks(
             slide_index_offset=start - 1,
             total_slide_count=request.slide_count,
             force_slide_ids=True,
+            timeout_seconds=timeout_seconds,
+            stage_observer=stage_observer,
+            attempt_index=attempt_index,
+            chunk_index=chunk_index,
         )
         chunks.append(chunk)
         start += count
+        chunk_index += 1
 
     return _merge_deck_chunks(chunks, request)
 
@@ -755,10 +800,18 @@ def generate_deck_with_model(
     qa_feedback: QAReport | None = None,
     generation_feedback: str | None = None,
     deck_plan: DeckPlan | None = None,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+    attempt_index: int | None = None,
 ) -> Deck:
     """Generate a Deck using a LangChain chat model with structured output."""
 
-    request = _request_with_brief(model, request)
+    request = _request_with_brief(
+        model,
+        request,
+        timeout_seconds=timeout_seconds,
+        stage_observer=stage_observer,
+    )
     if request.slide_count > MAX_SINGLE_GENERATION_SLIDES:
         return _generate_deck_in_chunks(
             model,
@@ -766,6 +819,9 @@ def generate_deck_with_model(
             qa_feedback=qa_feedback,
             generation_feedback=generation_feedback,
             deck_plan=deck_plan,
+            timeout_seconds=timeout_seconds,
+            stage_observer=stage_observer,
+            attempt_index=attempt_index,
         )
 
     return _generate_deck_once(
@@ -774,6 +830,10 @@ def generate_deck_with_model(
         qa_feedback=qa_feedback,
         generation_feedback=generation_feedback,
         deck_plan=deck_plan,
+        timeout_seconds=timeout_seconds,
+        stage_observer=stage_observer,
+        attempt_index=attempt_index,
+        chunk_index=1,
     )
 
 
@@ -783,6 +843,8 @@ def generate_deck_with_quality_gate(
     theme: Theme | None = None,
     min_score: int = 80,
     max_attempts: int = 2,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
 ) -> GenerationResult:
     """Generate Deck IR and retry when deterministic QA does not meet the score gate."""
 
@@ -794,52 +856,72 @@ def generate_deck_with_quality_gate(
     attempts: list[GenerationAttempt] = []
     qa_feedback: QAReport | None = None
     generation_feedback: str | None = None
-    request = _request_with_brief(model, request)
+    request = _request_with_brief(
+        model,
+        request,
+        timeout_seconds=timeout_seconds,
+        stage_observer=stage_observer,
+    )
     try:
-        deck_plan = generate_deck_plan_with_model(model, _brief_from_request(request))
+        deck_plan = generate_deck_plan_with_model(
+            model,
+            _brief_from_request(request),
+            timeout_seconds=timeout_seconds,
+            stage_observer=stage_observer,
+        )
     except Exception as exc:
         raise ValueError(f"DeckPlan generation failed: {exc}") from exc
 
     for attempt_index in range(1, max_attempts + 1):
-        try:
-            deck = generate_deck_with_model(
-                model,
-                request,
-                qa_feedback=qa_feedback,
-                generation_feedback=generation_feedback,
-                deck_plan=deck_plan,
-            )
-        except ValueError as exc:
-            generation_feedback = str(exc)
-            qa_feedback = None
-            if attempt_index == max_attempts:
-                raise ValueError(
-                    f"Deck generation failed after {max_attempts} attempt(s): {generation_feedback}"
-                ) from exc
-            continue
+        with observed_stage(
+            stage_observer,
+            "qa_attempt",
+            attempt_index=attempt_index,
+            slide_count=request.slide_count,
+            use_deck_plan=True,
+        ):
+            try:
+                deck = generate_deck_with_model(
+                    model,
+                    request,
+                    qa_feedback=qa_feedback,
+                    generation_feedback=generation_feedback,
+                    deck_plan=deck_plan,
+                    timeout_seconds=timeout_seconds,
+                    stage_observer=stage_observer,
+                    attempt_index=attempt_index,
+                )
+            except ValueError as exc:
+                generation_feedback = str(exc)
+                qa_feedback = None
+                if attempt_index == max_attempts:
+                    raise ValueError(
+                        f"Deck generation failed after {max_attempts} attempt(s): {generation_feedback}"
+                    ) from exc
+                continue
 
-        qa_report = analyze_deck(deck, theme)
-        accepted = qa_report.score >= min_score
-        attempts.append(
-            GenerationAttempt(
-                attempt_index=attempt_index,
-                deck=deck,
-                qa_report=qa_report,
-                accepted=accepted,
-            )
-        )
-
-        if accepted:
-            return GenerationResult(
-                deck=deck,
-                qa_report=qa_report,
-                attempts=attempts,
-                accepted=True,
-                deck_plan=deck_plan,
+            qa_report = analyze_deck(deck, theme)
+            accepted = qa_report.score >= min_score
+            attempts.append(
+                GenerationAttempt(
+                    attempt_index=attempt_index,
+                    deck=deck,
+                    qa_report=qa_report,
+                    accepted=accepted,
+                )
             )
 
-        qa_feedback = qa_report
-        generation_feedback = None
+            if accepted:
+                return GenerationResult(
+                    deck=deck,
+                    qa_report=qa_report,
+                    attempts=attempts,
+                    accepted=True,
+                    deck_plan=deck_plan,
+                )
+
+            qa_feedback = qa_report
+            generation_feedback = None
 
     last_attempt = attempts[-1]
     return GenerationResult(

@@ -1,4 +1,5 @@
 import copy
+import time
 
 import pytest
 from pydantic import ValidationError
@@ -23,6 +24,7 @@ from ppt_agent.planning import (
     generate_deck_plan_with_model,
 )
 from ppt_agent.qa import QAIssue, QAReport, analyze_deck
+from ppt_agent.runtime import LLMCallTimeoutError
 
 
 class FakeStructuredModel:
@@ -46,6 +48,17 @@ class FakeModel:
     def with_structured_output(self, schema):
         self.schema = schema
         return self.structured_model
+
+
+class SlowStructuredModel:
+    def invoke(self, prompt: str):
+        time.sleep(0.05)
+        return {}
+
+
+class SlowModel:
+    def with_structured_output(self, schema):
+        return SlowStructuredModel()
 
 
 def _valid_deck_payload() -> dict:
@@ -460,6 +473,18 @@ def test_build_brief_from_user_prompt_with_fake_model() -> None:
     assert brief.slide_count == 3
     assert brief.user_requirements_raw == requirements
     assert "Default language to zh-CN" in model.structured_model.prompts[0]
+
+
+def test_build_brief_from_user_prompt_times_out_slow_model() -> None:
+    with pytest.raises(LLMCallTimeoutError, match="build_brief"):
+        build_brief_from_user_prompt(
+            SlowModel(),
+            "生成一份中文 PPT。",
+            topic="AI 教育",
+            audience="大学生",
+            slide_count=3,
+            timeout_seconds=0.001,
+        )
 
 
 def test_build_brief_normalizes_common_provider_schema_drift() -> None:

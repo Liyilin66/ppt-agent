@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from ppt_agent.design import DesignSpec, SlideRole, get_layout_contract, list_layout_contracts
 from ppt_agent.models import StrictModel
+from ppt_agent.runtime import StageObserver, invoke_with_timeout, observed_stage
 
 
 SLIDE_ROLES: tuple[str, ...] = (
@@ -253,15 +254,31 @@ Planning rules:
 """
 
 
-def generate_deck_plan_with_model(model: Any, brief: Any) -> DeckPlan:
+def generate_deck_plan_with_model(
+    model: Any,
+    brief: Any,
+    *,
+    timeout_seconds: float | None = None,
+    stage_observer: StageObserver | None = None,
+) -> DeckPlan:
     """Generate a DeckPlan using a LangChain-compatible structured-output model."""
 
     prompt = build_deck_plan_prompt(brief)
     structured_model = model.with_structured_output(DECK_PLAN_STRUCTURED_OUTPUT_SCHEMA)
-    response = structured_model.invoke(prompt)
-    if isinstance(response, dict) and "structured_response" in response:
-        response = response["structured_response"]
-    if isinstance(response, dict) and "deck_plan" in response:
-        response = response["deck_plan"]
-    response = _normalize_deck_plan_payload(response, brief)
-    return DeckPlan.model_validate(response)
+    with observed_stage(
+        stage_observer,
+        "generate_deck_plan",
+        slide_count=getattr(brief, "slide_count", None),
+        use_deck_plan=True,
+    ):
+        response = invoke_with_timeout(
+            lambda: structured_model.invoke(prompt),
+            timeout_seconds=timeout_seconds,
+            stage_name="generate_deck_plan",
+        )
+        if isinstance(response, dict) and "structured_response" in response:
+            response = response["structured_response"]
+        if isinstance(response, dict) and "deck_plan" in response:
+            response = response["deck_plan"]
+        response = _normalize_deck_plan_payload(response, brief)
+        return DeckPlan.model_validate(response)

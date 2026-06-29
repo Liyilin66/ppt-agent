@@ -79,7 +79,7 @@ def _install_fake_backend(monkeypatch, accepted: bool = True) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
 
-    def fake_run_build_pipeline(model, request):
+    def fake_run_build_pipeline(model, request, **kwargs):
         return _fake_pipeline_result(request.output_dir, accepted=accepted)
 
     monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
@@ -134,6 +134,15 @@ def test_index_page_keeps_required_job_field_names(tmp_path: Path) -> None:
         assert f'name="{field_name}"' in response.text
 
 
+def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    assert "currentStage" in response.text
+    assert "elapsedSeconds" in response.text
+    assert "任务运行时间较长，请检查后端日志" in response.text
+
+
 def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -159,7 +168,7 @@ def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
     captured_request = {}
 
-    def fake_run_build_pipeline(model, request):
+    def fake_run_build_pipeline(model, request, **kwargs):
         captured_request["request"] = request
         return _fake_pipeline_result(request.output_dir, accepted=True)
 
@@ -190,6 +199,78 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["status"] == "succeeded"
     assert body["accepted"] is True
     assert isinstance(body["qa_score"], int)
+    assert body["current_stage"] == "complete_job"
+    assert body["last_updated_at"] == body["updated_at"]
+    assert body["elapsed_seconds"] >= 0
+
+
+def test_job_failure_marks_failed_instead_of_running(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_build_pipeline(model, request, **kwargs):
+        raise RuntimeError("provider failed with api_key=sk-testsecret123456789")
+
+    monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
+    client = _client(tmp_path)
+    job_id = client.post("/api/jobs", json=_job_payload()).json()["job_id"]
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+
+    assert body["status"] == "failed"
+    assert body["accepted"] is False
+    assert "provider failed" in body["error_message"]
+    assert "sk-testsecret" not in body["error_message"]
+
+
+def test_job_timeout_marks_failed_with_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_build_pipeline(model, request, **kwargs):
+        raise TimeoutError("Job timed out while running stage 'generate_deck' after 600 seconds.")
+
+    monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
+    client = _client(tmp_path)
+    job_id = client.post("/api/jobs", json=_job_payload()).json()["job_id"]
+
+    body = client.get(f"/api/jobs/{job_id}").json()
+
+    assert body["status"] == "failed"
+    assert "timed out" in body["error_message"]
+    assert "generate_deck" in body["error_message"]
+
+
+def test_job_status_expires_stale_running_job(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(api, "JOB_TIMEOUT_SECONDS", -1)
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job()
+    store.update_job(job.job_id, status="running", current_stage="generate_deck")
+
+    body = client.get(f"/api/jobs/{job.job_id}").json()
+
+    assert body["status"] == "failed"
+    assert "timed out" in body["error_message"]
+    assert "generate_deck" in body["error_message"]
+
+
+def test_job_with_missing_patch_path_fails_fast(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+    client = _client(tmp_path)
+    payload = {
+        **_job_payload(),
+        "patch_path": str(tmp_path / "missing_patch.json"),
+    }
+
+    job_id = client.post("/api/jobs", json=payload).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+
+    assert body["status"] == "failed"
+    assert "Patch file not found" in body["error_message"]
+    assert body["current_stage"] == "apply_patch"
 
 
 def test_artifacts_can_be_listed(tmp_path: Path, monkeypatch) -> None:

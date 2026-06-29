@@ -22,6 +22,9 @@ class JobRecord(StrictModel):
     status: JobStatus
     created_at: str
     updated_at: str
+    current_stage: str | None = None
+    last_updated_at: str
+    elapsed_seconds: int = Field(default=0, ge=0)
     error_message: str | None = None
     accepted: bool | None = None
     qa_score: int | None = Field(default=None, ge=0, le=100)
@@ -64,6 +67,7 @@ class JobStore:
                         status TEXT NOT NULL,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
+                        current_stage TEXT,
                         error_message TEXT,
                         accepted INTEGER,
                         qa_score INTEGER
@@ -84,7 +88,13 @@ class JobStore:
                     """
                 )
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id)")
+                self._ensure_job_columns(connection)
             self._initialized = True
+
+    def _ensure_job_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "current_stage" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN current_stage TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         self._ensure_schema()
@@ -99,10 +109,10 @@ class JobStore:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO jobs (job_id, status, created_at, updated_at, current_stage)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (job_id, "pending", now, now),
+                (job_id, "pending", now, now, "create_job"),
             )
 
         job = self.get_job(job_id)
@@ -114,7 +124,7 @@ class JobStore:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT job_id, status, created_at, updated_at, error_message, accepted, qa_score
+                SELECT job_id, status, created_at, updated_at, current_stage, error_message, accepted, qa_score
                 FROM jobs
                 WHERE job_id = ?
                 """,
@@ -129,6 +139,9 @@ class JobStore:
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            current_stage=row["current_stage"],
+            last_updated_at=row["updated_at"],
+            elapsed_seconds=self._elapsed_seconds(row["created_at"], row["updated_at"], row["status"]),
             error_message=row["error_message"],
             accepted=None if row["accepted"] is None else bool(row["accepted"]),
             qa_score=row["qa_score"],
@@ -142,6 +155,7 @@ class JobStore:
         error_message: str | None = None,
         accepted: bool | None = None,
         qa_score: int | None = None,
+        current_stage: str | None = None,
     ) -> None:
         accepted_value = None if accepted is None else int(accepted)
 
@@ -151,12 +165,25 @@ class JobStore:
                 UPDATE jobs
                 SET status = ?,
                     updated_at = ?,
+                    current_stage = COALESCE(?, current_stage),
                     error_message = ?,
                     accepted = ?,
                     qa_score = ?
                 WHERE job_id = ?
                 """,
-                (status, self._now(), error_message, accepted_value, qa_score, job_id),
+                (status, self._now(), current_stage, error_message, accepted_value, qa_score, job_id),
+            )
+
+    def update_progress(self, job_id: str, *, current_stage: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET current_stage = ?,
+                    updated_at = ?
+                WHERE job_id = ?
+                """,
+                (current_stage, self._now(), job_id),
             )
 
     def add_artifact(self, job_id: str, *, name: str, kind: Literal["json", "pptx"], path: str | Path) -> ArtifactRecord:
@@ -217,3 +244,11 @@ class JobStore:
             path=Path(row["path"]),
             created_at=row["created_at"],
         )
+
+    def _elapsed_seconds(self, created_at: str, updated_at: str, status: str) -> int:
+        try:
+            created = datetime.fromisoformat(created_at)
+            end = datetime.now(UTC) if status in {"pending", "running"} else datetime.fromisoformat(updated_at)
+        except ValueError:
+            return 0
+        return max(0, int((end - created).total_seconds()))
