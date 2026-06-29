@@ -324,6 +324,10 @@ def test_build_deck_plan_prompt_contains_planning_constraints() -> None:
     assert "8 slides or fewer" in prompt
     assert "instead of section_divider" in prompt
     assert "For long decks, keep layout diversity" in prompt
+    assert "Avoid three consecutive card-grid-style slides" in prompt
+    assert "Narrative order matters" in prompt
+    assert "Background / context / value / why-now slides are early-stage slides" in prompt
+    assert "背景 / 价值 / 为什么重要必须放在前半段" in prompt
     assert "recommended_layout must be one of" in prompt
     assert "Default DesignSpec guidance" in prompt
     assert "LayoutContract registry" in prompt
@@ -396,6 +400,10 @@ def test_build_generation_prompt_contains_core_constraints() -> None:
     assert "Use risk_matrix for risk governance pages" in prompt
     assert "Use key_takeaway for strong conclusion" in prompt
     assert "Professional layouts must keep text short enough" in prompt
+    assert "Avoid making 3 consecutive content slides use the same card-grid visual pattern" in prompt
+    assert "background/context/why-now/value/problem framing must appear in the first half" in prompt
+    assert "Do not introduce new background framing after a core conclusion" in prompt
+    assert "背景 / 价值 / 为什么重要必须放在前半段" in prompt
     assert "Do not squeeze 5 process steps into one narrow row" in prompt
     assert "every takeaway must include both a concise title and a one-sentence explanation" in prompt
     assert "prefer aligned comparison rows over two sparse cards" in prompt
@@ -578,6 +586,112 @@ def test_deterministic_deck_plan_has_valid_stable_layout_diverse_slides() -> Non
         "risk_matrix",
         "metric_cards",
     }.intersection(layouts)
+
+
+def test_deterministic_ten_slide_plan_keeps_background_before_conclusion() -> None:
+    requirements = (
+        "我要做一份中文分享 PPT，面向准备进入 AI 产品岗位的 IT 硕士学生。"
+        "重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、"
+        "评估指标和落地风险。风格要像技术产品分享，不要像营销材料。"
+    )
+    brief = build_deterministic_deck_brief(
+        topic="AI 产品经理如何设计 Agent 产品",
+        audience="IT 硕士学生",
+        slide_count=10,
+        user_requirements=requirements,
+    )
+
+    plan = build_deterministic_deck_plan(brief)
+
+    assert [slide.slide_index for slide in plan.slides] == list(range(1, 11))
+    assert plan.slides[-1].recommended_layout == "closing_slide"
+
+    early_positions = [
+        slide.slide_index
+        for slide in plan.slides
+        if slide.slide_role == "context" or any(marker in slide.key_message for marker in ["背景", "价值", "为什么"])
+    ]
+    conclusion_positions = [
+        slide.slide_index
+        for slide in plan.slides
+        if slide.slide_role == "summary" and slide.recommended_layout != "closing_slide"
+    ]
+    metrics_or_risk_positions = [
+        slide.slide_index
+        for slide in plan.slides
+        if slide.slide_role in {"metrics", "risk"}
+    ]
+
+    assert early_positions
+    assert conclusion_positions
+    assert max(early_positions) < min(conclusion_positions)
+    assert max(metrics_or_risk_positions) < min(conclusion_positions)
+
+
+def test_deterministic_eight_slide_technical_plan_keeps_existing_story_order() -> None:
+    brief = build_deterministic_deck_brief(
+        topic="AI Agent 产品经理",
+        audience="IT 硕士学生",
+        slide_count=8,
+        user_requirements="重点讲技术边界、用户需求分析、工作流设计、评估指标和落地风险。",
+    )
+
+    plan = build_deterministic_deck_plan(brief)
+    summary_positions = [
+        slide.slide_index
+        for slide in plan.slides
+        if slide.slide_role == "summary" and slide.recommended_layout != "closing_slide"
+    ]
+    metrics_or_risk_positions = [
+        slide.slide_index
+        for slide in plan.slides
+        if slide.slide_role in {"metrics", "risk"}
+    ]
+
+    assert [slide.slide_index for slide in plan.slides] == list(range(1, 9))
+    assert plan.slides[0].recommended_layout == "title_slide"
+    assert plan.slides[-1].recommended_layout == "closing_slide"
+    if summary_positions:
+        assert max(metrics_or_risk_positions) < min(summary_positions)
+
+
+def test_deck_plan_rejects_background_after_conclusion() -> None:
+    payload = _valid_deck_plan_payload(6)
+    payload["slides"][1].update(
+        {
+            "slide_role": "metrics",
+            "key_message": "评估指标要先说明",
+            "recommended_layout": "metric_cards",
+            "content_items": 3,
+        }
+    )
+    payload["slides"][2].update(
+        {
+            "slide_role": "risk",
+            "key_message": "落地风险需要治理",
+            "recommended_layout": "risk_matrix",
+            "content_items": 3,
+        }
+    )
+    payload["slides"][3].update(
+        {
+            "slide_role": "summary",
+            "key_message": "核心结论：先做窄场景",
+            "recommended_layout": "key_takeaway",
+            "content_items": 3,
+        }
+    )
+    payload["slides"][4].update(
+        {
+            "slide_role": "context",
+            "key_message": "背景：Agent 产品价值",
+            "recommended_layout": "two_column",
+            "content_items": 2,
+        }
+    )
+
+    with pytest.raises(ValidationError, match="background/context/value"):
+        DeckPlan.model_validate(payload)
 
 
 def test_deterministic_deck_plan_varies_by_purpose() -> None:
@@ -951,6 +1065,27 @@ def test_format_qa_feedback_for_generation_instructs_layout_repetition_fix() -> 
 
     assert "[warning] layout_repetition_run (slide=slide_002)" in feedback
     assert "Do not use the same content layout for 3 consecutive slides" in feedback
+
+
+def test_format_qa_feedback_for_generation_instructs_visual_pattern_fix() -> None:
+    report = QAReport(
+        deck_id="deck",
+        score=84,
+        issues=[
+            QAIssue(
+                severity="warning",
+                slide_id="slide_002",
+                code="visual_pattern_repetition",
+                message="Slides repeat card_grid pattern.",
+            )
+        ],
+    )
+
+    feedback = format_qa_feedback_for_generation(report)
+
+    assert "[warning] visual_pattern_repetition (slide=slide_002)" in feedback
+    assert "Increase visual variety across the deck" in feedback
+    assert "process, matrix, takeaway" in feedback
 
 
 def test_format_qa_feedback_for_generation_instructs_title_similarity_fix() -> None:

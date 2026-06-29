@@ -15,6 +15,18 @@ from ppt_agent.theme import Theme
 
 CONTENT_LAYOUT_EXCLUSIONS = {"title_slide", "closing_slide"}
 LOW_DENSITY_EXCLUSIONS = {"title_slide", "section_divider", "closing_slide"}
+CARD_GRID_PATTERN_LAYOUTS = {"two_column", "three_column", "four_cards", "metric_cards"}
+VISUAL_PATTERN_LAYOUTS = {
+    "two_column": "card_grid",
+    "three_column": "card_grid",
+    "four_cards": "card_grid",
+    "metric_cards": "card_grid",
+    "process_flow": "process_flow",
+    "risk_matrix": "matrix",
+    "comparison_matrix": "matrix",
+    "key_takeaway": "takeaway",
+    "section_divider": "divider",
+}
 LAYOUT_TEXT_LIMITS = {
     "title_slide": 125,
     "comparison_matrix": 95,
@@ -62,6 +74,7 @@ def _score_for_issues(issues: list[QAIssue]) -> int:
         "visual_density_too_high",
         "text_overflow_risk",
         "title_wrapping_risk",
+        "visual_pattern_repetition",
         "SLIDE_TOO_EMPTY",
     }
     for issue in issues:
@@ -148,6 +161,69 @@ def _append_layout_repetition_issues(deck: Deck, issues: list[QAIssue]) -> None:
             run_slide_ids = [slide.slide_id]
 
     flush_run()
+
+
+def _visual_pattern(slide_layout: str) -> str | None:
+    if slide_layout in CONTENT_LAYOUT_EXCLUSIONS:
+        return None
+    if slide_layout in CARD_GRID_PATTERN_LAYOUTS:
+        return "card_grid"
+    return VISUAL_PATTERN_LAYOUTS.get(slide_layout)
+
+
+def _append_visual_pattern_repetition_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    pattern_run: str | None = None
+    pattern_slide_ids: list[str] = []
+
+    def flush_pattern_run() -> None:
+        if pattern_run is None or len(pattern_slide_ids) < 3:
+            return
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=pattern_slide_ids[0],
+                code="visual_pattern_repetition",
+                message=(
+                    f"Slides {', '.join(pattern_slide_ids)} repeat the '{pattern_run}' visual "
+                    "pattern for 3 or more consecutive content slides. Use more varied "
+                    "information architecture and visual rhythm."
+                ),
+            )
+        )
+
+    content_patterns: list[str] = []
+    for slide in deck.slides:
+        pattern = _visual_pattern(slide.layout)
+        if pattern is None:
+            flush_pattern_run()
+            pattern_run = None
+            pattern_slide_ids = []
+            continue
+
+        content_patterns.append(pattern)
+        if pattern == pattern_run:
+            pattern_slide_ids.append(slide.slide_id)
+        else:
+            flush_pattern_run()
+            pattern_run = pattern
+            pattern_slide_ids = [slide.slide_id]
+
+    flush_pattern_run()
+
+    card_grid_count = sum(1 for pattern in content_patterns if pattern == "card_grid")
+    if len(deck.slides) >= 8 and card_grid_count > 5:
+        issues.append(
+            QAIssue(
+                severity="warning",
+                slide_id=deck.deck_id,
+                code="visual_pattern_repetition",
+                message=(
+                    f"Deck uses card-grid visual patterns on {card_grid_count} slides. "
+                    "For an 8-slide-style deck, use process, matrix, takeaway, or split-view "
+                    "patterns to avoid a copied-template feel."
+                ),
+            )
+        )
 
 
 def _title_ngrams(title: str) -> set[str]:
@@ -390,6 +466,7 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
 
     _append_layout_diversity_issue(deck, issues)
     _append_layout_repetition_issues(deck, issues)
+    _append_visual_pattern_repetition_issues(deck, issues)
     _append_adjacent_title_similarity_issues(deck, issues)
     _append_layout_contract_issues(deck, issues)
     _append_risk_matrix_semantic_issues(deck, issues)

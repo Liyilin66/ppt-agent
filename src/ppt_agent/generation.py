@@ -53,6 +53,10 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
     "title_wrapping_risk": (
         "Keep slide titles concise and avoid layouts that force titles into narrow vertical text areas."
     ),
+    "visual_pattern_repetition": (
+        "Increase visual variety across the deck; alternate card grids with process, matrix, "
+        "takeaway, split-view, or checklist-style layouts."
+    ),
 }
 
 
@@ -532,6 +536,10 @@ Hard schema and layout rules:
 - Use risk_matrix for risk governance pages; provide 3-4 risk text elements where each item has exactly three concise lines: Risk, Impact, Mitigation.
 - Use key_takeaway for strong conclusion or pre-closing summary pages; provide 2-4 takeaways or next actions.
 - Prefer these professional layouts over card variants when the slide role is comparison, process, risk, or summary and the content fits.
+- Avoid making 3 consecutive content slides use the same card-grid visual pattern; alternate card grids with process, matrix, takeaway, split-view, or checklist-style structures.
+- Follow narrative order: background/context/why-now/value/problem framing must appear in the first half before conclusions; metrics and risk should precede conclusion; closing_slide and next-action content belong at the end.
+- Do not introduce new background framing after a core conclusion. Each slide should advance the narrative, not restart the topic late.
+- 背景 / 价值 / 为什么重要必须放在前半段；核心结论 / 下一步行动必须放在后半段，通常最后两页。
 - Professional layouts must keep text short enough for the chosen layout; do not rely on the renderer to hide long prose.
 - Do not squeeze 5 process steps into one narrow row; keep each process_flow step to a concise title plus one short description sentence.
 - For key_takeaway, every takeaway must include both a concise title and a one-sentence explanation.

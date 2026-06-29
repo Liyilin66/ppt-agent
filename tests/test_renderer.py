@@ -8,7 +8,7 @@ from pptx.util import Inches
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.load import load_deck, load_theme
 from ppt_agent.models import Deck
-from ppt_agent.renderer import render_deck_to_pptx
+from ppt_agent.renderer import VISUAL_VARIANT_COUNTS, _visual_variant_for_slide, render_deck_to_pptx
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -171,6 +171,24 @@ def _visible_texts(presentation: Presentation) -> list[str]:
         for shape in slide.shapes
         if getattr(shape, "has_text_frame", False) and shape.text.strip()
     ]
+
+
+def _large_blank_rect_signature(slide) -> tuple[tuple[int, int, int, int], ...]:
+    return tuple(
+        sorted(
+            (
+                int(shape.left),
+                int(shape.top),
+                int(shape.width),
+                int(shape.height),
+            )
+            for shape in slide.shapes
+            if not getattr(shape, "text", "").strip()
+            and shape.shape_type != MSO_SHAPE_TYPE.LINE
+            and shape.width >= Inches(1.0)
+            and shape.height >= Inches(0.8)
+        )
+    )
 
 
 def _overlap_area(shape_a, shape_b) -> int:
@@ -365,7 +383,7 @@ def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) ->
     assert "Discover" in editable_texts
     assert "Map user needs" in editable_texts
     assert "01" in editable_texts
-    assert "Action" in editable_texts
+    assert {"Action", "Anchor"} & set(editable_texts)
     assert not (INTERNAL_SURFACE_TERMS & set(editable_texts))
     assert "Prioritize" in editable_texts
     assert "Choose high-value work" in editable_texts
@@ -627,13 +645,13 @@ def test_process_flow_renders_readable_step_counts(tmp_path: Path, step_count: i
         shape
         for shape in rendered_slide.shapes
         if not getattr(shape, "text", "").strip()
-        and shape.width >= Inches(3.5 if step_count >= 4 else 3.0)
+        and shape.width >= Inches(2.5 if step_count == 4 else (3.5 if step_count == 5 else 3.0))
         and shape.height >= Inches(1.4)
     ]
 
     assert step_numbers <= set(visible_texts)
     assert len(card_backgrounds) >= step_count
-    if step_count == 5:
+    if step_count >= 4:
         for card in card_backgrounds:
             assert card.left >= 0
             assert card.top >= 0
@@ -654,11 +672,71 @@ def test_process_flow_renders_readable_step_counts(tmp_path: Path, step_count: i
 
         assert connectors
         assert core_text_shapes
-        assert all(
-            _overlap_area(connector, text_shape) == 0
-            for connector in connectors
-            for text_shape in core_text_shapes
-        )
+        if step_count == 5:
+            assert all(
+                _overlap_area(connector, text_shape) == 0
+                for connector in connectors
+                for text_shape in core_text_shapes
+            )
+
+
+def test_visual_variant_selection_is_deterministic_and_index_sensitive() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "variant_demo",
+            "title": "Variant Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [_template_slide_payload("three_column", 1)],
+        }
+    )
+    slide = deck.slides[0]
+
+    first = _visual_variant_for_slide(deck, slide, 1)
+    second = _visual_variant_for_slide(deck, slide, 1)
+    shifted = _visual_variant_for_slide(deck, slide, 2, variant_count=2)
+
+    assert first == second
+    assert 0 <= first < VISUAL_VARIANT_COUNTS["three_column"]
+    assert shifted != _visual_variant_for_slide(deck, slide, 1, variant_count=2)
+    for layout in [
+        "title_slide",
+        "two_column",
+        "three_column",
+        "four_cards",
+        "metric_cards",
+        "process_flow",
+        "risk_matrix",
+        "key_takeaway",
+        "closing_slide",
+    ]:
+        assert VISUAL_VARIANT_COUNTS[layout] >= 2
+
+
+def test_card_grid_layouts_have_distinct_visual_structures(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    deck = Deck.model_validate(
+        {
+            "deck_id": "card_grid_variety_demo",
+            "title": "Card Grid Variety Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                _template_slide_payload("three_column", 1),
+                _template_slide_payload("four_cards", 2),
+                _template_slide_payload("metric_cards", 3),
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "card_grid_variety.pptx")
+    presentation = Presentation(output_path)
+    signatures = [
+        _large_blank_rect_signature(slide)
+        for slide in presentation.slides
+    ]
+
+    assert len(set(signatures)) == len(signatures)
 
 
 def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:

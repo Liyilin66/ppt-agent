@@ -24,6 +24,64 @@ SLIDE_ROLES: tuple[str, ...] = (
     "summary",
 )
 PlanSource = Literal["llm", "deterministic", "fallback", "provided", "none"]
+EARLY_STAGE_MARKERS = (
+    "背景",
+    "价值",
+    "为什么",
+    "问题定义",
+    "问题意识",
+    "场景",
+    "痛点",
+    "why",
+    "context",
+    "background",
+    "value",
+    "problem framing",
+)
+CONCLUSION_MARKERS = (
+    "核心结论",
+    "结论",
+    "总结",
+    "下一步",
+    "行动",
+    "建议",
+    "收束",
+    "落地",
+    "闭环",
+    "conclusion",
+    "closing",
+    "next step",
+    "action",
+)
+NARRATIVE_ROLE_PRIORITY: dict[SlideRole, int] = {
+    "cover": 0,
+    "context": 10,
+    "comparison": 20,
+    "framework": 30,
+    "process": 50,
+    "metrics": 60,
+    "risk": 70,
+    "summary": 80,
+}
+
+
+def _contains_any_marker(text: str, markers: tuple[str, ...]) -> bool:
+    normalized = text.lower()
+    return any(marker.lower() in normalized for marker in markers)
+
+
+def _slide_plan_text(slide: "SlidePlan") -> str:
+    return f"{slide.key_message} {slide.content_goal} {slide.recommended_layout}"
+
+
+def _is_early_stage_slide(slide: "SlidePlan") -> bool:
+    return slide.slide_role == "context" or _contains_any_marker(_slide_plan_text(slide), EARLY_STAGE_MARKERS)
+
+
+def _is_conclusion_slide(slide: "SlidePlan") -> bool:
+    if slide.recommended_layout == "closing_slide":
+        return True
+    return slide.slide_role == "summary" and _contains_any_marker(_slide_plan_text(slide), CONCLUSION_MARKERS)
 
 
 class SlidePlan(StrictModel):
@@ -77,6 +135,48 @@ class DeckPlan(StrictModel):
                     f"does not fit layout '{contract.layout_name}' capacity "
                     f"{contract.min_items}-{contract.max_items}."
                 )
+
+        closing_positions = [
+            index
+            for index, slide in enumerate(self.slides)
+            if slide.recommended_layout == "closing_slide"
+        ]
+        if closing_positions and closing_positions != [self.slide_count - 1]:
+            raise ValueError("DeckPlan closing_slide must be the final slide when present.")
+
+        conclusion_positions = [
+            index
+            for index, slide in enumerate(self.slides)
+            if _is_conclusion_slide(slide)
+        ]
+        if conclusion_positions:
+            first_conclusion = conclusion_positions[0]
+            late_early_slides = [
+                slide
+                for index, slide in enumerate(self.slides)
+                if index > first_conclusion and _is_early_stage_slide(slide)
+            ]
+            if late_early_slides:
+                slide_indexes = [slide.slide_index for slide in late_early_slides]
+                raise ValueError(
+                    "DeckPlan places background/context/value slides after conclusion or closing; "
+                    f"late slide_index values: {slide_indexes}."
+                )
+
+        if self.slide_count >= 6:
+            for index, slide in enumerate(self.slides):
+                if not _is_conclusion_slide(slide):
+                    continue
+                late_metrics_or_risk = [
+                    later.slide_index
+                    for later in self.slides[index + 1 :]
+                    if later.slide_role in {"metrics", "risk"}
+                ]
+                if late_metrics_or_risk:
+                    raise ValueError(
+                        "DeckPlan places conclusion before metrics/risk; "
+                        f"late metrics/risk slide_index values: {late_metrics_or_risk}."
+                    )
 
         return self
 
@@ -445,6 +545,33 @@ def _fit_steps_to_count(steps: tuple[_ArcStep, ...], count: int) -> list[_ArcSte
     return result
 
 
+def _arc_step_text(step: _ArcStep) -> str:
+    return f"{step.key_message} {step.content_goal} {step.layout_hint or ''}"
+
+
+def _narrative_priority(step: _ArcStep) -> int:
+    step_text = _arc_step_text(step)
+    if (
+        step.slide_role == "summary"
+        and _contains_any_marker(step_text, EARLY_STAGE_MARKERS)
+        and not _contains_any_marker(step_text, CONCLUSION_MARKERS)
+    ):
+        return 12
+    if step.slide_role == "framework" and _contains_any_marker(step_text, ("需求", "任务", "用户", "need", "task", "user")):
+        return 40
+    return NARRATIVE_ROLE_PRIORITY.get(step.slide_role, 45)
+
+
+def _order_steps_for_narrative(steps: list[_ArcStep]) -> list[_ArcStep]:
+    return [
+        step
+        for _original_index, step in sorted(
+            enumerate(steps),
+            key=lambda indexed_step: (_narrative_priority(indexed_step[1]), indexed_step[0]),
+        )
+    ]
+
+
 def build_deterministic_deck_plan(brief: Any, seed: str | None = None) -> DeckPlan:
     """Build a deterministic DeckPlan without calling an LLM."""
 
@@ -453,7 +580,9 @@ def build_deterministic_deck_plan(brief: Any, seed: str | None = None) -> DeckPl
     audience = str(_brief_value(brief, "audience"))
     purpose = _classify_plan_purpose(brief)
     variant_name = _stable_variant_name(purpose, brief, seed)
-    body_steps = _fit_steps_to_count(_PLAN_RECIPES[purpose][variant_name], max(slide_count - 2, 0))
+    body_steps = _order_steps_for_narrative(
+        _fit_steps_to_count(_PLAN_RECIPES[purpose][variant_name], max(slide_count - 2, 0))
+    )
 
     slides: list[SlidePlan] = []
     used_messages: set[str] = set()
@@ -551,6 +680,11 @@ Planning rules:
 - For decks with 8 slides or fewer, do not recommend section_divider unless the user explicitly asks for divider, transition, or section break pages.
 - If a slide has only one key_message plus one explanation sentence, recommend key_takeaway, two_column, or three_column instead of section_divider.
 - For long decks, keep layout diversity; for 8-slide decks, mix at least three useful layouts when the content allows it.
+- Avoid three consecutive card-grid-style slides; alternate framework/card pages with process_flow, risk_matrix, comparison_matrix, key_takeaway, or closing-style pages when the story allows it.
+- Narrative order matters: cover first, then background/context/why-now/value/problem framing, then comparison/boundary, framework/concept model, user need/task decomposition, workflow/process, metrics/evaluation, risk/governance, conclusion/key_takeaway, and closing/next steps last.
+- Background / context / value / why-now slides are early-stage slides; never introduce them after conclusion, key_takeaway, closing_slide, or next-action slides.
+- 核心结论 / 下一步行动必须放在后半段，通常是最后两页；背景 / 价值 / 为什么重要必须放在前半段。
+- If slide_count grows, insert new slides into the proper narrative stage instead of appending them near or after closing.
 - Avoid repeating content listed in each slide's must_not_repeat.
 - Keep the plan concise enough that the generator can follow it exactly.
 """

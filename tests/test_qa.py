@@ -205,6 +205,45 @@ def test_analyze_deck_warns_on_three_consecutive_content_layouts() -> None:
     assert "consecutive content slides" in issues[0].message
 
 
+def test_analyze_deck_warns_on_visual_pattern_repetition() -> None:
+    deck = _deck_with_layouts(
+        ["title_slide", "two_column", "three_column", "metric_cards", "risk_matrix", "closing_slide"],
+        ["Opening", "Context", "Framework", "Metrics", "Risk", "Close"],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "visual_pattern_repetition"]
+    assert issues
+    assert issues[0].severity == "warning"
+    assert "card_grid" in issues[0].message
+    assert report.score >= 60
+
+
+def test_analyze_deck_warns_when_card_grid_pattern_dominates_long_deck() -> None:
+    deck = _deck_with_layouts(
+        [
+            "title_slide",
+            "two_column",
+            "three_column",
+            "four_cards",
+            "metric_cards",
+            "two_column",
+            "four_cards",
+            "closing_slide",
+        ],
+        ["Opening", "One", "Two", "Three", "Four", "Five", "Six", "Close"],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "visual_pattern_repetition"]
+    assert issues
+    assert any("card-grid visual patterns on 6 slides" in issue.message for issue in issues)
+    assert all(issue.severity == "warning" for issue in issues)
+    assert report.score >= 60
+
+
 def test_analyze_deck_warns_on_adjacent_similar_titles() -> None:
     deck = _deck_with_layouts(
         ["title_slide", "two_column", "three_column", "closing_slide"],
