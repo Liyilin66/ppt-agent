@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -30,11 +32,22 @@ from ppt_agent.planning import (
     get_batch_context,
 )
 from ppt_agent.qa import analyze_deck
+from ppt_agent.runtime import sanitize_error_message
 
 
 LongDeckRunStatus = Literal["succeeded", "partial_failed", "failed"]
 BatchRunStatus = Literal["succeeded", "failed"]
 AttemptStatus = Literal["succeeded", "failed"]
+PROVIDER_TIMEOUT_ERROR_TYPE = "provider_timeout"
+PROVIDER_TIMEOUT_SUGGESTION = "Reduce batch_size to 2, wait 120 seconds, then retry."
+PROVIDER_TIMEOUT_MARKERS = (
+    "524",
+    "timeout",
+    "retryable",
+    "proxy read timeout",
+    "origin_response_timeout",
+)
+ProgressLogger = Callable[[str], None]
 
 
 class LongDeckRunRequest(StrictModel):
@@ -56,6 +69,13 @@ class BatchAttemptRecord(StrictModel):
     status: AttemptStatus
     qa_score: int | None = Field(default=None, ge=0, le=100)
     error_message: str | None = None
+    error_type: str | None = None
+    retryable: bool = False
+    suggestion: str | None = None
+    validation_error_type: str | None = None
+    forbidden_fields: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    raw_response_preview: str | None = None
 
 
 class BatchAttemptsArtifact(StrictModel):
@@ -73,6 +93,13 @@ class BatchRunReport(StrictModel):
     attempts_path: Path | None = None
     status_path: Path | None = None
     error_message: str | None = None
+    error_type: str | None = None
+    retryable: bool = False
+    suggestion: str | None = None
+    validation_error_type: str | None = None
+    forbidden_fields: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    raw_response_preview: str | None = None
 
 
 class LongDeckRunReport(StrictModel):
@@ -89,6 +116,9 @@ class LongDeckRunReport(StrictModel):
     long_deck_plan_path: Path | None = None
     run_report_path: Path | None = None
     error_message: str | None = None
+    error_type: str | None = None
+    retryable: bool = False
+    suggestion: str | None = None
 
 
 def _output_dir_for_request(request: LongDeckRunRequest, run_id: str) -> Path:
@@ -135,6 +165,18 @@ def _status_for_failure(completed_batches: list[str]) -> LongDeckRunStatus:
     return "partial_failed" if completed_batches else "failed"
 
 
+def _classify_batch_error(error_message: str | None) -> tuple[str | None, bool, str | None]:
+    normalized = (error_message or "").lower()
+    if any(marker in normalized for marker in PROVIDER_TIMEOUT_MARKERS):
+        return PROVIDER_TIMEOUT_ERROR_TYPE, True, PROVIDER_TIMEOUT_SUGGESTION
+    return None, False, None
+
+
+def _log_progress(progress_logger: ProgressLogger | None, message: str) -> None:
+    if progress_logger is not None:
+        progress_logger(message)
+
+
 def _write_run_report(
     report: LongDeckRunReport,
     output_dir: Path,
@@ -159,6 +201,9 @@ def _final_report(
     long_deck_qa_path: Path | None = None,
     long_deck_plan_path: Path | None = None,
     error_message: str | None = None,
+    error_type: str | None = None,
+    retryable: bool = False,
+    suggestion: str | None = None,
 ) -> LongDeckRunReport:
     report = LongDeckRunReport(
         run_id=run_id,
@@ -173,6 +218,9 @@ def _final_report(
         long_deck_qa_path=long_deck_qa_path,
         long_deck_plan_path=long_deck_plan_path,
         error_message=error_message,
+        error_type=error_type,
+        retryable=retryable,
+        suggestion=suggestion,
     )
     return _write_run_report(report, output_dir)
 
@@ -182,6 +230,32 @@ def _write_batch_report(report: BatchRunReport, output_dir: Path) -> BatchRunRep
     report = report.model_copy(update={"status_path": status_path})
     write_model_json(report, status_path)
     return report
+
+
+def _field_list_from_exception(exc: Exception, attribute: str) -> list[str]:
+    values = getattr(exc, attribute, [])
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value).strip()]
+
+
+def _validation_error_type_from_exception(exc: Exception) -> str | None:
+    value = getattr(exc, "validation_error_type", None)
+    return str(value) if value else None
+
+
+def _raw_response_preview_from_exception(exc: Exception) -> str | None:
+    value = getattr(exc, "raw_response_preview", None)
+    if value is None:
+        return None
+    return sanitize_error_message(value)
+
+
+def _suggestion_from_exception(exc: Exception) -> str | None:
+    value = getattr(exc, "suggestion", None)
+    if value is None:
+        return None
+    return sanitize_error_message(value)
 
 
 def _run_one_batch(
@@ -199,6 +273,13 @@ def _run_one_batch(
     attempts: list[BatchAttemptRecord] = []
     attempts_path = _batch_file(output_dir, batch.batch_id, "attempts")
     last_error: str | None = None
+    last_error_type: str | None = None
+    last_retryable = False
+    last_suggestion: str | None = None
+    last_validation_error_type: str | None = None
+    last_forbidden_fields: list[str] = []
+    last_missing_fields: list[str] = []
+    last_raw_response_preview: str | None = None
 
     for attempt_index in range(1, request.max_batch_attempts + 1):
         try:
@@ -250,12 +331,25 @@ def _run_one_batch(
             )
             return batch_report, BatchGenerationArtifact(batch_id=batch.batch_id, deck_ir=deck)
         except Exception as exc:
-            last_error = str(exc)
+            last_error = sanitize_error_message(exc)
+            last_error_type, last_retryable, classified_suggestion = _classify_batch_error(last_error)
+            last_suggestion = classified_suggestion or _suggestion_from_exception(exc)
+            last_validation_error_type = _validation_error_type_from_exception(exc)
+            last_forbidden_fields = _field_list_from_exception(exc, "forbidden_fields")
+            last_missing_fields = _field_list_from_exception(exc, "missing_fields")
+            last_raw_response_preview = _raw_response_preview_from_exception(exc)
             attempts.append(
                 BatchAttemptRecord(
                     attempt_index=attempt_index,
                     status="failed",
                     error_message=last_error,
+                    error_type=last_error_type,
+                    retryable=last_retryable,
+                    suggestion=last_suggestion,
+                    validation_error_type=last_validation_error_type,
+                    forbidden_fields=last_forbidden_fields,
+                    missing_fields=last_missing_fields,
+                    raw_response_preview=last_raw_response_preview,
                 )
             )
 
@@ -271,6 +365,13 @@ def _run_one_batch(
             status="failed",
             attempts_path=attempts_path,
             error_message=last_error,
+            error_type=last_error_type,
+            retryable=last_retryable,
+            suggestion=last_suggestion,
+            validation_error_type=last_validation_error_type,
+            forbidden_fields=last_forbidden_fields,
+            missing_fields=last_missing_fields,
+            raw_response_preview=last_raw_response_preview,
         ),
         output_dir,
     )
@@ -280,6 +381,8 @@ def _run_one_batch(
 def run_long_deck_batch_generation(
     request: LongDeckRunRequest,
     model: Any,
+    *,
+    progress_logger: ProgressLogger | None = None,
 ) -> LongDeckRunReport:
     """Run a deterministic long-deck batch generation dry run."""
 
@@ -287,6 +390,13 @@ def run_long_deck_batch_generation(
     output_dir = _output_dir_for_request(request, run_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     _brief, long_deck_plan = _build_long_deck_plan_for_run(request)
+    _log_progress(
+        progress_logger,
+        (
+            f"Starting long deck run: {request.slide_count} slides, "
+            f"batch_size={request.batch_size}, total_batches={len(long_deck_plan.batches)}"
+        ),
+    )
     long_deck_plan_path = write_model_json(
         long_deck_plan,
         output_dir / "generated_long_deck_plan.json",
@@ -298,6 +408,8 @@ def run_long_deck_batch_generation(
     batch_artifacts: list[BatchGenerationArtifact] = []
 
     for batch in long_deck_plan.batches:
+        _log_progress(progress_logger, f"Starting {batch.batch_id} slides {batch.start_slide}-{batch.end_slide}")
+        batch_started_at = perf_counter()
         batch_report, batch_artifact = _run_one_batch(
             request=request,
             model=model,
@@ -305,11 +417,16 @@ def run_long_deck_batch_generation(
             batch=batch,
             output_dir=output_dir,
         )
+        batch_duration = perf_counter() - batch_started_at
         batch_reports.append(batch_report)
         if batch_artifact is None:
             failed_batches.append(batch.batch_id)
+            _log_progress(
+                progress_logger,
+                f"Failed {batch.batch_id}: error_type={batch_report.error_type or 'unknown'}",
+            )
             if not request.continue_on_error:
-                return _final_report(
+                report = _final_report(
                     run_id=run_id,
                     request=request,
                     long_deck_plan=long_deck_plan,
@@ -320,14 +437,20 @@ def run_long_deck_batch_generation(
                     status=_status_for_failure(completed_batches),
                     long_deck_plan_path=long_deck_plan_path,
                     error_message=batch_report.error_message,
+                    error_type=batch_report.error_type,
+                    retryable=batch_report.retryable,
+                    suggestion=batch_report.suggestion,
                 )
+                _log_progress(progress_logger, f"Long deck run {report.status}")
+                return report
             continue
 
         completed_batches.append(batch.batch_id)
         batch_artifacts.append(batch_artifact)
+        _log_progress(progress_logger, f"Completed {batch.batch_id} in {batch_duration:.1f}s")
 
     if failed_batches:
-        return _final_report(
+        report = _final_report(
             run_id=run_id,
             request=request,
             long_deck_plan=long_deck_plan,
@@ -338,21 +461,34 @@ def run_long_deck_batch_generation(
             status=_status_for_failure(completed_batches),
             long_deck_plan_path=long_deck_plan_path,
             error_message="One or more batches failed; merge and long-deck QA were skipped.",
+            error_type=next(
+                (batch_report.error_type for batch_report in batch_reports if batch_report.error_type),
+                None,
+            ),
+            retryable=any(batch_report.retryable for batch_report in batch_reports),
+            suggestion=next(
+                (batch_report.suggestion for batch_report in batch_reports if batch_report.suggestion),
+                None,
+            ),
         )
+        _log_progress(progress_logger, f"Long deck run {report.status}")
+        return report
 
     try:
+        _log_progress(progress_logger, f"Merging {len(batch_artifacts)} batches")
         merged_deck: Deck = merge_batch_deck_irs(long_deck_plan, batch_artifacts)
         merged_deck_ir_path = write_model_json(
             merged_deck,
             output_dir / "generated_long_deck_ir.json",
         )
+        _log_progress(progress_logger, "Running long deck QA")
         long_deck_qa_report = evaluate_long_deck_consistency(merged_deck, long_deck_plan)
         long_deck_qa_path = write_model_json(
             long_deck_qa_report,
             output_dir / "generated_long_deck_qa.json",
         )
     except Exception as exc:
-        return _final_report(
+        report = _final_report(
             run_id=run_id,
             request=request,
             long_deck_plan=long_deck_plan,
@@ -364,8 +500,10 @@ def run_long_deck_batch_generation(
             long_deck_plan_path=long_deck_plan_path,
             error_message=str(exc),
         )
+        _log_progress(progress_logger, f"Long deck run {report.status}")
+        return report
 
-    return _final_report(
+    report = _final_report(
         run_id=run_id,
         request=request,
         long_deck_plan=long_deck_plan,
@@ -378,3 +516,5 @@ def run_long_deck_batch_generation(
         long_deck_qa_path=long_deck_qa_path,
         long_deck_plan_path=long_deck_plan_path,
     )
+    _log_progress(progress_logger, f"Long deck run {report.status}")
+    return report

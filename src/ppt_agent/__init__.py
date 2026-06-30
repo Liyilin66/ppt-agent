@@ -2,6 +2,7 @@
 
 from ppt_agent.export import write_model_json
 from ppt_agent.generation import (
+    BatchDeckSchemaValidationError,
     BatchGenerationArtifact,
     BatchGenerationRequest,
     DeckBrief,
@@ -97,6 +98,7 @@ __all__ = [
     "PatchResult",
     "apply_patch",
     "write_model_json",
+    "BatchDeckSchemaValidationError",
     "BatchGenerationRequest",
     "BatchGenerationArtifact",
     "DeckBrief",

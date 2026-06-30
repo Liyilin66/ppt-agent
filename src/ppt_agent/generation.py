@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.models import Deck, StrictModel
@@ -29,6 +30,21 @@ MAX_SINGLE_GENERATION_SLIDES = 3
 LONG_DECK_CHUNK_SLIDES = 2
 LONG_DECK_SLIDE_THRESHOLD = 6
 MAX_QA_FEEDBACK_ISSUES = 5
+SHAPE_SCHEMA_VALIDATION_ERROR_TYPE = "shape_schema_validation_failed"
+SHAPE_SCHEMA_VALIDATION_SUGGESTION = (
+    "Do not output decorative shape elements in batch Deck IR. "
+    "Use text elements and layout templates instead."
+)
+SHAPE_SCHEMA_ERROR_MARKERS = (
+    "shape_type",
+    "fill_color",
+    "line_color",
+    "shape.shape",
+    "stroke",
+    "radius",
+    "background",
+    "border",
+)
 # These codes share one retry block that pushes the next generation toward
 # audience-facing, layout-specific judgments without widening the core schema.
 ANTI_GENERIC_FEEDBACK_CODES = {
@@ -166,6 +182,29 @@ class BatchGenerationRequest(StrictModel):
 class BatchGenerationArtifact(StrictModel):
     batch_id: str = Field(..., min_length=1)
     deck_ir: Deck
+
+
+class BatchDeckSchemaValidationError(ValueError):
+    """Raised when a generated batch response cannot validate as Deck IR."""
+
+    validation_error_type = "deck_schema_validation_failed"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        validation_error_type: str = "deck_schema_validation_failed",
+        forbidden_fields: list[str] | None = None,
+        missing_fields: list[str] | None = None,
+        suggestion: str | None = None,
+        raw_response_preview: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.validation_error_type = validation_error_type
+        self.forbidden_fields = forbidden_fields or []
+        self.missing_fields = missing_fields or []
+        self.suggestion = suggestion
+        self.raw_response_preview = raw_response_preview
 
 
 BRIEF_STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -455,11 +494,50 @@ def _allowed_batch_layouts(batch_context: BatchContext) -> list[str]:
     return _dedupe_preserve_order(layouts)
 
 
+def _deck_schema_compliance_rules() -> str:
+    return """- Final Deck IR must exactly match the provided Pydantic schema.
+- Output only fields defined by the Deck / Slide / Element schema. Do not add extra fields.
+- Do not add key_message, rationale, notes, speaker_notes, layout_reason, title_hint, recommended_layout, must_not_repeat, or any planning-only fields to final Deck IR objects.
+- The slide-level idea should be expressed through existing slide.title, subtitle/body text elements, card headings, or card bodies, not as a new field.
+- Final slide content must be audience-facing content only.
+- Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text."""
+
+
+def _minimal_batch_deck_example(request: BatchGenerationRequest) -> str:
+    batch = request.batch_context
+    first_slide_id = f"slide_{batch.start_slide:03d}"
+    first_element_id = f"s{batch.start_slide:03d}_e01"
+    example = {
+        "deck_id": f"long_deck_{batch.batch_id}",
+        "title": request.topic,
+        "theme_name": "clean_business",
+        "canvas_width_in": 13.333,
+        "canvas_height_in": 7.5,
+        "slides": [
+            {
+                "slide_id": first_slide_id,
+                "title": "设计 Agent 的起点",
+                "layout": "title_slide" if batch.start_slide == 1 else "two_column",
+                "elements": [
+                    {
+                        "element_id": first_element_id,
+                        "type": "text",
+                        "bbox": {"x": 0.8, "y": 0.8, "width": 8.0, "height": 0.8},
+                        "text": "先定义 Agent 不允许自动执行的动作。",
+                    }
+                ],
+            }
+        ],
+    }
+    return json.dumps(example, ensure_ascii=False, indent=2)
+
+
 def build_batch_generation_prompt(request: BatchGenerationRequest) -> str:
     batch = request.batch_context
     allowed_layouts = ", ".join(_allowed_batch_layouts(batch))
     previous_context = batch.previous_section_summary or "None"
     next_context = batch.next_section_summary or "None"
+    minimal_example = _minimal_batch_deck_example(request)
     return f"""Generate one long-deck batch as Deck IR JSON only.
 
 Batch identity:
@@ -503,10 +581,18 @@ Allowed or preferred layouts for this batch:
 - {allowed_layouts or 'two_column, three_column, four_cards, process_flow, metric_cards, comparison_matrix, risk_matrix, key_takeaway'}
 
 Batch generation rules:
+- Final output must be a valid Deck JSON matching the existing Deck IR schema.
 - Return only valid Deck IR JSON. Do not output markdown, explanations, comments, or any extra text.
+- Output JSON only. No markdown, no explanations.
+- Do not wrap the Deck in batch metadata.
+- The batch context above is planning guidance only. It must not appear as fields in the final Deck JSON.
+- Forbidden top-level fields in final output: batch_id, topic, audience, deck_type, language, absolute_slide_range, section_ids.
+- Forbidden slide-level fields in final output: slide_number, section_id, viewpoint, content, speaker_notes, key_message, title_hint, recommended_layout.
+- The only allowed slide identity field is slide_id.
 - Generate only slides inside the absolute range {batch.start_slide}-{batch.end_slide}.
 - Use absolute slide numbering logic for this batch. This batch is not slide 1-{batch.end_slide - batch.start_slide + 1}; it is slide {batch.start_slide}-{batch.end_slide} of the full deck.
 - Keep slide_id aligned to absolute order when possible, for example slide_{batch.start_slide:03d}.
+- The slides must use absolute slide_id values: {', '.join(f"slide_{index:03d}" for index in range(batch.start_slide, batch.end_slide + 1))}.
 - Do not generate slides before {batch.start_slide} or after {batch.end_slide}.
 - Do not repeat content already covered in the previous context summary.
 - Do not prematurely expand content reserved for the next context summary.
@@ -514,7 +600,25 @@ Batch generation rules:
 - Use a Chinese technical product share style. Do not use marketing slogans.
 - Keep section boundaries clear: cover only the sections listed in this batch.
 - Prefer the listed layouts when they match the current section semantics.
+- Each slide must include valid elements according to the existing Deck IR schema.
 - Output must validate as Deck IR JSON.
+- For long-deck batch generation, output text elements only.
+- Do not output shape elements unless the exact project Shape schema is provided. In this batch prompt, the Shape schema is not provided, so output no shape elements.
+- Do not create decorative rectangles, cards, icons, backgrounds, or borders as Deck IR elements.
+- Do not output shape fields: shape_type, fill_color, line_color, stroke, radius, background, border.
+- Visual cards and backgrounds are handled by the deterministic renderer based on slide layout.
+- Each slide should express content using title, layout, and text elements.
+- If a visual structure is needed, choose an existing layout such as two_column, three_column, four_cards, metric_cards, comparison_matrix, process_flow, or risk_matrix instead of manually drawing shapes.
+
+Hard schema rules reused from short-deck generation:
+{_deck_schema_compliance_rules()}
+- Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
+- Each slide must include slide_id, title, layout, and at least one element.
+- Every element must include element_id, type, bbox, and type-specific fields.
+- Supported element type for long-deck batch generation is text only.
+
+Minimal valid Deck JSON example for structure only:
+{minimal_example}
 """
 
 
@@ -746,12 +850,7 @@ Hard schema and layout rules:
 - Return only structured data that can be validated as Deck.
 - Do not generate Markdown, prose, speaker notes, PPTX, HTML, SVG, or images.
 - {_language_instruction(brief.language)}
-- Final Deck IR must exactly match the provided Pydantic schema.
-- Output only fields defined by the Deck / Slide / Element schema. Do not add extra fields.
-- Do not add key_message, rationale, notes, speaker_notes, layout_reason, title_hint, recommended_layout, must_not_repeat, or any planning-only fields to final Deck IR objects.
-- The slide-level idea should be expressed through existing slide.title, subtitle/body text elements, card headings, or card bodies, not as a new field.
-- Final slide content must be audience-facing content only.
-- Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text.
+{_deck_schema_compliance_rules()}
 - Required root fields: deck_id, title, canvas_width_in, canvas_height_in, slides.
 - The slides array length must be exactly {request.slide_count}. Do not generate more or fewer slides.
 - Set deck.canvas_width_in to 13.333 and deck.canvas_height_in to 7.5 unless there is a strong reason not to.
@@ -861,6 +960,89 @@ def _unwrap_structured_response(response: Any) -> Any:
     if isinstance(response, dict) and "structured_response" in response:
         return response["structured_response"]
     return response
+
+
+def _validation_field_path(location: tuple[Any, ...]) -> str:
+    return ".".join(str(part) for part in location)
+
+
+def _validation_field_summary(exc: ValidationError) -> tuple[list[str], list[str]]:
+    forbidden_fields: list[str] = []
+    missing_fields: list[str] = []
+
+    for error in exc.errors():
+        location = error.get("loc", ())
+        if not isinstance(location, tuple):
+            location = tuple(location) if isinstance(location, list) else (location,)
+        field_path = _validation_field_path(location)
+        error_type = str(error.get("type", ""))
+        if not field_path:
+            continue
+        if error_type == "extra_forbidden":
+            forbidden_fields.append(field_path)
+        elif "missing" in error_type:
+            missing_fields.append(field_path)
+
+    return _dedupe_preserve_order(forbidden_fields), _dedupe_preserve_order(missing_fields)
+
+
+def _is_shape_schema_validation_failure(
+    exc: ValidationError,
+    *,
+    forbidden_fields: list[str],
+    missing_fields: list[str],
+) -> bool:
+    error_parts = [*forbidden_fields, *missing_fields]
+    for error in exc.errors():
+        location = error.get("loc", ())
+        if not isinstance(location, tuple):
+            location = tuple(location) if isinstance(location, list) else (location,)
+        error_parts.append(_validation_field_path(location))
+        error_parts.append(str(error.get("msg", "")))
+    normalized = " ".join(error_parts).lower()
+    return any(marker in normalized for marker in SHAPE_SCHEMA_ERROR_MARKERS)
+
+
+def _raw_response_preview(response: Any, max_chars: int = 1200) -> str | None:
+    if response is None:
+        return None
+    try:
+        if isinstance(response, StrictModel):
+            response = response.model_dump(mode="json")
+        text = json.dumps(response, ensure_ascii=False, default=str)
+    except Exception:
+        text = str(response)
+
+    safe_text = sanitize_error_message(text)
+    if len(safe_text) <= max_chars:
+        return safe_text
+    return safe_text[: max_chars - 3].rstrip() + "..."
+
+
+def _batch_deck_schema_validation_error(
+    exc: ValidationError,
+    *,
+    batch_id: str,
+    response: Any,
+) -> BatchDeckSchemaValidationError:
+    forbidden_fields, missing_fields = _validation_field_summary(exc)
+    validation_error_type = "deck_schema_validation_failed"
+    suggestion = None
+    if _is_shape_schema_validation_failure(
+        exc,
+        forbidden_fields=forbidden_fields,
+        missing_fields=missing_fields,
+    ):
+        validation_error_type = SHAPE_SCHEMA_VALIDATION_ERROR_TYPE
+        suggestion = SHAPE_SCHEMA_VALIDATION_SUGGESTION
+    return BatchDeckSchemaValidationError(
+        f"Batch '{batch_id}' failed Deck schema validation: {sanitize_error_message(exc)}",
+        validation_error_type=validation_error_type,
+        forbidden_fields=forbidden_fields,
+        missing_fields=missing_fields,
+        suggestion=suggestion,
+        raw_response_preview=_raw_response_preview(response),
+    )
 
 
 def build_batch_generation_request(
@@ -1283,14 +1465,21 @@ def generate_batch_deck_with_model(
         start_slide=batch.start_slide,
         end_slide=batch.end_slide,
     ):
-        response = _unwrap_structured_response(
-            invoke_with_timeout(
-                lambda: structured_model.invoke(prompt),
-                timeout_seconds=timeout_seconds,
-                stage_name="generate_batch_deck",
-                timeout_detail=batch.batch_id,
+        try:
+            response = _unwrap_structured_response(
+                invoke_with_timeout(
+                    lambda: structured_model.invoke(prompt),
+                    timeout_seconds=timeout_seconds,
+                    stage_name="generate_batch_deck",
+                    timeout_detail=batch.batch_id,
+                )
             )
-        )
+        except ValidationError as exc:
+            raise _batch_deck_schema_validation_error(
+                exc,
+                batch_id=batch.batch_id,
+                response=response,
+            ) from exc
 
     expected_count = batch.end_slide - batch.start_slide + 1
     normalization_context = type(
@@ -1302,15 +1491,21 @@ def generate_batch_deck_with_model(
             "slide_count": expected_count,
         },
     )()
-    deck = Deck.model_validate(
-        _normalize_deck_payload(
-            response,
-            normalization_context,
-            slide_index_offset=batch.start_slide - 1,
-            total_slide_count=request.long_deck_plan.slide_count,
-            force_slide_ids=True,
-        )
+    normalized_payload = _normalize_deck_payload(
+        response,
+        normalization_context,
+        slide_index_offset=batch.start_slide - 1,
+        total_slide_count=request.long_deck_plan.slide_count,
+        force_slide_ids=True,
     )
+    try:
+        deck = Deck.model_validate(normalized_payload)
+    except ValidationError as exc:
+        raise _batch_deck_schema_validation_error(
+            exc,
+            batch_id=batch.batch_id,
+            response=response,
+        ) from exc
     return validate_batch_deck_ir_against_batch_range(deck, batch)
 
 

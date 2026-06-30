@@ -1,4 +1,5 @@
 import copy
+import json
 import time
 
 import pytest
@@ -6,6 +7,7 @@ from pydantic import ValidationError
 
 import ppt_agent.generation as generation
 from ppt_agent.generation import (
+    BatchDeckSchemaValidationError,
     BatchGenerationRequest,
     DeckBrief,
     DeckGenerationRequest,
@@ -1159,6 +1161,91 @@ def test_build_batch_generation_prompt_includes_batch_range_and_context() -> Non
     assert "Do not generate slides before 11 or after 20" in prompt
 
 
+def test_build_batch_generation_prompt_forbids_batch_metadata_leakage() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "Final output must be a valid Deck JSON matching the existing Deck IR schema" in prompt
+    assert "Do not wrap the Deck in batch metadata" in prompt
+    assert (
+        "Forbidden top-level fields in final output: batch_id, topic, audience, deck_type, "
+        "language, absolute_slide_range, section_ids"
+    ) in prompt
+    assert "The batch context above is planning guidance only" in prompt
+
+
+def test_build_batch_generation_prompt_forbids_slide_outline_fields() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert (
+        "Forbidden slide-level fields in final output: slide_number, section_id, viewpoint, "
+        "content, speaker_notes, key_message, title_hint, recommended_layout"
+    ) in prompt
+    assert "The only allowed slide identity field is slide_id" in prompt
+    assert "Each slide must include valid elements according to the existing Deck IR schema" in prompt
+
+
+def test_build_batch_generation_prompt_requires_text_elements_only() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "For long-deck batch generation, output text elements only." in prompt
+    assert "Do not output shape elements unless the exact project Shape schema is provided" in prompt
+    assert "Do not create decorative rectangles, cards, icons, backgrounds, or borders as Deck IR elements" in prompt
+    assert "Visual cards and backgrounds are handled by the deterministic renderer based on slide layout" in prompt
+    assert "Supported element type for long-deck batch generation is text only" in prompt
+
+
+def test_build_batch_generation_prompt_forbids_shape_schema_leakage() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "Do not output shape fields: shape_type, fill_color, line_color, stroke, radius, background, border" in prompt
+    assert "instead of manually drawing shapes" in prompt
+
+
+def test_build_batch_generation_prompt_contains_valid_deck_json_example() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_02")
+
+    prompt = build_batch_generation_prompt(batch_request)
+    example_text = prompt.split("Minimal valid Deck JSON example for structure only:\n", 1)[1].strip()
+    example_payload = json.loads(example_text)
+
+    Deck.model_validate(example_payload)
+    assert example_payload["deck_id"] == "long_deck_batch_02"
+    assert example_payload["slides"][0]["slide_id"] == "slide_011"
+    assert "slide_number" not in example_payload["slides"][0]
+    assert "content" not in example_payload["slides"][0]
+    assert example_payload["slides"][0]["elements"][0]["type"] == "text"
+    example_json = json.dumps(example_payload)
+    assert '"shape"' not in example_json
+    assert "shape_type" not in example_json
+    assert "fill_color" not in example_json
+    assert "line_color" not in example_json
+    assert "rounded_rect" not in example_json
+
+
+def test_build_batch_generation_prompt_requires_deck_json_only() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_02")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "Output JSON only. No markdown, no explanations." in prompt
+    assert "Output only fields defined by the Deck / Slide / Element schema" in prompt
+    assert "Do not add key_message, rationale, notes, speaker_notes, layout_reason" in prompt
+
+
 def test_get_batch_by_id_returns_target_batch() -> None:
     long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
 
@@ -1196,6 +1283,112 @@ def test_generate_batch_deck_with_model_normalizes_absolute_slide_ids() -> None:
     assert deck.slides[0].slide_id == "slide_011"
     assert deck.slides[-1].slide_id == "slide_020"
     assert "absolute slide range: 11-20" in model.structured_model.prompts[0]
+
+
+def test_generate_batch_deck_with_model_rejects_batch_metadata_wrapper() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+    wrapper_payload = {
+        "batch_id": "batch_01",
+        "topic": "AI Agent 产品经理",
+        "audience": "IT 硕士学生",
+        "deck_type": "technical_product_share",
+        "language": "zh-CN",
+        "absolute_slide_range": "1-10",
+        "section_ids": ["section_01_cover_context"],
+        "slides": [
+            {
+                "slide_number": 1,
+                "section_id": "section_01_cover_context",
+                "viewpoint": "先定义 Agent 的责任边界",
+                "content": ["不要把工具调用当成产品承诺。"],
+                "speaker_notes": "Explain this in class.",
+                "key_message": "责任边界要先定义",
+                "title_hint": "责任边界",
+                "recommended_layout": "title_slide",
+            }
+        ],
+    }
+    model = FakeModel(wrapper_payload)
+
+    with pytest.raises(BatchDeckSchemaValidationError) as exc_info:
+        generate_batch_deck_with_model(model, batch_request)
+
+    error = exc_info.value
+    assert error.validation_error_type == "deck_schema_validation_failed"
+    assert "batch_id" in error.forbidden_fields
+    assert "absolute_slide_range" in error.forbidden_fields
+    assert "slides.0.slide_number" in error.forbidden_fields
+    assert "slides.0.speaker_notes" in error.forbidden_fields
+    assert "slides.0.elements" in error.missing_fields
+    assert error.raw_response_preview is not None
+    assert '"batch_id": "batch_01"' in error.raw_response_preview
+
+
+def test_generate_batch_deck_with_model_classifies_invalid_shape_schema() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+    invalid_shape_payload = {
+        "deck_id": "long_deck_batch_01",
+        "title": "AI Agent 产品经理",
+        "theme_name": "clean_business",
+        "canvas_width_in": 13.333,
+        "canvas_height_in": 7.5,
+        "slides": [
+            {
+                "slide_id": "slide_001",
+                "title": "责任边界先行",
+                "layout": "title_slide",
+                "elements": [
+                    {
+                        "element_id": "s001_e01",
+                        "type": "text",
+                        "bbox": {"x": 0.8, "y": 0.8, "width": 8.0, "height": 0.8},
+                        "text": "先定义 Agent 不允许自动执行的动作。",
+                    },
+                    {
+                        "element_id": "s001_e02",
+                        "type": "shape",
+                        "bbox": {"x": 0.6, "y": 1.8, "width": 4.0, "height": 1.2},
+                        "shape_type": "rounded_rect",
+                        "fill_color": "#EEF9F8",
+                        "line_color": "#0F766E",
+                    },
+                ],
+            }
+        ],
+    }
+    model = FakeModel(invalid_shape_payload)
+
+    with pytest.raises(BatchDeckSchemaValidationError) as exc_info:
+        generate_batch_deck_with_model(model, batch_request)
+
+    error = exc_info.value
+    assert error.validation_error_type == "shape_schema_validation_failed"
+    assert error.suggestion == (
+        "Do not output decorative shape elements in batch Deck IR. "
+        "Use text elements and layout templates instead."
+    )
+    assert any("shape_type" in field for field in error.forbidden_fields)
+    assert any("fill_color" in field for field in error.forbidden_fields)
+    assert any("line_color" in field for field in error.forbidden_fields)
+    assert any(field.endswith("shape.shape") for field in error.missing_fields)
+
+
+def test_valid_deck_ir_batch_still_passes_batch_range_validation() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_context = get_batch_context(long_plan, "batch_02")
+    payload = _deck_payload_with_slide_count(10)
+    for offset, slide in enumerate(payload["slides"], start=batch_context.start_slide):
+        slide["slide_id"] = f"slide_{offset:03d}"
+        slide["title"] = f"Slide {offset}"
+        for element_index, element in enumerate(slide["elements"], start=1):
+            element["element_id"] = f"s{offset:03d}_e{element_index:02d}"
+    deck = Deck.model_validate(payload)
+
+    validated = validate_batch_deck_ir_against_batch_range(deck, batch_context)
+
+    assert validated is deck
 
 
 def test_format_qa_feedback_for_generation_instructs_layout_diversity_fix() -> None:

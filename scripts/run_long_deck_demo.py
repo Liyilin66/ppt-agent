@@ -27,9 +27,12 @@ def default_output_dir(input_path: Path = DEFAULT_INPUT_PATH) -> Path:
 def load_long_deck_run_request(
     input_path: str | Path = DEFAULT_INPUT_PATH,
     output_dir: str | Path | None = None,
+    batch_size: int | None = None,
 ) -> LongDeckRunRequest:
     resolved_input = Path(input_path)
     payload = json.loads(resolved_input.read_text(encoding="utf-8"))
+    if batch_size is not None:
+        payload["batch_size"] = batch_size
     payload["output_dir"] = str(Path(output_dir) if output_dir is not None else default_output_dir(resolved_input))
     return LongDeckRunRequest.model_validate(payload)
 
@@ -58,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output directory. Defaults to <input directory>/output.",
     )
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Override input.json batch_size. Use 2 by default for this demo; try 3 or 5 only on stable providers.",
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
         help="OpenAI model name. Defaults to OPENAI_MODEL or gpt-5.5.",
@@ -76,7 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        request = load_long_deck_run_request(args.input, args.output_dir)
+        request = load_long_deck_run_request(args.input, args.output_dir, batch_size=args.batch_size)
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         print(f"Could not load long deck demo input: {exc}", file=sys.stderr)
         return 2
@@ -85,7 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if model is None:
         return 2
 
-    report = run_long_deck_batch_generation(request, model)
+    report = run_long_deck_batch_generation(request, model, progress_logger=print)
     print(f"run_id: {report.run_id}")
     print(f"status: {report.status}")
     print(f"completed_batches: {', '.join(report.completed_batches) or 'none'}")

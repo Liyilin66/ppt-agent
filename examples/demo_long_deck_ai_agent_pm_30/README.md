@@ -19,6 +19,16 @@ export OPENAI_API_KEY="..."
 uv run python scripts/run_long_deck_demo.py
 ```
 
+The demo defaults to `batch_size=2`, so a 30-slide run produces 15 mini-batches. This keeps each model request small enough to avoid common proxy or Cloudflare 120-second read timeout limits. `batch_size=3` or `batch_size=5` may be faster, but they are more likely to timeout behind a proxy. If you use the official API or a more stable backend, you can try a larger batch size.
+
+Override the input file value from the CLI:
+
+```bash
+uv run python scripts/run_long_deck_demo.py --batch-size 2
+uv run python scripts/run_long_deck_demo.py --batch-size 3
+uv run python scripts/run_long_deck_demo.py --batch-size 5
+```
+
 The script reads:
 
 ```text
@@ -54,6 +64,11 @@ output/
     batch_03_qa_report.json
     batch_03_attempts.json
     batch_03_status.json
+    ...
+    batch_15_deck_ir.json
+    batch_15_qa_report.json
+    batch_15_attempts.json
+    batch_15_status.json
 ```
 
 `generated_long_deck_plan.json` is the deterministic section and batch plan.
@@ -70,6 +85,10 @@ output/
 
 `generated_long_deck_qa.json` is the deterministic cross-batch QA report.
 
+Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sections that may read thin, but they are not schema validation failures and do not block artifact generation.
+
 `long_deck_run_report.json` is the run-level checkpoint summary.
 
 If a batch fails, inspect `batches/batch_<id>_status.json` first, then `long_deck_run_report.json`. Completed earlier batch artifacts are intentionally kept so later resume support has a checkpoint surface.
+
+If the failure mentions `524`, `origin_response_timeout`, `Proxy Read Timeout`, `timeout`, or `retryable`, use `batch_size=2`, wait for the provider retry window, and run again.

@@ -24,8 +24,18 @@ def test_long_deck_demo_input_exists_and_requests_30_slides() -> None:
     assert request.topic == "AI 产品经理如何设计 Agent 产品"
     assert request.audience == "准备进入 AI 产品岗位的 IT 硕士学生"
     assert request.slide_count == 30
-    assert request.batch_size == 10
+    assert request.batch_size == 2
     assert request.deck_type == "technical_product_share"
+
+
+def test_long_deck_demo_runner_batch_size_override() -> None:
+    module = _load_runner_module()
+
+    args = module.build_parser().parse_args(["--batch-size", "3"])
+    request = module.load_long_deck_run_request(batch_size=args.batch_size)
+
+    assert args.batch_size == 3
+    assert request.batch_size == 3
 
 
 def test_long_deck_demo_runner_reports_missing_openai_key(monkeypatch, capsys) -> None:
@@ -48,6 +58,8 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "100 页" not in text
     assert "render pptx" in text
     assert "does not render pptx" in text
+    assert "batch_size=2" in text
+    assert "15 mini-batches" in text
 
 
 def test_long_deck_demo_runner_default_output_dir() -> None:

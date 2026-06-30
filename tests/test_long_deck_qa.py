@@ -122,6 +122,7 @@ def test_evaluate_long_deck_consistency_accepts_valid_merged_deck() -> None:
 
     assert report.passed is True
     assert report.score >= 0.75
+    assert report.qa_mode == "diagnostic"
     assert report.issues == []
 
 
@@ -180,7 +181,97 @@ def test_evaluate_long_deck_consistency_detects_missing_section_must_include() -
     report = evaluate_long_deck_consistency(corrupted, long_plan)
 
     assert any(issue.issue_type == "section_must_include_missing" for issue in report.coverage_issues)
-    assert report.passed is False
+    assert all(issue.severity == "warning" for issue in report.coverage_issues if issue.issue_type == "section_must_include_missing")
+    assert report.passed is True
+
+
+def test_evaluate_long_deck_consistency_allows_key_message_paraphrase_without_zero_score() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_request(), batch_size=10)
+    merged_deck = _merged_long_deck(long_plan)
+    corrupted = merged_deck.model_copy(deep=True)
+    metric_section = next(section for section in long_plan.sections if section.section_id == "section_06_metrics_evaluation")
+    metric_text = (
+        "统计接管次数，记录错误成本，按调用成功率计数。"
+        "指标计算方式用于判断是否值得上线。"
+    )
+    for slide in corrupted.slides:
+        slide_number = int(slide.slide_id.split("_")[-1])
+        if metric_section.start_slide <= slide_number <= metric_section.end_slide:
+            slide.elements[0].text = metric_text
+
+    report = evaluate_long_deck_consistency(corrupted, long_plan)
+
+    assert report.score > 0.6
+    assert report.passed is True
+    assert not any(
+        issue.issue_type == "section_must_include_missing"
+        and "说明指标如何衡量" in issue.message
+        for issue in report.coverage_issues
+    )
+    key_message_issues = [
+        issue
+        for issue in report.coverage_issues
+        if issue.issue_type == "section_key_message_uncovered"
+        and metric_section.section_id in issue.section_ids
+    ]
+    assert key_message_issues
+    assert all("planned message may be under-covered" in issue.message for issue in key_message_issues)
+
+
+def test_evaluate_long_deck_consistency_covers_measurement_must_include_by_metric_rules() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_request(), batch_size=10)
+    merged_deck = _merged_long_deck(long_plan)
+    corrupted = merged_deck.model_copy(deep=True)
+    metric_section = next(section for section in long_plan.sections if section.section_id == "section_06_metrics_evaluation")
+    for slide in corrupted.slides:
+        slide_number = int(slide.slide_id.split("_")[-1])
+        if metric_section.start_slide <= slide_number <= metric_section.end_slide:
+            slide.elements[0].text = "统计接管次数，记录错误成本，按调用成功率计数。"
+
+    report = evaluate_long_deck_consistency(corrupted, long_plan)
+
+    assert not any(
+        issue.issue_type == "section_must_include_missing"
+        and "说明指标如何衡量" in issue.message
+        for issue in report.coverage_issues
+    )
+
+
+def test_evaluate_long_deck_consistency_caps_repeated_key_message_warning_penalty() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_request(), batch_size=10)
+    long_plan = long_plan.model_copy(deep=True)
+    long_plan.sections[1].key_messages = [
+        "alpha astronomy orbit",
+        "beta chemistry solvent",
+        "gamma agriculture harvest",
+        "delta finance treasury",
+        "epsilon logistics warehouse",
+    ]
+    merged_deck = _merged_long_deck(long_plan)
+    corrupted = merged_deck.model_copy(deep=True)
+    section = long_plan.sections[1]
+    replacement_texts = [
+        "orange river map",
+        "harbor winter signal",
+        "silver mountain path",
+        "quiet garden note",
+    ]
+    for slide in corrupted.slides:
+        slide_number = int(slide.slide_id.split("_")[-1])
+        if section.start_slide <= slide_number <= section.end_slide:
+            slide.elements[0].text = replacement_texts[slide_number - section.start_slide]
+
+    report = evaluate_long_deck_consistency(corrupted, long_plan)
+    key_message_issues = [
+        issue
+        for issue in report.coverage_issues
+        if issue.issue_type == "section_key_message_uncovered"
+        and section.section_id in issue.section_ids
+    ]
+
+    assert len(key_message_issues) >= 4
+    assert report.score >= 0.9
+    assert report.passed is True
 
 
 def test_evaluate_long_deck_consistency_detects_section_must_avoid_violation() -> None:

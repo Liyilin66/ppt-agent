@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from ppt_agent.generation import BatchDeckSchemaValidationError
 from ppt_agent.long_deck_orchestrator import LongDeckRunRequest, run_long_deck_batch_generation
 from ppt_agent.models import Deck
 
@@ -77,8 +78,13 @@ def test_run_long_deck_batch_generation_writes_three_batch_reports_in_order(
         return _batch_deck(batch_request)
 
     monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+    messages: list[str] = []
 
-    report = run_long_deck_batch_generation(_run_request(tmp_path), object())
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
 
     assert report.status == "succeeded"
     assert report.total_batches == 3
@@ -118,6 +124,32 @@ def test_run_long_deck_batch_generation_writes_merge_and_qa_artifacts(
     assert "score" in qa
 
 
+def test_run_long_deck_batch_generation_emits_progress_logs(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        orchestrator,
+        "generate_batch_deck_with_model",
+        lambda _model, batch_request: _batch_deck(batch_request),
+    )
+    messages: list[str] = []
+
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
+
+    assert report.status == "succeeded"
+    assert any("Starting long deck run: 30 slides, batch_size=10, total_batches=3" in message for message in messages)
+    assert any("Starting batch_01 slides 1-10" in message for message in messages)
+    assert any(message.startswith("Completed batch_01 in ") for message in messages)
+    assert "Merging 3 batches" in messages
+    assert "Running long deck QA" in messages
+    assert "Long deck run succeeded" in messages
+
+
 def test_run_long_deck_batch_generation_report_is_serializable(
     tmp_path,
     monkeypatch,
@@ -151,8 +183,13 @@ def test_run_long_deck_batch_generation_preserves_successful_artifacts_after_fai
         return _batch_deck(batch_request)
 
     monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+    messages: list[str] = []
 
-    report = run_long_deck_batch_generation(_run_request(tmp_path), object())
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
 
     assert report.status == "partial_failed"
     assert report.completed_batches == ["batch_01"]
@@ -170,3 +207,132 @@ def test_run_long_deck_batch_generation_preserves_successful_artifacts_after_fai
     assert report.batch_reports[1].status_path.exists()
     assert report.merged_deck_ir_path is None
     assert report.long_deck_qa_path is None
+
+
+def test_run_long_deck_batch_generation_records_schema_validation_failure_metadata(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fake_generate(_model, batch_request):
+        raise BatchDeckSchemaValidationError(
+            "Batch failed Deck schema validation with api_key=[redacted]",
+            forbidden_fields=["batch_id", "slides.0.slide_number"],
+            missing_fields=["deck_id", "slides.0.elements"],
+            raw_response_preview='{"api_key":"sk-testsecret123","batch_id":"batch_01"}',
+        )
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+    messages: list[str] = []
+
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
+
+    assert report.status == "failed"
+    assert report.failed_batches == ["batch_01"]
+    batch_report = report.batch_reports[0]
+    assert batch_report.validation_error_type == "deck_schema_validation_failed"
+    assert batch_report.forbidden_fields == ["batch_id", "slides.0.slide_number"]
+    assert batch_report.missing_fields == ["deck_id", "slides.0.elements"]
+    assert batch_report.raw_response_preview is not None
+    assert "sk-testsecret123" not in batch_report.raw_response_preview
+    assert "[redacted]" in batch_report.raw_response_preview
+
+    attempts = json.loads(batch_report.attempts_path.read_text(encoding="utf-8"))
+    status = json.loads(batch_report.status_path.read_text(encoding="utf-8"))
+    attempt = attempts["attempts"][0]
+    assert attempt["validation_error_type"] == "deck_schema_validation_failed"
+    assert attempt["forbidden_fields"] == ["batch_id", "slides.0.slide_number"]
+    assert attempt["missing_fields"] == ["deck_id", "slides.0.elements"]
+    assert "sk-testsecret123" not in attempt["raw_response_preview"]
+    assert status["validation_error_type"] == "deck_schema_validation_failed"
+
+
+def test_run_long_deck_batch_generation_records_shape_schema_validation_failure_metadata(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    suggestion = (
+        "Do not output decorative shape elements in batch Deck IR. "
+        "Use text elements and layout templates instead."
+    )
+
+    def fake_generate(_model, batch_request):
+        raise BatchDeckSchemaValidationError(
+            "Batch failed Deck schema validation: shape.shape Field required",
+            validation_error_type="shape_schema_validation_failed",
+            forbidden_fields=[
+                "slides.0.elements.1.shape.shape_type",
+                "slides.0.elements.1.shape.fill_color",
+                "slides.0.elements.1.shape.line_color",
+            ],
+            missing_fields=["slides.0.elements.1.shape.shape"],
+            suggestion=suggestion,
+            raw_response_preview='{"type":"shape","shape_type":"rounded_rect","fill_color":"#EEF9F8"}',
+        )
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+
+    report = run_long_deck_batch_generation(_run_request(tmp_path), object())
+
+    assert report.status == "failed"
+    batch_report = report.batch_reports[0]
+    assert batch_report.validation_error_type == "shape_schema_validation_failed"
+    assert batch_report.suggestion == suggestion
+    assert batch_report.retryable is False
+
+    attempts = json.loads(batch_report.attempts_path.read_text(encoding="utf-8"))
+    status = json.loads(batch_report.status_path.read_text(encoding="utf-8"))
+    attempt = attempts["attempts"][0]
+    assert attempt["validation_error_type"] == "shape_schema_validation_failed"
+    assert attempt["suggestion"] == suggestion
+    assert "shape_type" in attempt["forbidden_fields"][0]
+    assert status["validation_error_type"] == "shape_schema_validation_failed"
+    assert status["suggestion"] == suggestion
+
+
+def test_run_long_deck_batch_generation_classifies_provider_timeout(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def fake_generate(_model, batch_request):
+        raise RuntimeError(
+            "Error code: 524 origin_response_timeout Proxy Read Timeout "
+            "retryable: true retry_after: 120"
+        )
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+    messages: list[str] = []
+
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
+
+    assert report.status == "failed"
+    assert report.error_type == "provider_timeout"
+    assert report.retryable is True
+    assert report.suggestion == "Reduce batch_size to 2, wait 120 seconds, then retry."
+    assert "Error code: 524" in report.error_message
+    assert "Failed batch_01: error_type=provider_timeout" in messages
+    assert "Long deck run failed" in messages
+
+    batch_report = report.batch_reports[0]
+    assert batch_report.error_type == "provider_timeout"
+    assert batch_report.retryable is True
+    assert batch_report.suggestion == report.suggestion
+    assert "origin_response_timeout" in batch_report.error_message
+
+    attempts = json.loads(batch_report.attempts_path.read_text(encoding="utf-8"))
+    status = json.loads(batch_report.status_path.read_text(encoding="utf-8"))
+    run_report = json.loads(report.run_report_path.read_text(encoding="utf-8"))
+    attempt = attempts["attempts"][0]
+    assert attempt["error_type"] == "provider_timeout"
+    assert attempt["retryable"] is True
+    assert attempt["suggestion"] == report.suggestion
+    assert status["error_type"] == "provider_timeout"
+    assert run_report["error_type"] == "provider_timeout"
+    assert run_report["retryable"] is True

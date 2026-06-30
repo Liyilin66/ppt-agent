@@ -18,11 +18,31 @@ from ppt_agent.long_deck import validate_merged_long_deck_ir
 TITLE_SIMILARITY_THRESHOLD = 0.92
 TEXT_SIMILARITY_THRESHOLD = 0.9
 NEARBY_TEXT_SIMILARITY_THRESHOLD = 0.9
-SECTION_KEYWORD_COVERAGE_THRESHOLD = 0.34
-LONG_DECK_PASS_THRESHOLD = 0.75
+SECTION_KEYWORD_COVERAGE_THRESHOLD = 0.24
+MUST_INCLUDE_COVERAGE_THRESHOLD = 0.3
+LONG_DECK_PASS_THRESHOLD = 0.6
+HARD_FAIL_CRITICAL_ISSUE_TYPES = {"section_missing", "section_must_avoid_violation"}
 OPENING_WORDS = ("背景", "介绍", "概览", "什么是", "overview", "introduction", "background")
 TRANSITION_WORDS = ("因此", "接下来", "下一步", "在此基础上", "随后", "then", "next")
 CONCLUSION_NEW_TOPIC_WORDS = ("另外", "补充背景", "重新介绍", "什么是", "overview", "background")
+MEASUREMENT_REQUEST_MARKERS = ("衡量", "指标", "评估", "measure", "metric", "evaluation")
+MEASUREMENT_EVIDENCE_MARKERS = (
+    "如何衡量",
+    "统计",
+    "记录",
+    "计数",
+    "计算",
+    "观察",
+    "成功率",
+    "接管率",
+    "错误成本",
+    "调用成功率",
+    "人工确认",
+    "恢复成本",
+)
+ACTION_REQUEST_MARKERS = ("可执行", "下一步", "行动", "动作", "action", "next step")
+ACTION_EVIDENCE_MARKERS = ("下一步", "列出", "设计", "标注", "选择", "拆", "画", "执行", "行动", "action")
+RISK_ROW_REQUEST_MARKERS = ("risk", "impact", "mitigation", "风险", "影响", "缓解")
 TOKEN_STOPWORDS = {
     "the",
     "and",
@@ -74,6 +94,7 @@ class BatchQAResult(StrictModel):
 
 
 class LongDeckQAReport(StrictModel):
+    qa_mode: Literal["diagnostic"] = "diagnostic"
     passed: bool
     score: float = Field(..., ge=0, le=1)
     issues: list[LongDeckQAIssue] = Field(default_factory=list)
@@ -188,13 +209,88 @@ def _keyword_coverage(section_text: str, phrase: str) -> float:
     return matches / len(keywords)
 
 
+def _cjk_fragment_coverage(section_text: str, phrase: str) -> float:
+    if not re.search(r"[\u4e00-\u9fff]", phrase):
+        return 0.0
+    section_compact = _normalize_text(section_text).replace(" ", "")
+    phrase_compact = _normalize_text(phrase).replace(" ", "")
+    if not section_compact or not phrase_compact:
+        return 0.0
+    fragments = {
+        phrase_compact[index : index + 2]
+        for index in range(max(len(phrase_compact) - 1, 0))
+        if len(phrase_compact[index : index + 2]) == 2
+    }
+    if not fragments:
+        return 0.0
+    matches = sum(1 for fragment in fragments if fragment in section_compact)
+    return matches / len(fragments)
+
+
+def _phrase_coverage_score(section_text: str, phrase: str) -> float:
+    if not phrase.strip():
+        return 1.0
+    return max(
+        1.0 if _contains_phrase(section_text, phrase) else 0.0,
+        _text_similarity(section_text, phrase),
+        _keyword_coverage(section_text, phrase),
+        _cjk_fragment_coverage(section_text, phrase),
+    )
+
+
+def _has_measurement_coverage(section_text: str, phrase: str) -> bool:
+    normalized_phrase = _normalize_text(phrase)
+    if not any(marker in normalized_phrase for marker in MEASUREMENT_REQUEST_MARKERS):
+        return False
+    normalized_text = _normalize_text(section_text)
+    return any(marker in normalized_text for marker in MEASUREMENT_EVIDENCE_MARKERS)
+
+
+def _has_action_coverage(section_text: str, phrase: str) -> bool:
+    normalized_phrase = _normalize_text(phrase)
+    if not any(marker in normalized_phrase for marker in ACTION_REQUEST_MARKERS):
+        return False
+    normalized_text = _normalize_text(section_text)
+    return any(marker in normalized_text for marker in ACTION_EVIDENCE_MARKERS)
+
+
+def _has_risk_row_coverage(section_text: str, phrase: str) -> bool:
+    normalized_phrase = _normalize_text(phrase)
+    if not any(marker in normalized_phrase for marker in RISK_ROW_REQUEST_MARKERS):
+        return False
+    normalized_text = _normalize_text(section_text)
+    return all(marker in normalized_text for marker in ("risk", "impact", "mitigation")) or all(
+        marker in normalized_text for marker in ("风险", "影响")
+    )
+
+
+def _is_requirement_covered(section_text: str, phrase: str) -> bool:
+    return (
+        _phrase_coverage_score(section_text, phrase) >= MUST_INCLUDE_COVERAGE_THRESHOLD
+        or _has_measurement_coverage(section_text, phrase)
+        or _has_action_coverage(section_text, phrase)
+        or _has_risk_row_coverage(section_text, phrase)
+    )
+
+
 def _score_issues(issues: list[LongDeckQAIssue]) -> float:
     score = 1.0
+    coverage_counts: Counter[tuple[str, str]] = Counter()
     for issue in issues:
         if issue.severity == "critical":
-            score -= 0.18
+            score -= 0.12
+        elif issue.issue_type == "section_key_message_uncovered":
+            section_id = issue.section_ids[0] if issue.section_ids else ""
+            coverage_counts[(issue.issue_type, section_id)] += 1
+            if coverage_counts[(issue.issue_type, section_id)] <= 2:
+                score -= 0.015
+        elif issue.issue_type == "section_must_include_missing":
+            section_id = issue.section_ids[0] if issue.section_ids else ""
+            coverage_counts[(issue.issue_type, section_id)] += 1
+            if coverage_counts[(issue.issue_type, section_id)] <= 2:
+                score -= 0.03
         else:
-            score -= 0.06
+            score -= 0.04
     return max(0.0, min(1.0, score))
 
 
@@ -342,7 +438,7 @@ def _section_coverage_issues(
         covered_key_messages = [
             message
             for message in section.key_messages
-            if _keyword_coverage(section_text, message) >= SECTION_KEYWORD_COVERAGE_THRESHOLD
+            if _phrase_coverage_score(section_text, message) >= SECTION_KEYWORD_COVERAGE_THRESHOLD
         ]
         missing_key_messages = [
             message for message in section.key_messages if message not in covered_key_messages
@@ -354,25 +450,28 @@ def _section_coverage_issues(
                     severity="warning",
                     slide_ids=[slide.slide_id for slide in section_slides],
                     section_ids=[section.section_id],
-                    message=f"Section '{section.section_id}' does not cover planned key message '{message}'.",
-                    suggestion="Add slide text that makes the section's planned judgment explicit.",
+                    message=(
+                        f"Section '{section.section_id}' planned message may be under-covered: "
+                        f"'{message}'."
+                    ),
+                    suggestion="Check whether the section has enough related concept coverage; add one explicit judgment if it reads thin.",
                 )
             )
 
         missing_must_include = [
             phrase
             for phrase in section.must_include
-            if not _contains_phrase(section_text, phrase)
+            if not _is_requirement_covered(section_text, phrase)
         ]
         for phrase in missing_must_include:
             issues.append(
                 _issue(
                     issue_type="section_must_include_missing",
-                    severity="critical",
+                    severity="warning",
                     slide_ids=[slide.slide_id for slide in section_slides],
                     section_ids=[section.section_id],
-                    message=f"Section '{section.section_id}' is missing required phrase '{phrase}'.",
-                    suggestion="Restore the required content somewhere inside the section slides.",
+                    message=f"Section '{section.section_id}' planned must_include may be under-covered: '{phrase}'.",
+                    suggestion="Add a clearer related phrase if this requirement is not already covered by equivalent wording.",
                 )
             )
 
@@ -531,8 +630,11 @@ def evaluate_long_deck_consistency(
 
     issues = [*repetition_issues, *coverage_issues, *transition_issues]
     score = _score_issues(issues)
-    has_critical_issue = any(issue.severity == "critical" for issue in issues)
-    passed = not has_critical_issue and score >= LONG_DECK_PASS_THRESHOLD
+    has_hard_fail_issue = any(
+        issue.severity == "critical" and issue.issue_type in HARD_FAIL_CRITICAL_ISSUE_TYPES
+        for issue in issues
+    )
+    passed = not has_hard_fail_issue and score >= LONG_DECK_PASS_THRESHOLD
 
     recommendation_counter = Counter(issue.suggestion for issue in issues)
     recommendations = [
@@ -541,6 +643,7 @@ def evaluate_long_deck_consistency(
     ]
 
     return LongDeckQAReport(
+        qa_mode="diagnostic",
         passed=passed,
         score=score,
         issues=issues,

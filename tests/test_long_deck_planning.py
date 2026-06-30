@@ -48,6 +48,29 @@ def test_long_deck_plan_builds_three_batches_for_30_slides() -> None:
     assert len(split_long_deck_into_batches(plan)) == 3
 
 
+def test_long_deck_plan_builds_six_batches_for_30_slides_with_batch_size_5() -> None:
+    plan = build_deterministic_long_deck_plan(_long_request(30), batch_size=5)
+
+    assert [(batch.start_slide, batch.end_slide) for batch in plan.batches] == [
+        (1, 5),
+        (6, 10),
+        (11, 15),
+        (16, 20),
+        (21, 25),
+        (26, 30),
+    ]
+    assert len(split_long_deck_into_batches(plan)) == 6
+
+
+def test_long_deck_plan_builds_fifteen_batches_for_30_slides_with_batch_size_2() -> None:
+    plan = build_deterministic_long_deck_plan(_long_request(30), batch_size=2)
+
+    assert len(plan.batches) == 15
+    assert (plan.batches[0].start_slide, plan.batches[0].end_slide) == (1, 2)
+    assert (plan.batches[-1].start_slide, plan.batches[-1].end_slide) == (29, 30)
+    assert len(split_long_deck_into_batches(plan)) == 15
+
+
 def test_long_deck_plan_builds_ten_batches_for_100_slides() -> None:
     plan = build_deterministic_long_deck_plan(_long_request(100), batch_size=10)
 
