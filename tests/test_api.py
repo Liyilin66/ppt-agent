@@ -199,13 +199,16 @@ def _install_fake_long_deck_backend(monkeypatch, captured: dict | None = None) -
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
 
-    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None):
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None, cancel_checker=None):
         if captured is not None:
             captured["request"] = request
+            captured.setdefault("requests", []).append(request)
             captured["model"] = model
+            captured["cancel_checker"] = cancel_checker
         if progress_logger is not None:
             progress_logger("Starting long deck run: 30 slides, batch_size=2, total_batches=15")
             progress_logger("Starting batch_01 slides 1-2")
+            progress_logger("Completed batch_01 in 0.1s")
             progress_logger("Merging 15 batches")
             progress_logger("Running long deck QA")
             progress_logger("Long deck run succeeded")
@@ -282,6 +285,8 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "耗时较长",
         "experimental",
         "生成 30 页长 PPT",
+        "取消长 PPT任务",
+        "继续/重试长 PPT",
     ]:
         assert text in response.text
     assert 'id="longDeckForm"' in response.text
@@ -321,6 +326,11 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert "generating_batch_" in response.text
     assert "正在生成长 PPT：batch" in response.text
     assert "正在渲染长 PPT PPTX" in response.text
+    assert "currentBatch" in response.text
+    assert "totalBatches" in response.text
+    assert "completedBatches" in response.text
+    assert "failedBatches" in response.text
+    assert "取消请求已发送" in response.text
 
 
 def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> None:
@@ -426,6 +436,12 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
     assert body["accepted"] is True
     assert body["qa_score"] == 82
     assert body["current_stage"] == "completed"
+    assert body["job_type"] == "long_deck"
+    assert body["total_batches"] == 15
+    assert body["completed_batches"] == 1
+    assert body["failed_batches"] == 0
+    assert body["current_batch"] == "batch_01"
+    assert body["cancel_requested"] is False
     assert captured["render_output"].name == "generated_long_deck.pptx"
     assert {
         "generated_long_deck_plan",
@@ -434,6 +450,7 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
         "generated_long_deck",
         "long_deck_run_report",
         "long_deck_render_report",
+        "long_deck_request",
         "batch_01_status",
         "batch_01_deck_ir",
         "batch_01_qa_report",
@@ -444,11 +461,63 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
     assert client.get(deck_ir_artifact["download_url"]).status_code == 200
 
 
+def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    original_job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    resume_response = client.post(f"/api/long-deck-jobs/{original_job_id}/resume")
+
+    assert resume_response.status_code == 202
+    resume_job_id = resume_response.json()["job_id"]
+    assert resume_job_id != original_job_id
+    assert captured["requests"][-1].resume is True
+    assert captured["requests"][-1].output_dir == tmp_path / "jobs" / original_job_id
+    body = client.get(f"/api/jobs/{resume_job_id}").json()
+    assert body["status"] == "succeeded"
+    artifacts = client.get(f"/api/jobs/{resume_job_id}/artifacts").json()["artifacts"]
+    assert {artifact["name"] for artifact in artifacts} >= {
+        "generated_long_deck_ir",
+        "generated_long_deck",
+        "long_deck_run_report",
+    }
+
+
+def test_cancel_endpoint_marks_running_long_deck_job(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="running", current_stage="generating_batch_01_of_15")
+
+    response = client.post(f"/api/jobs/{job.job_id}/cancel")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cancel_requested"] is True
+    assert body["current_stage"] == "cancel_requested"
+    assert store.is_cancel_requested(job.job_id) is True
+
+
+def test_cancel_endpoint_rejects_short_deck_job(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="short_deck")
+    store.update_job(job.job_id, status="running", current_stage="generate_deck")
+
+    response = client.post(f"/api/jobs/{job.job_id}/cancel")
+
+    assert response.status_code == 400
+    assert "Only long deck jobs" in response.json()["detail"]
+
+
 def test_long_deck_job_status_keeps_batch_stage_on_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
 
-    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None):
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None, cancel_checker=None):
         if progress_logger is not None:
             progress_logger("Starting batch_01 slides 1-2")
         raise RuntimeError("provider stopped")

@@ -52,6 +52,17 @@ def test_long_deck_demo_runner_batch_size_override() -> None:
     assert request.batch_size == 3
 
 
+def test_long_deck_demo_runner_resume_flag_sets_request_resume() -> None:
+    module = _load_runner_module()
+
+    args = module.build_parser().parse_args(["--batch-size", "2", "--resume"])
+    request = module.load_long_deck_run_request(batch_size=args.batch_size, resume=args.resume)
+
+    assert args.resume is True
+    assert request.resume is True
+    assert request.batch_size == 2
+
+
 def test_long_deck_demo_runner_reports_missing_openai_key(monkeypatch, capsys) -> None:
     module = _load_runner_module()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

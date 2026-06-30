@@ -240,9 +240,13 @@ INDEX_HTML = """<!doctype html>
         <p>任务 ID：<span id="jobId">暂无</span></p>
         <p>状态：<span id="jobStatus">未开始</span></p>
         <p>当前阶段：<span id="currentStage">暂无</span></p>
+        <p>当前 batch：<span id="currentBatch">暂无</span> / <span id="totalBatches">0</span></p>
+        <p>Batch 结果：已完成 <span id="completedBatches">0</span>，失败 <span id="failedBatches">0</span></p>
         <p>运行时间：<span id="elapsedSeconds">0</span> 秒</p>
         <p id="longRunningNotice"></p>
         <p id="errorMessage"></p>
+        <button id="cancelJobButton" type="button" disabled>取消长 PPT任务</button>
+        <button id="resumeJobButton" type="button" disabled>继续/重试长 PPT</button>
       </section>
 
       <section>
@@ -259,15 +263,32 @@ INDEX_HTML = """<!doctype html>
       const jobId = document.getElementById("jobId");
       const jobStatus = document.getElementById("jobStatus");
       const currentStage = document.getElementById("currentStage");
+      const currentBatch = document.getElementById("currentBatch");
+      const totalBatches = document.getElementById("totalBatches");
+      const completedBatches = document.getElementById("completedBatches");
+      const failedBatches = document.getElementById("failedBatches");
       const elapsedSeconds = document.getElementById("elapsedSeconds");
       const longRunningNotice = document.getElementById("longRunningNotice");
       const errorMessage = document.getElementById("errorMessage");
       const artifacts = document.getElementById("artifacts");
+      const cancelJobButton = document.getElementById("cancelJobButton");
+      const resumeJobButton = document.getElementById("resumeJobButton");
       let pollTimer = null;
+      let activeJobId = null;
 
       function setBusy(isBusy) {
         button.disabled = isBusy;
         longDeckButton.disabled = isBusy;
+      }
+
+      function isLongDeckJob(job) {
+        return job.job_type === "long_deck" || Boolean(job.total_batches);
+      }
+
+      function updateActionButtons(job) {
+        const terminal = job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled";
+        cancelJobButton.disabled = !(isLongDeckJob(job) && !terminal && !job.cancel_requested);
+        resumeJobButton.disabled = !(isLongDeckJob(job) && (job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled"));
       }
 
       const statusText = {
@@ -276,7 +297,9 @@ INDEX_HTML = """<!doctype html>
         pending: "等待中",
         running: "生成中",
         succeeded: "已完成",
-        failed: "失败"
+        failed: "失败",
+        cancelled: "已取消",
+        partial_cancelled: "部分完成后取消"
       };
 
       const stageText = {
@@ -298,6 +321,9 @@ INDEX_HTML = """<!doctype html>
         running_long_deck_qa: "正在执行长 PPT QA",
         rendering_long_deck_pptx: "正在渲染长 PPT PPTX",
         completed: "已完成",
+        cancel_requested: "已请求取消，当前 batch 完成后停止",
+        cancelled: "已取消",
+        partial_cancelled: "部分完成后取消",
         complete_job: "正在完成任务"
       };
 
@@ -331,13 +357,20 @@ INDEX_HTML = """<!doctype html>
 
       function setProgress(job) {
         currentStage.textContent = stageLabel(job.current_stage);
+        currentBatch.textContent = job.current_batch || "暂无";
+        totalBatches.textContent = String(job.total_batches || 0);
+        completedBatches.textContent = String(job.completed_batches || 0);
+        failedBatches.textContent = String(job.failed_batches || 0);
         elapsedSeconds.textContent = String(job.elapsed_seconds || 0);
-        const isTerminal = job.status === "succeeded" || job.status === "failed";
-        if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
+        const isTerminal = job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled";
+        if (job.cancel_requested && !isTerminal) {
+          longRunningNotice.textContent = "取消请求已发送；当前 batch 完成后会停止。";
+        } else if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
           longRunningNotice.textContent = "任务运行时间较长，请检查后端日志。";
         } else {
           longRunningNotice.textContent = "";
         }
+        updateActionButtons(job);
       }
 
       function clearArtifacts() {
@@ -435,6 +468,7 @@ INDEX_HTML = """<!doctype html>
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload)
           });
+          activeJobId = job.job_id;
           jobId.textContent = job.job_id;
           setStatus(job.status, job.accepted, job.error_message || "");
           const finished = await pollJob(job.job_id);
@@ -461,6 +495,26 @@ INDEX_HTML = """<!doctype html>
       longDeckForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         await submitJob("/api/long-deck-jobs", buildLongDeckPayload());
+      });
+
+      cancelJobButton.addEventListener("click", async () => {
+        if (!activeJobId) {
+          return;
+        }
+        try {
+          const job = await requestJson(`/api/jobs/${activeJobId}/cancel`, {method: "POST"});
+          setProgress(job);
+          setStatus(job.status, job.accepted, job.error_message || "");
+        } catch (error) {
+          errorMessage.textContent = error.message;
+        }
+      });
+
+      resumeJobButton.addEventListener("click", async () => {
+        if (!activeJobId) {
+          return;
+        }
+        await submitJob(`/api/long-deck-jobs/${activeJobId}/resume`, {});
       });
     </script>
   </body>
@@ -495,7 +549,7 @@ class CreateLongDeckJobRequest(StrictModel):
 
 class CreateJobResponse(StrictModel):
     job_id: str
-    status: Literal["pending", "running", "succeeded", "failed"]
+    status: Literal["pending", "running", "succeeded", "failed", "cancelled", "partial_cancelled"]
 
 
 class JobResponse(JobRecord):
@@ -610,6 +664,7 @@ def _timeout_seconds_for_stage(stage: str | None) -> int:
             "merging_long_deck_ir",
             "running_long_deck_qa",
             "rendering_long_deck_pptx",
+            "cancel_requested",
         }
     ):
         return LONG_DECK_JOB_TIMEOUT_SECONDS
@@ -657,6 +712,26 @@ def _read_long_deck_qa_score(path: Path | None) -> int | None:
     if 0 <= score <= 100:
         return int(round(score))
     return None
+
+
+def _long_deck_request_path(output_dir: Path) -> Path:
+    return output_dir / "long_deck_request.json"
+
+
+def _write_long_deck_request_artifact(payload: CreateLongDeckJobRequest, output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = _long_deck_request_path(output_dir)
+    path.write_text(payload.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _load_long_deck_request_artifact(output_dir: Path) -> CreateLongDeckJobRequest:
+    path = _long_deck_request_path(output_dir)
+    if not path.is_file():
+        raise ValueError(
+            "Long deck request metadata is missing; this job cannot be resumed from the Web UI."
+        )
+    return CreateLongDeckJobRequest.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _run_job(
@@ -742,16 +817,39 @@ def _run_long_deck_job(
     job_id: str,
     model,
     payload: CreateLongDeckJobRequest,
+    *,
+    output_dir_override: Path | None = None,
+    resume: bool = False,
 ) -> None:
     model_name = _model_name(model)
     total_batches = _expected_long_deck_batches(payload)
-    output_dir = jobs_root / job_id
+    output_dir = output_dir_override or jobs_root / job_id
     store.update_job(job_id, status="running", current_stage="preparing_long_deck_plan")
+    store.update_long_deck_progress(job_id, total_batches=total_batches, completed_batches=0, failed_batches=0)
+    progress_counts = {"completed": 0, "failed": 0}
 
     def progress_logger(message: str) -> None:
         current_stage = _long_deck_stage_from_progress(message, total_batches)
-        if current_stage is not None:
-            store.update_progress(job_id, current_stage=current_stage)
+        current_batch = None
+        batch_match = re.search(r"\bbatch_(\d+)\b", message)
+        if batch_match:
+            current_batch = f"batch_{batch_match.group(1)}"
+        progress_changed = False
+        if message.startswith(("Completed batch_", "Skipping batch_")):
+            progress_counts["completed"] += 1
+            progress_changed = True
+        if message.startswith("Failed batch_"):
+            progress_counts["failed"] += 1
+            progress_changed = True
+        if current_stage is not None or progress_changed:
+            store.update_long_deck_progress(
+                job_id,
+                current_stage=current_stage,
+                total_batches=total_batches,
+                completed_batches=progress_counts["completed"],
+                failed_batches=progress_counts["failed"],
+                current_batch=current_batch,
+            )
         logger.info(
             "long_deck_job_stage %s",
             json.dumps(
@@ -769,6 +867,7 @@ def _run_long_deck_job(
         )
 
     try:
+        _write_long_deck_request_artifact(payload, output_dir)
         run_report: LongDeckRunReport = run_long_deck_batch_generation(
             LongDeckRunRequest(
                 topic=payload.topic,
@@ -780,9 +879,17 @@ def _run_long_deck_job(
                 batch_size=payload.batch_size,
                 max_batch_attempts=payload.max_batch_attempts,
                 output_dir=output_dir,
+                resume=resume,
             ),
             model,
             progress_logger=progress_logger,
+            cancel_checker=lambda: store.is_cancel_requested(job_id),
+        )
+        store.update_long_deck_progress(
+            job_id,
+            total_batches=run_report.total_batches,
+            completed_batches=len(run_report.completed_batches),
+            failed_batches=len(run_report.failed_batches),
         )
 
         render_report: LongDeckRenderReport | None = None
@@ -799,6 +906,17 @@ def _run_long_deck_job(
         _register_job_artifacts(store, job_id, output_dir)
 
         qa_score = _read_long_deck_qa_score(run_report.long_deck_qa_path)
+        if run_report.status in {"cancelled", "partial_cancelled"}:
+            store.update_job(
+                job_id,
+                status=run_report.status,
+                error_message=run_report.error_message or "Long deck job was cancelled.",
+                accepted=False,
+                qa_score=qa_score,
+                current_stage=run_report.status,
+            )
+            return
+
         if run_report.status != "succeeded":
             error_message = run_report.error_message or "Long deck generation did not finish successfully."
             store.update_job(
@@ -868,7 +986,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             detail = sanitize_error_message(exc)
             raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
 
-        job = app.state.job_store.create_job()
+        job = app.state.job_store.create_job(job_type="short_deck")
         model_name = _model_name(model)
 
         def create_stage_observer(stage_name: str, event: StageEvent, metadata: dict) -> None:
@@ -902,7 +1020,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             detail = sanitize_error_message(exc)
             raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
 
-        job = app.state.job_store.create_job()
+        job = app.state.job_store.create_job(job_type="long_deck")
         app.state.job_store.update_progress(job.job_id, current_stage="preparing_long_deck_plan")
         background_tasks.add_task(
             _run_long_deck_job,
@@ -913,6 +1031,54 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             payload,
         )
         return CreateJobResponse(job_id=job.job_id, status=job.status)
+
+    @app.post("/api/long-deck-jobs/{job_id}/resume", response_model=CreateJobResponse, status_code=202)
+    def resume_long_deck_job(job_id: str, background_tasks: BackgroundTasks) -> CreateJobResponse:
+        original_job = app.state.job_store.get_job(job_id)
+        if original_job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if original_job.job_type != "long_deck":
+            raise HTTPException(status_code=400, detail="Only long deck jobs can be resumed.")
+        if not os.getenv("OPENAI_API_KEY"):
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+
+        output_dir = app.state.jobs_root / job_id
+        try:
+            payload = _load_long_deck_request_artifact(output_dir)
+            model = _create_chat_model()
+        except Exception as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(status_code=503, detail=f"Could not prepare long deck resume job: {detail}") from exc
+
+        resume_job = app.state.job_store.create_job(job_type="long_deck")
+        app.state.job_store.update_progress(resume_job.job_id, current_stage="preparing_long_deck_plan")
+        background_tasks.add_task(
+            _run_long_deck_job,
+            app.state.job_store,
+            app.state.jobs_root,
+            resume_job.job_id,
+            model,
+            payload,
+            output_dir_override=output_dir,
+            resume=True,
+        )
+        return CreateJobResponse(job_id=resume_job.job_id, status=resume_job.status)
+
+    @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
+    def cancel_job(job_id: str) -> JobResponse:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type != "long_deck":
+            raise HTTPException(status_code=400, detail="Only long deck jobs can be cancelled.")
+        if job.status not in {"pending", "running"}:
+            return JobResponse.model_validate(job.model_dump())
+
+        app.state.job_store.request_cancel(job_id)
+        cancelled = app.state.job_store.get_job(job_id)
+        if cancelled is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        return JobResponse.model_validate(cancelled.model_dump())
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def get_job(job_id: str) -> JobResponse:

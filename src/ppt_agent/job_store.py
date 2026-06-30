@@ -14,7 +14,7 @@ from pydantic import Field
 from ppt_agent.models import StrictModel
 
 
-JobStatus = Literal["pending", "running", "succeeded", "failed"]
+JobStatus = Literal["pending", "running", "succeeded", "failed", "cancelled", "partial_cancelled"]
 
 
 class JobRecord(StrictModel):
@@ -25,9 +25,15 @@ class JobRecord(StrictModel):
     current_stage: str | None = None
     last_updated_at: str
     elapsed_seconds: int = Field(default=0, ge=0)
+    job_type: str | None = None
     error_message: str | None = None
     accepted: bool | None = None
     qa_score: int | None = Field(default=None, ge=0, le=100)
+    cancel_requested: bool = False
+    total_batches: int | None = Field(default=None, ge=0)
+    completed_batches: int = Field(default=0, ge=0)
+    failed_batches: int = Field(default=0, ge=0)
+    current_batch: str | None = None
 
 
 class ArtifactRecord(StrictModel):
@@ -67,10 +73,16 @@ class JobStore:
                         status TEXT NOT NULL,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
+                        job_type TEXT,
                         current_stage TEXT,
                         error_message TEXT,
                         accepted INTEGER,
-                        qa_score INTEGER
+                        qa_score INTEGER,
+                        cancel_requested INTEGER DEFAULT 0,
+                        total_batches INTEGER,
+                        completed_batches INTEGER DEFAULT 0,
+                        failed_batches INTEGER DEFAULT 0,
+                        current_batch TEXT
                     )
                     """
                 )
@@ -95,6 +107,18 @@ class JobStore:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
         if "current_stage" not in columns:
             connection.execute("ALTER TABLE jobs ADD COLUMN current_stage TEXT")
+        if "job_type" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN job_type TEXT")
+        if "cancel_requested" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER DEFAULT 0")
+        if "total_batches" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN total_batches INTEGER")
+        if "completed_batches" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN completed_batches INTEGER DEFAULT 0")
+        if "failed_batches" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN failed_batches INTEGER DEFAULT 0")
+        if "current_batch" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN current_batch TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         self._ensure_schema()
@@ -102,17 +126,27 @@ class JobStore:
         connection.row_factory = sqlite3.Row
         return connection
 
-    def create_job(self) -> JobRecord:
+    def create_job(self, *, job_type: str | None = None) -> JobRecord:
         job_id = uuid.uuid4().hex
         now = self._now()
 
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, status, created_at, updated_at, current_stage)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO jobs (
+                    job_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    job_type,
+                    current_stage,
+                    cancel_requested,
+                    completed_batches,
+                    failed_batches
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, "pending", now, now, "create_job"),
+                (job_id, "pending", now, now, job_type, "create_job", 0, 0, 0),
             )
 
         job = self.get_job(job_id)
@@ -124,7 +158,21 @@ class JobStore:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT job_id, status, created_at, updated_at, current_stage, error_message, accepted, qa_score
+                SELECT
+                    job_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    job_type,
+                    current_stage,
+                    error_message,
+                    accepted,
+                    qa_score,
+                    cancel_requested,
+                    total_batches,
+                    completed_batches,
+                    failed_batches,
+                    current_batch
                 FROM jobs
                 WHERE job_id = ?
                 """,
@@ -142,9 +190,15 @@ class JobStore:
             current_stage=row["current_stage"],
             last_updated_at=row["updated_at"],
             elapsed_seconds=self._elapsed_seconds(row["created_at"], row["updated_at"], row["status"]),
+            job_type=row["job_type"],
             error_message=row["error_message"],
             accepted=None if row["accepted"] is None else bool(row["accepted"]),
             qa_score=row["qa_score"],
+            cancel_requested=bool(row["cancel_requested"]),
+            total_batches=row["total_batches"],
+            completed_batches=row["completed_batches"] or 0,
+            failed_batches=row["failed_batches"] or 0,
+            current_batch=row["current_batch"],
         )
 
     def update_job(
@@ -175,16 +229,65 @@ class JobStore:
             )
 
     def update_progress(self, job_id: str, *, current_stage: str) -> None:
+        self.update_long_deck_progress(job_id, current_stage=current_stage)
+
+    def update_long_deck_progress(
+        self,
+        job_id: str,
+        *,
+        current_stage: str | None = None,
+        total_batches: int | None = None,
+        completed_batches: int | None = None,
+        failed_batches: int | None = None,
+        current_batch: str | None = None,
+    ) -> None:
         with self._connect() as connection:
             connection.execute(
                 """
                 UPDATE jobs
-                SET current_stage = ?,
+                SET current_stage = COALESCE(?, current_stage),
+                    total_batches = COALESCE(?, total_batches),
+                    completed_batches = COALESCE(?, completed_batches),
+                    failed_batches = COALESCE(?, failed_batches),
+                    current_batch = COALESCE(?, current_batch),
                     updated_at = ?
                 WHERE job_id = ?
                 """,
-                (current_stage, self._now(), job_id),
+                (
+                    current_stage,
+                    total_batches,
+                    completed_batches,
+                    failed_batches,
+                    current_batch,
+                    self._now(),
+                    job_id,
+                ),
             )
+
+    def request_cancel(self, job_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET cancel_requested = ?,
+                    current_stage = ?,
+                    updated_at = ?
+                WHERE job_id = ?
+                """,
+                (1, "cancel_requested", self._now(), job_id),
+            )
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT cancel_requested
+                FROM jobs
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        return bool(row["cancel_requested"]) if row is not None else False
 
     def add_artifact(self, job_id: str, *, name: str, kind: Literal["json", "pptx"], path: str | Path) -> ArtifactRecord:
         artifact_id = uuid.uuid4().hex

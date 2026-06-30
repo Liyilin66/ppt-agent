@@ -12,12 +12,15 @@ from typing import Sequence
 from pydantic import ValidationError
 
 from ppt_agent.long_deck_orchestrator import LongDeckRunRequest, run_long_deck_batch_generation
+from ppt_agent.long_deck_render import render_long_deck_ir_to_pptx
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_PATH = REPO_ROOT / "examples" / "demo_long_deck_ai_agent_pm_30" / "input.json"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "examples" / "demo_long_deck_ai_agent_pm_30" / "output"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
+DEFAULT_THEME_PATH = REPO_ROOT / "examples" / "theme.json"
+DEFAULT_ASSETS_DIR = REPO_ROOT / "examples"
 
 
 def default_output_dir(input_path: Path = DEFAULT_INPUT_PATH) -> Path:
@@ -28,11 +31,13 @@ def load_long_deck_run_request(
     input_path: str | Path = DEFAULT_INPUT_PATH,
     output_dir: str | Path | None = None,
     batch_size: int | None = None,
+    resume: bool = False,
 ) -> LongDeckRunRequest:
     resolved_input = Path(input_path)
     payload = json.loads(resolved_input.read_text(encoding="utf-8"))
     if batch_size is not None:
         payload["batch_size"] = batch_size
+    payload["resume"] = resume
     payload["output_dir"] = str(Path(output_dir) if output_dir is not None else default_output_dir(resolved_input))
     return LongDeckRunRequest.model_validate(payload)
 
@@ -71,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MODEL,
         help="OpenAI model name. Defaults to OPENAI_MODEL or gpt-5.5.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing succeeded batch artifacts in the output directory.",
+    )
     return parser
 
 
@@ -85,7 +95,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        request = load_long_deck_run_request(args.input, args.output_dir, batch_size=args.batch_size)
+        request = load_long_deck_run_request(
+            args.input,
+            args.output_dir,
+            batch_size=args.batch_size,
+            resume=args.resume,
+        )
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         print(f"Could not load long deck demo input: {exc}", file=sys.stderr)
         return 2
@@ -105,6 +120,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"generated_long_deck_qa: {report.long_deck_qa_path}")
     if report.run_report_path is not None:
         print(f"long_deck_run_report: {report.run_report_path}")
+    if report.status == "succeeded" and report.merged_deck_ir_path is not None and request.output_dir is not None:
+        render_report = render_long_deck_ir_to_pptx(
+            report.merged_deck_ir_path,
+            request.output_dir / "generated_long_deck.pptx",
+            request.output_dir / "long_deck_render_report.json",
+            theme_path=DEFAULT_THEME_PATH,
+            assets_dir=DEFAULT_ASSETS_DIR,
+        )
+        print(f"generated_long_deck_pptx: {render_report.output_pptx_path}")
+        print(f"long_deck_render_report: {request.output_dir / 'long_deck_render_report.json'}")
+        if render_report.status != "succeeded":
+            print(f"render_error: {render_report.error_message}", file=sys.stderr)
+            return 2
     if report.error_message:
         print(f"error: {report.error_message}", file=sys.stderr)
 

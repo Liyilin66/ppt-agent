@@ -209,6 +209,131 @@ def test_run_long_deck_batch_generation_preserves_successful_artifacts_after_fai
     assert report.long_deck_qa_path is None
 
 
+def test_run_long_deck_batch_generation_resume_skips_succeeded_batch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    first_seen_batches: list[str] = []
+
+    def first_fake_generate(_model, batch_request):
+        batch_id = batch_request.batch_context.batch_id
+        first_seen_batches.append(batch_id)
+        if batch_id == "batch_02":
+            raise RuntimeError("provider failed")
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", first_fake_generate)
+    first_report = run_long_deck_batch_generation(_run_request(tmp_path), object())
+
+    assert first_report.status == "partial_failed"
+    assert first_report.completed_batches == ["batch_01"]
+    assert first_seen_batches == ["batch_01", "batch_02"]
+
+    resumed_seen_batches: list[str] = []
+
+    def resumed_fake_generate(_model, batch_request):
+        resumed_seen_batches.append(batch_request.batch_context.batch_id)
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", resumed_fake_generate)
+    resumed_report = run_long_deck_batch_generation(
+        _run_request(tmp_path).model_copy(update={"resume": True}),
+        object(),
+    )
+
+    assert resumed_report.status == "succeeded"
+    assert resumed_seen_batches == ["batch_02", "batch_03"]
+    assert resumed_report.completed_batches == ["batch_01", "batch_02", "batch_03"]
+    assert resumed_report.merged_deck_ir_path is not None
+    assert resumed_report.merged_deck_ir_path.exists()
+    assert resumed_report.long_deck_qa_path is not None
+    assert resumed_report.long_deck_qa_path.exists()
+
+
+def test_run_long_deck_batch_generation_resume_regenerates_missing_deck_ir(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    def first_fake_generate(_model, batch_request):
+        if batch_request.batch_context.batch_id == "batch_02":
+            raise RuntimeError("provider failed")
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", first_fake_generate)
+    first_report = run_long_deck_batch_generation(_run_request(tmp_path), object())
+    assert first_report.completed_batches == ["batch_01"]
+    first_report.batch_reports[0].deck_ir_path.unlink()
+
+    resumed_seen_batches: list[str] = []
+
+    def resumed_fake_generate(_model, batch_request):
+        resumed_seen_batches.append(batch_request.batch_context.batch_id)
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", resumed_fake_generate)
+    resumed_report = run_long_deck_batch_generation(
+        _run_request(tmp_path).model_copy(update={"resume": True}),
+        object(),
+    )
+
+    assert resumed_report.status == "succeeded"
+    assert resumed_seen_batches == ["batch_01", "batch_02", "batch_03"]
+
+
+def test_run_long_deck_batch_generation_cancel_stops_at_batch_boundary(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    seen_batches: list[str] = []
+
+    def fake_generate(_model, batch_request):
+        seen_batches.append(batch_request.batch_context.batch_id)
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+
+    def cancel_after_first_batch() -> bool:
+        return len(seen_batches) >= 1
+
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        cancel_checker=cancel_after_first_batch,
+    )
+
+    assert report.status == "partial_cancelled"
+    assert report.completed_batches == ["batch_01"]
+    assert report.cancelled_batches == ["batch_02", "batch_03"]
+    assert seen_batches == ["batch_01"]
+    assert report.batch_reports[0].deck_ir_path is not None
+    assert report.batch_reports[0].deck_ir_path.exists()
+    assert report.merged_deck_ir_path is None
+    assert report.long_deck_qa_path is None
+
+
+def test_run_long_deck_batch_generation_cancel_before_first_batch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    seen_batches: list[str] = []
+
+    def fake_generate(_model, batch_request):
+        seen_batches.append(batch_request.batch_context.batch_id)
+        return _batch_deck(batch_request)
+
+    monkeypatch.setattr(orchestrator, "generate_batch_deck_with_model", fake_generate)
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        cancel_checker=lambda: True,
+    )
+
+    assert report.status == "cancelled"
+    assert report.completed_batches == []
+    assert report.cancelled_batches == ["batch_01", "batch_02", "batch_03"]
+    assert seen_batches == []
+
+
 def test_run_long_deck_batch_generation_records_schema_validation_failure_metadata(
     tmp_path,
     monkeypatch,

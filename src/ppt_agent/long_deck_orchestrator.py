@@ -20,6 +20,7 @@ from ppt_agent.generation import (
     generate_batch_deck_with_model,
     validate_batch_deck_ir_against_batch_range,
 )
+from ppt_agent.load import load_deck
 from ppt_agent.long_deck import merge_batch_deck_irs
 from ppt_agent.long_deck_qa import evaluate_long_deck_consistency
 from ppt_agent.models import Deck, StrictModel
@@ -35,7 +36,7 @@ from ppt_agent.qa import analyze_deck
 from ppt_agent.runtime import sanitize_error_message
 
 
-LongDeckRunStatus = Literal["succeeded", "partial_failed", "failed"]
+LongDeckRunStatus = Literal["succeeded", "partial_failed", "failed", "cancelled", "partial_cancelled"]
 BatchRunStatus = Literal["succeeded", "failed"]
 AttemptStatus = Literal["succeeded", "failed"]
 PROVIDER_TIMEOUT_ERROR_TYPE = "provider_timeout"
@@ -48,6 +49,7 @@ PROVIDER_TIMEOUT_MARKERS = (
     "origin_response_timeout",
 )
 ProgressLogger = Callable[[str], None]
+CancelChecker = Callable[[], bool]
 
 
 class LongDeckRunRequest(StrictModel):
@@ -62,6 +64,7 @@ class LongDeckRunRequest(StrictModel):
     min_batch_qa_score: int | None = Field(default=None, ge=0, le=100)
     output_dir: Path | None = None
     continue_on_error: bool = False
+    resume: bool = False
 
 
 class BatchAttemptRecord(StrictModel):
@@ -109,6 +112,7 @@ class LongDeckRunReport(StrictModel):
     total_batches: int = Field(..., ge=1)
     completed_batches: list[str] = Field(default_factory=list)
     failed_batches: list[str] = Field(default_factory=list)
+    cancelled_batches: list[str] = Field(default_factory=list)
     status: LongDeckRunStatus
     batch_reports: list[BatchRunReport] = Field(default_factory=list)
     merged_deck_ir_path: Path | None = None
@@ -165,6 +169,10 @@ def _status_for_failure(completed_batches: list[str]) -> LongDeckRunStatus:
     return "partial_failed" if completed_batches else "failed"
 
 
+def _status_for_cancel(completed_batches: list[str]) -> LongDeckRunStatus:
+    return "partial_cancelled" if completed_batches else "cancelled"
+
+
 def _classify_batch_error(error_message: str | None) -> tuple[str | None, bool, str | None]:
     normalized = (error_message or "").lower()
     if any(marker in normalized for marker in PROVIDER_TIMEOUT_MARKERS):
@@ -195,6 +203,7 @@ def _final_report(
     output_dir: Path,
     completed_batches: list[str],
     failed_batches: list[str],
+    cancelled_batches: list[str] | None = None,
     batch_reports: list[BatchRunReport],
     status: LongDeckRunStatus,
     merged_deck_ir_path: Path | None = None,
@@ -212,6 +221,7 @@ def _final_report(
         total_batches=len(long_deck_plan.batches),
         completed_batches=completed_batches,
         failed_batches=failed_batches,
+        cancelled_batches=cancelled_batches or [],
         status=status,
         batch_reports=batch_reports,
         merged_deck_ir_path=merged_deck_ir_path,
@@ -223,6 +233,44 @@ def _final_report(
         suggestion=suggestion,
     )
     return _write_run_report(report, output_dir)
+
+
+def _resume_batch_if_complete(
+    *,
+    output_dir: Path,
+    batch: BatchPlan,
+    long_deck_plan: LongDeckPlan,
+) -> tuple[BatchRunReport, BatchGenerationArtifact] | None:
+    status_path = _batch_file(output_dir, batch.batch_id, "status")
+    deck_ir_path = _batch_file(output_dir, batch.batch_id, "deck_ir")
+    if not status_path.is_file() or not deck_ir_path.is_file():
+        return None
+
+    try:
+        status_report = BatchRunReport.model_validate_json(status_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if status_report.status != "succeeded":
+        return None
+
+    try:
+        deck = load_deck(deck_ir_path)
+        deck = validate_batch_deck_ir_against_batch_range(
+            deck,
+            get_batch_context(long_deck_plan, batch.batch_id),
+        )
+    except Exception:
+        return None
+
+    report = status_report.model_copy(
+        update={
+            "deck_ir_path": deck_ir_path,
+            "qa_report_path": _batch_file(output_dir, batch.batch_id, "qa_report"),
+            "attempts_path": _batch_file(output_dir, batch.batch_id, "attempts"),
+            "status_path": status_path,
+        }
+    )
+    return report, BatchGenerationArtifact(batch_id=batch.batch_id, deck_ir=deck)
 
 
 def _write_batch_report(report: BatchRunReport, output_dir: Path) -> BatchRunReport:
@@ -383,6 +431,7 @@ def run_long_deck_batch_generation(
     model: Any,
     *,
     progress_logger: ProgressLogger | None = None,
+    cancel_checker: CancelChecker | None = None,
 ) -> LongDeckRunReport:
     """Run a deterministic long-deck batch generation dry run."""
 
@@ -408,6 +457,42 @@ def run_long_deck_batch_generation(
     batch_artifacts: list[BatchGenerationArtifact] = []
 
     for batch in long_deck_plan.batches:
+        if cancel_checker is not None and cancel_checker():
+            pending_batch_ids = [
+                pending.batch_id
+                for pending in long_deck_plan.batches
+                if pending.batch_id not in {*completed_batches, *failed_batches}
+            ]
+            report = _final_report(
+                run_id=run_id,
+                request=request,
+                long_deck_plan=long_deck_plan,
+                output_dir=output_dir,
+                completed_batches=completed_batches,
+                failed_batches=failed_batches,
+                cancelled_batches=pending_batch_ids,
+                batch_reports=batch_reports,
+                status=_status_for_cancel(completed_batches),
+                long_deck_plan_path=long_deck_plan_path,
+                error_message="Long deck run cancelled at a batch boundary.",
+            )
+            _log_progress(progress_logger, f"Long deck run {report.status}")
+            return report
+
+        if request.resume:
+            resumed = _resume_batch_if_complete(
+                output_dir=output_dir,
+                batch=batch,
+                long_deck_plan=long_deck_plan,
+            )
+            if resumed is not None:
+                batch_report, batch_artifact = resumed
+                completed_batches.append(batch.batch_id)
+                batch_reports.append(batch_report)
+                batch_artifacts.append(batch_artifact)
+                _log_progress(progress_logger, f"Skipping {batch.batch_id} from existing succeeded artifacts")
+                continue
+
         _log_progress(progress_logger, f"Starting {batch.batch_id} slides {batch.start_slide}-{batch.end_slide}")
         batch_started_at = perf_counter()
         batch_report, batch_artifact = _run_one_batch(
