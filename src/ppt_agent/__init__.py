@@ -23,6 +23,14 @@ from ppt_agent.generation import (
 )
 from ppt_agent.load import load_deck, load_patch, load_theme
 from ppt_agent.long_deck import merge_batch_deck_irs, validate_merged_long_deck_ir
+from ppt_agent.long_deck_orchestrator import (
+    BatchAttemptRecord,
+    BatchAttemptsArtifact,
+    BatchRunReport,
+    LongDeckRunReport,
+    LongDeckRunRequest,
+    run_long_deck_batch_generation,
+)
 from ppt_agent.long_deck_qa import (
     BatchQAResult,
     LongDeckQAIssue,
@@ -73,8 +81,13 @@ __all__ = [
     "Slide",
     "TextElement",
     "TextStyle",
+    "BatchAttemptRecord",
+    "BatchAttemptsArtifact",
+    "BatchRunReport",
     "LongDeckQAIssue",
     "LongDeckQAReport",
+    "LongDeckRunReport",
+    "LongDeckRunRequest",
     "SectionQAResult",
     "BatchQAResult",
     "Theme",
@@ -126,6 +139,7 @@ __all__ = [
     "evaluate_long_deck_consistency",
     "merge_batch_deck_irs",
     "render_deck_to_pptx",
+    "run_long_deck_batch_generation",
     "validate_merged_long_deck_ir",
 ]
 
