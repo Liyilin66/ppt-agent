@@ -22,6 +22,7 @@ from ppt_agent.generation import (
 )
 from ppt_agent.load import load_deck
 from ppt_agent.long_deck import merge_batch_deck_irs
+from ppt_agent.long_deck_quality import evaluate_long_deck_quality_gate
 from ppt_agent.long_deck_qa import evaluate_long_deck_consistency
 from ppt_agent.models import Deck, StrictModel
 from ppt_agent.planning import (
@@ -36,7 +37,15 @@ from ppt_agent.qa import analyze_deck
 from ppt_agent.runtime import sanitize_error_message
 
 
-LongDeckRunStatus = Literal["succeeded", "partial_failed", "failed", "cancelled", "partial_cancelled"]
+LongDeckRunStatus = Literal[
+    "succeeded",
+    "partial_failed",
+    "failed",
+    "failed_quality_gate",
+    "partial_failed_quality_gate",
+    "cancelled",
+    "partial_cancelled",
+]
 BatchRunStatus = Literal["succeeded", "failed"]
 AttemptStatus = Literal["succeeded", "failed"]
 PROVIDER_TIMEOUT_ERROR_TYPE = "provider_timeout"
@@ -117,6 +126,7 @@ class LongDeckRunReport(StrictModel):
     batch_reports: list[BatchRunReport] = Field(default_factory=list)
     merged_deck_ir_path: Path | None = None
     long_deck_qa_path: Path | None = None
+    long_deck_quality_gate_path: Path | None = None
     long_deck_plan_path: Path | None = None
     run_report_path: Path | None = None
     error_message: str | None = None
@@ -208,6 +218,7 @@ def _final_report(
     status: LongDeckRunStatus,
     merged_deck_ir_path: Path | None = None,
     long_deck_qa_path: Path | None = None,
+    long_deck_quality_gate_path: Path | None = None,
     long_deck_plan_path: Path | None = None,
     error_message: str | None = None,
     error_type: str | None = None,
@@ -226,6 +237,7 @@ def _final_report(
         batch_reports=batch_reports,
         merged_deck_ir_path=merged_deck_ir_path,
         long_deck_qa_path=long_deck_qa_path,
+        long_deck_quality_gate_path=long_deck_quality_gate_path,
         long_deck_plan_path=long_deck_plan_path,
         error_message=error_message,
         error_type=error_type,
@@ -572,6 +584,12 @@ def run_long_deck_batch_generation(
             long_deck_qa_report,
             output_dir / "generated_long_deck_qa.json",
         )
+        _log_progress(progress_logger, "Running long deck hard quality gate")
+        quality_gate_report = evaluate_long_deck_quality_gate(merged_deck)
+        long_deck_quality_gate_path = write_model_json(
+            quality_gate_report,
+            output_dir / "generated_long_deck_quality_gate.json",
+        )
     except Exception as exc:
         report = _final_report(
             run_id=run_id,
@@ -588,6 +606,27 @@ def run_long_deck_batch_generation(
         _log_progress(progress_logger, f"Long deck run {report.status}")
         return report
 
+    if quality_gate_report.status != "passed":
+        report = _final_report(
+            run_id=run_id,
+            request=request,
+            long_deck_plan=long_deck_plan,
+            output_dir=output_dir,
+            completed_batches=completed_batches,
+            failed_batches=[],
+            batch_reports=batch_reports,
+            status="failed_quality_gate",
+            merged_deck_ir_path=merged_deck_ir_path,
+            long_deck_qa_path=long_deck_qa_path,
+            long_deck_quality_gate_path=long_deck_quality_gate_path,
+            long_deck_plan_path=long_deck_plan_path,
+            error_message=quality_gate_report.message,
+            error_type=quality_gate_report.status,
+            suggestion="Fix instruction leakage or placeholder matrix content before rendering PPTX.",
+        )
+        _log_progress(progress_logger, "Long deck run failed_quality_gate")
+        return report
+
     report = _final_report(
         run_id=run_id,
         request=request,
@@ -599,6 +638,7 @@ def run_long_deck_batch_generation(
         status="succeeded",
         merged_deck_ir_path=merged_deck_ir_path,
         long_deck_qa_path=long_deck_qa_path,
+        long_deck_quality_gate_path=long_deck_quality_gate_path,
         long_deck_plan_path=long_deck_plan_path,
     )
     _log_progress(progress_logger, f"Long deck run {report.status}")

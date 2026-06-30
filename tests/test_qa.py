@@ -749,6 +749,20 @@ def test_qa_warns_on_instruction_leakage() -> None:
     assert report.score > 0
 
 
+def test_qa_detects_new_instruction_leakage_phrase_as_error() -> None:
+    deck = _deck_with_text_slide(
+        "closing_slide",
+        "下一步",
+        ["先列出 Agent 不允许自动执行的动作"],
+    )
+
+    report = analyze_deck(deck)
+
+    issues = [issue for issue in report.issues if issue.code == "instruction_leakage"]
+    assert issues
+    assert all(issue.severity == "error" for issue in issues)
+
+
 def test_qa_detects_risk_matrix_placeholders_as_errors() -> None:
     deck = _deck_with_text_slide(
         "risk_matrix",
@@ -764,6 +778,20 @@ def test_qa_detects_risk_matrix_placeholders_as_errors() -> None:
     assert report.score > 0
 
 
+def test_qa_detects_uppercase_risk_matrix_placeholders_as_errors() -> None:
+    deck = _deck_with_text_slide(
+        "risk_matrix",
+        "风险矩阵",
+        ["Risk\nImpact\nMitigation"],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "risk_matrix_placeholder"]
+
+    assert issues
+    assert issues[0].severity == "error"
+
+
 def test_qa_detects_comparison_matrix_placeholders_as_errors() -> None:
     deck = _deck_with_text_slide(
         "comparison_matrix",
@@ -777,6 +805,20 @@ def test_qa_detects_comparison_matrix_placeholders_as_errors() -> None:
     assert issues
     assert all(issue.severity == "error" for issue in issues)
     assert report.score > 0
+
+
+def test_qa_detects_comparison_matrix_judgment_placeholders_as_errors() -> None:
+    deck = _deck_with_text_slide(
+        "comparison_matrix",
+        "责任对比",
+        ["基准侧\n判断点 1\n判断点 2", "Agent 侧\n判断点 3"],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "comparison_matrix_placeholder"]
+
+    assert issues
+    assert all(issue.severity == "error" for issue in issues)
 
 
 def test_qa_warns_on_risk_matrix_malformed_row() -> None:

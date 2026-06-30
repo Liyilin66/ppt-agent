@@ -437,14 +437,25 @@ def _strip_leading_index(text: str) -> str:
 
 def _action_fallback(deck: Deck, heading: str) -> str:
     if _is_english_language(deck):
-        return "Define one owner, boundary, and review checkpoint."
+        if "risk" in heading.lower() or "metric" in heading.lower():
+            return "Record failure samples and review checkpoints."
+        if "workflow" in heading.lower() or "flow" in heading.lower():
+            return "Design one confirmation point for the workflow."
+        options = [
+            "Define the boundary and next checkpoint.",
+            "Design one confirmation point for the workflow.",
+            "Record failure samples and review checkpoints.",
+            "Choose one launch metric and review it weekly.",
+        ]
+        return options[sum(ord(char) for char in heading) % len(options)]
     if "边界" in heading:
-        return "明确 Agent 能做、不能做、必须确认什么。"
+        return "明确边界。"
     if "闭环" in heading or "工作流" in heading:
-        return "把任务拆成输入、执行、校验、回滚和交付。"
+        return "设计确认点。"
     if "风险" in heading or "指标" in heading:
-        return "用成功率、接管率和错误成本判断是否值得落地。"
-    return "先列出 Agent 不允许自动执行的动作。"
+        return "记录失败样本。"
+    options = ["明确边界。", "设计确认点。", "记录失败样本。", "建立评估指标。"]
+    return options[sum(ord(char) for char in heading) % len(options)]
 
 
 def _action_pairs_from_body(body_texts: list[str], deck: Deck, limit: int = 3) -> list[tuple[str, str]]:
@@ -1109,10 +1120,16 @@ def _render_metric_cards_template(slide, deck_slide, deck: Deck, theme: Theme, v
 
 def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: Theme) -> None:
     title, body = _title_and_body_texts(deck_slide)
+    if len(body) < 2:
+        _render_column_template(slide, deck_slide, deck, theme, column_count=2, variant=0)
+        return
     slots = _slot_texts(body, 3, fallback=" ")
     left_heading, left_body = _split_heading_body(slots[0])
     right_heading, right_body = _split_heading_body(slots[1])
     decision_rule = slots[2].strip()
+    if not left_heading.strip() or not right_heading.strip():
+        _render_column_template(slide, deck_slide, deck, theme, column_count=2, variant=0)
+        return
     margin = 0.72
     table_x = margin
     table_y = 1.48
@@ -1148,12 +1165,12 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
         y=table_y + 0.2,
         width=dimension_width - 0.36,
         height=0.18,
-        text=_surface_label(deck, "Dimension", "对比维度"),
+        text=_surface_label(deck, "Compare", "对比"),
         style=_theme_text_style(theme, font_size_pt=9.2, color=theme.colors.primary, bold=True),
     )
     for x, heading, accent, label in [
-        (table_x + dimension_width, left_heading, theme.colors.primary, _surface_label(deck, "Baseline", "基准侧")),
-        (table_x + dimension_width + column_width, right_heading, theme.colors.secondary, _surface_label(deck, "Agent", "Agent 侧")),
+        (table_x + dimension_width, left_heading, theme.colors.primary, _safe_text(left_heading, 24) or " "),
+        (table_x + dimension_width + column_width, right_heading, theme.colors.secondary, _safe_text(right_heading, 24) or " "),
     ]:
         _add_textbox(
             slide,
@@ -1162,34 +1179,22 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
             width=0.88,
             height=0.18,
             text=label,
-            style=_theme_text_style(theme, font_size_pt=8.5, color=accent, bold=True),
-        )
-        _add_textbox(
-            slide,
-            x=x + 1.08,
-            y=table_y + 0.13,
-            width=column_width - 1.26,
-            height=0.25,
-            text=_safe_text(heading or " ", 28),
-            style=_theme_text_style(theme, font_size_pt=12.8, color=theme.colors.text, bold=True),
+            style=_theme_text_style(theme, font_size_pt=11.5, color=accent, bold=True),
         )
 
     left_points = _compact_lines(left_body, 5)
     right_points = _compact_lines(right_body, 5)
     row_count = max(3, min(5, max(len(left_points), len(right_points))))
-    dimensions = [
-        _surface_label(deck, "Decision 1", "判断点 1"),
-        _surface_label(deck, "Decision 2", "判断点 2"),
-        _surface_label(deck, "Decision 3", "判断点 3"),
-        _surface_label(deck, "Decision 4", "判断点 4"),
-        _surface_label(deck, "Decision 5", "判断点 5"),
-    ]
     while len(left_points) < row_count:
         left_points.append("")
     while len(right_points) < row_count:
         right_points.append("")
 
     for row_index in range(row_count):
+        left_value = _safe_text(left_points[row_index], 54) or " "
+        right_value = _safe_text(right_points[row_index], 54) or " "
+        if not left_value.strip() and not right_value.strip():
+            continue
         y = table_y + header_height + row_index * row_height
         fill = theme.colors.background if row_index % 2 == 0 else theme.colors.surface
         _add_rect(
@@ -1208,8 +1213,8 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
             y=y + 0.17,
             width=dimension_width - 0.36,
             height=0.18,
-            text=dimensions[row_index],
-            style=_theme_text_style(theme, font_size_pt=10.2, color=theme.colors.text, bold=True),
+            text=_surface_label(deck, "Point", "判断"),
+            style=_theme_text_style(theme, font_size_pt=10.0, color=theme.colors.text, bold=True),
         )
         _add_textbox(
             slide,
@@ -1217,7 +1222,7 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
             y=y + 0.15,
             width=column_width - 0.36,
             height=0.24,
-            text=_safe_text(left_points[row_index], 54) or " ",
+            text=left_value,
             style=_theme_text_style(theme, font_size_pt=10.8, color=theme.colors.muted_text),
         )
         _add_textbox(
@@ -1226,7 +1231,7 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
             y=y + 0.15,
             width=column_width - 0.36,
             height=0.24,
-            text=_safe_text(right_points[row_index], 54) or " ",
+            text=right_value,
             style=_theme_text_style(theme, font_size_pt=10.8, color=theme.colors.muted_text),
         )
 
@@ -1422,6 +1427,9 @@ def _render_process_flow_template(slide, deck_slide, deck: Deck, theme: Theme, v
 def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme, variant: int = 0) -> None:
     title, body = _title_and_body_texts(deck_slide)
     risks = body[:4] if len(body) >= 3 else _slot_texts(body, 3, fallback=" ")
+    if len([text for text in risks if text.strip()]) < 2:
+        _render_column_template(slide, deck_slide, deck, theme, column_count=2, variant=0)
+        return
     margin = 0.7
     table_x = margin
     table_y = 1.5
@@ -1431,9 +1439,9 @@ def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme, va
     columns = [0.38, 0.2, 0.42] if variant == 1 else [0.32, 0.22, 0.46]
     widths = [table_width * ratio for ratio in columns]
     labels = [
-        _surface_label(deck, "Risk", "风险"),
-        _surface_label(deck, "Impact", "影响"),
-        _surface_label(deck, "Mitigation", "缓解措施"),
+        _surface_label(deck, "Issue", "风险项"),
+        _surface_label(deck, "Effect", "后果"),
+        _surface_label(deck, "Action", "动作"),
     ]
 
     _add_textbox(
@@ -1511,11 +1519,7 @@ def _render_risk_matrix_template(slide, deck_slide, deck: Deck, theme: Theme, va
 def _render_key_takeaway_template(slide, deck_slide, deck: Deck, theme: Theme, variant: int = 0) -> None:
     title, body = _title_and_body_texts(deck_slide)
     takeaways = body[:4] if len(body) >= 2 else _slot_texts(body, 2, fallback=" ")
-    fallback_explanation = _surface_label(
-        deck,
-        "Define one owner, boundary, and review checkpoint.",
-        "先列出 Agent 不允许自动执行的动作。",
-    )
+    fallback_explanation = _action_fallback(deck, title)
     main_heading, main_body = _heading_body_with_fallback(takeaways[0], fallback_explanation)
     action_items = [
         _heading_body_with_fallback(takeaway, fallback_explanation)

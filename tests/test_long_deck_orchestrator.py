@@ -4,6 +4,7 @@ import json
 
 from ppt_agent.generation import BatchDeckSchemaValidationError
 from ppt_agent.long_deck_orchestrator import LongDeckRunRequest, run_long_deck_batch_generation
+from ppt_agent.long_deck_quality import LongDeckQualityGateReport
 from ppt_agent.models import Deck
 
 import ppt_agent.long_deck_orchestrator as orchestrator
@@ -115,13 +116,17 @@ def test_run_long_deck_batch_generation_writes_merge_and_qa_artifacts(
     assert report.merged_deck_ir_path.exists()
     assert report.long_deck_qa_path is not None
     assert report.long_deck_qa_path.exists()
+    assert report.long_deck_quality_gate_path is not None
+    assert report.long_deck_quality_gate_path.exists()
     assert report.run_report_path is not None
     assert report.run_report_path.exists()
     merged = json.loads(report.merged_deck_ir_path.read_text(encoding="utf-8"))
     qa = json.loads(report.long_deck_qa_path.read_text(encoding="utf-8"))
+    quality_gate = json.loads(report.long_deck_quality_gate_path.read_text(encoding="utf-8"))
     assert merged["slides"][0]["slide_id"] == "slide_001"
     assert merged["slides"][-1]["slide_id"] == "slide_030"
     assert "score" in qa
+    assert quality_gate["status"] == "passed"
 
 
 def test_run_long_deck_batch_generation_emits_progress_logs(
@@ -147,6 +152,7 @@ def test_run_long_deck_batch_generation_emits_progress_logs(
     assert any(message.startswith("Completed batch_01 in ") for message in messages)
     assert "Merging 3 batches" in messages
     assert "Running long deck QA" in messages
+    assert "Running long deck hard quality gate" in messages
     assert "Long deck run succeeded" in messages
 
 
@@ -207,6 +213,49 @@ def test_run_long_deck_batch_generation_preserves_successful_artifacts_after_fai
     assert report.batch_reports[1].status_path.exists()
     assert report.merged_deck_ir_path is None
     assert report.long_deck_qa_path is None
+
+
+def test_run_long_deck_batch_generation_fails_quality_gate_before_render(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        orchestrator,
+        "generate_batch_deck_with_model",
+        lambda _model, batch_request: _batch_deck(batch_request),
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "evaluate_long_deck_quality_gate",
+        lambda _deck: LongDeckQualityGateReport(
+            status="failed_quality_gate",
+            score=68,
+            issues=[],
+            blocked_codes=["instruction_leakage"],
+            blocked_slide_ids=["slide_021"],
+            blocked_element_ids=["s021_e01"],
+            message="Long-deck hard quality gate failed because audience-visible instruction leakage or matrix placeholder content was detected.",
+        ),
+    )
+    messages: list[str] = []
+
+    report = run_long_deck_batch_generation(
+        _run_request(tmp_path),
+        object(),
+        progress_logger=messages.append,
+    )
+
+    assert report.status == "failed_quality_gate"
+    assert report.merged_deck_ir_path is not None
+    assert report.merged_deck_ir_path.exists()
+    assert report.long_deck_qa_path is not None
+    assert report.long_deck_qa_path.exists()
+    assert report.long_deck_quality_gate_path is not None
+    assert report.long_deck_quality_gate_path.exists()
+    assert report.error_type == "failed_quality_gate"
+    assert report.suggestion == "Fix instruction leakage or placeholder matrix content before rendering PPTX."
+    assert "Running long deck hard quality gate" in messages
+    assert "Long deck run failed_quality_gate" in messages
 
 
 def test_run_long_deck_batch_generation_resume_skips_succeeded_batch(

@@ -14,7 +14,16 @@ from pydantic import Field
 from ppt_agent.models import StrictModel
 
 
-JobStatus = Literal["pending", "running", "succeeded", "failed", "cancelled", "partial_cancelled"]
+JobStatus = Literal[
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "failed_quality_gate",
+    "partial_failed_quality_gate",
+    "cancelled",
+    "partial_cancelled",
+]
 
 
 class JobRecord(StrictModel):
@@ -182,6 +191,54 @@ class JobStore:
         if row is None:
             return None
 
+        return JobRecord(
+            job_id=row["job_id"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            current_stage=row["current_stage"],
+            last_updated_at=row["updated_at"],
+            elapsed_seconds=self._elapsed_seconds(row["created_at"], row["updated_at"], row["status"]),
+            job_type=row["job_type"],
+            error_message=row["error_message"],
+            accepted=None if row["accepted"] is None else bool(row["accepted"]),
+            qa_score=row["qa_score"],
+            cancel_requested=bool(row["cancel_requested"]),
+            total_batches=row["total_batches"],
+            completed_batches=row["completed_batches"] or 0,
+            failed_batches=row["failed_batches"] or 0,
+            current_batch=row["current_batch"],
+        )
+
+    def get_latest_job(self, *, job_type: str | None = None) -> JobRecord | None:
+        query = """
+            SELECT
+                job_id,
+                status,
+                created_at,
+                updated_at,
+                job_type,
+                current_stage,
+                error_message,
+                accepted,
+                qa_score,
+                cancel_requested,
+                total_batches,
+                completed_batches,
+                failed_batches,
+                current_batch
+            FROM jobs
+        """
+        params: tuple[str, ...] = ()
+        if job_type is not None:
+            query += " WHERE job_type = ?"
+            params = (job_type,)
+        query += " ORDER BY created_at DESC, updated_at DESC LIMIT 1"
+
+        with self._connect() as connection:
+            row = connection.execute(query, params).fetchone()
+        if row is None:
+            return None
         return JobRecord(
             job_id=row["job_id"],
             status=row["status"],

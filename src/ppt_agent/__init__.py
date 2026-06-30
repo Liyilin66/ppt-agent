@@ -24,6 +24,7 @@ from ppt_agent.generation import (
 )
 from ppt_agent.load import load_deck, load_patch, load_theme
 from ppt_agent.long_deck import merge_batch_deck_irs, validate_merged_long_deck_ir
+from ppt_agent.long_deck_quality import LongDeckQualityGateReport, evaluate_long_deck_quality_gate
 from ppt_agent.long_deck_orchestrator import (
     BatchAttemptRecord,
     BatchAttemptsArtifact,
@@ -87,6 +88,7 @@ __all__ = [
     "BatchRunReport",
     "LongDeckQAIssue",
     "LongDeckQAReport",
+    "LongDeckQualityGateReport",
     "LongDeckRunReport",
     "LongDeckRunRequest",
     "SectionQAResult",
@@ -139,6 +141,7 @@ __all__ = [
     "load_patch",
     "load_theme",
     "evaluate_long_deck_consistency",
+    "evaluate_long_deck_quality_gate",
     "merge_batch_deck_irs",
     "render_deck_to_pptx",
     "run_long_deck_batch_generation",

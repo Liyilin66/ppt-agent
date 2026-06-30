@@ -194,6 +194,7 @@ WEAK_TAKEAWAY_PHRASES = {
 }
 INSTRUCTION_LEAKAGE_PHRASES = {
     "把这一点转化为明确的下一步行动",
+    "先列出 Agent 不允许自动执行的动作",
     "明确下一步行动",
     "本页必须",
     "该页需要",
@@ -210,6 +211,12 @@ COMPARISON_MATRIX_PLACEHOLDERS = {
     "方案 B",
     "Option A",
     "Option B",
+    "判断维度",
+    "判断点 1",
+    "判断点 2",
+    "判断点 3",
+    "基准侧",
+    "Agent 侧",
 }
 RISK_MATRIX_PLACEHOLDERS = {
     "risk",
@@ -223,6 +230,11 @@ GENERIC_MATRIX_PLACEHOLDERS = {
     "Input / Output",
     "State",
     "Tool Use",
+}
+HARD_QUALITY_GATE_CODES = {
+    "instruction_leakage",
+    "comparison_matrix_placeholder",
+    "risk_matrix_placeholder",
 }
 RISK_GOVERNANCE_TERMS = {
     "越权操作",
@@ -272,6 +284,18 @@ class QAReport(StrictModel):
     deck_id: str = Field(..., min_length=1)
     score: int = Field(..., ge=0, le=100)
     issues: list[QAIssue] = Field(default_factory=list)
+
+
+def hard_quality_gate_issues(report: QAReport) -> list[QAIssue]:
+    return [
+        issue
+        for issue in report.issues
+        if issue.severity == "error" and issue.code in HARD_QUALITY_GATE_CODES
+    ]
+
+
+def has_hard_quality_gate_failure(report: QAReport) -> bool:
+    return bool(hard_quality_gate_issues(report))
 
 
 def _bbox_area(bbox: BBox) -> float:

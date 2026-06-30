@@ -8,6 +8,7 @@ from pptx.util import Inches
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.load import load_deck, load_theme
 from ppt_agent.models import Deck
+from ppt_agent.long_deck_render import sanitize_deck_ir_for_render
 from ppt_agent.renderer import VISUAL_VARIANT_COUNTS, _visual_variant_for_slide, render_deck_to_pptx
 
 
@@ -637,13 +638,13 @@ def test_professional_layouts_render_distinct_editable_templates(tmp_path: Path)
 
     assert len(presentation.slides) == 4
     visible_texts = _visible_texts(presentation)
-    assert "Baseline" in visible_texts
-    assert "Agent" in visible_texts
+    assert "Normal AI" in visible_texts
+    assert "AI Agent" in visible_texts
     assert "Option A" not in visible_texts
     assert "Option B" not in visible_texts
     assert "01" in visible_texts
-    assert "Risk" in visible_texts
-    assert "Mitigation" in visible_texts
+    assert "Issue" in visible_texts
+    assert "Action" in visible_texts
     assert "Key Takeaway" in visible_texts
     for layout in professional_layouts:
         assert any(f"{layout} title" in text for text in visible_texts)
@@ -804,15 +805,16 @@ def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:
     output_path = render_deck_to_pptx(deck, theme, tmp_path / "comparison_rows.pptx")
     visible_texts = _visible_texts(Presentation(output_path))
 
-    assert "Dimension" in visible_texts
-    assert "Decision 1" in visible_texts
-    assert "Decision 2" in visible_texts
-    assert "Baseline" in visible_texts
-    assert "Agent" in visible_texts
+    assert "Compare" in visible_texts
+    assert "判断" in visible_texts or "Point" in visible_texts
+    assert "Normal AI" in visible_texts
+    assert "AI Agent" in visible_texts
     assert "Input / Output" not in visible_texts
     assert "State" not in visible_texts
     assert "Option A" not in visible_texts
     assert "Option B" not in visible_texts
+    assert "Decision 1" not in visible_texts
+    assert "Decision 2" not in visible_texts
     assert any("workflow ownership" in text for text in visible_texts)
 
 
@@ -872,9 +874,9 @@ def test_risk_matrix_renders_three_to_four_risks(tmp_path: Path, risk_count: int
     output_path = render_deck_to_pptx(deck, theme, tmp_path / f"risk_{risk_count}.pptx")
     visible_texts = _visible_texts(Presentation(output_path))
 
-    assert "Risk" in visible_texts
-    assert "Impact" in visible_texts
-    assert "Mitigation" in visible_texts
+    assert "Issue" in visible_texts
+    assert "Effect" in visible_texts
+    assert "Action" in visible_texts
     assert any("Hallucination" in text for text in visible_texts)
 
 
@@ -948,11 +950,11 @@ def test_closing_slide_renders_action_items_as_heading_body_pairs(tmp_path: Path
     visible_texts = _visible_texts(Presentation(output_path))
 
     assert "定义边界" in visible_texts
-    assert "明确 Agent 能做、不能做、必须确认什么。" in visible_texts
+    assert "明确边界。" in visible_texts
     assert "设计闭环" in visible_texts
     assert "把任务拆成输入、执行、校验、回滚和交付。" in visible_texts
     assert "量化风险" in visible_texts
-    assert "用成功率、接管率和错误成本判断是否值得落地。" in visible_texts
+    assert any(text in visible_texts for text in {"记录失败样本。", "建立评估指标。"})
     assert "01 定义边界" not in visible_texts
 
 
@@ -998,5 +1000,110 @@ def test_key_takeaway_renders_fallback_explanations(tmp_path: Path) -> None:
     visible_texts = _visible_texts(Presentation(output_path))
 
     assert "Keep human checkpoints" in visible_texts
-    assert "Define one owner, boundary, and review checkpoint." in visible_texts
+    assert any(
+        text in visible_texts
+        for text in {
+            "Define the boundary and next checkpoint.",
+            "Design one confirmation point for the workflow.",
+            "Record failure samples and review checkpoints.",
+            "Choose one launch metric and review it weekly.",
+        }
+    )
     assert "Turn this point into a concrete next action." not in visible_texts
+
+
+def test_sanitize_deck_ir_for_render_removes_placeholder_risk_rows() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "sanitize_risk_rows_demo",
+            "title": "Sanitize Risk Rows Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "风险矩阵",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "风险矩阵",
+                        },
+                        {
+                            "element_id": "row_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.8},
+                            "text": "risk\nimpact\nmitigation",
+                        },
+                        {
+                            "element_id": "row_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.3, "width": 5.0, "height": 0.8},
+                            "text": "权限越界\n误操作用户数据\n限制高风险权限并要求人工确认",
+                        },
+                        {
+                            "element_id": "row_3",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 3.2, "width": 5.0, "height": 0.8},
+                            "text": "日志缺失\n问题无法追溯\n记录输入、工具调用和输出版本",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    sanitized, warnings = sanitize_deck_ir_for_render(deck)
+    body_texts = [element.text for element in sanitized.slides[0].elements[1:]]
+
+    assert all("risk\nimpact\nmitigation" not in text.lower() for text in body_texts)
+    assert any("dropped placeholder-only risk matrix row" in warning for warning in warnings)
+
+
+def test_sanitize_deck_ir_for_render_falls_back_when_comparison_rows_are_placeholders() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "sanitize_comparison_rows_demo",
+            "title": "Sanitize Comparison Rows Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "责任对比",
+                    "layout": "comparison_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "责任对比",
+                        },
+                        {
+                            "element_id": "left",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.8},
+                            "text": "基准侧\n判断点 1\n判断点 2",
+                        },
+                        {
+                            "element_id": "right",
+                            "type": "text",
+                            "bbox": {"x": 6.1, "y": 1.4, "width": 5.0, "height": 0.8},
+                            "text": "Agent 侧\n判断点 3",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    sanitized, warnings = sanitize_deck_ir_for_render(deck)
+
+    assert sanitized.slides[0].layout == "two_column"
+    assert any("comparison_matrix had fewer than two real comparison rows" in warning for warning in warnings)
+    assert all(
+        placeholder not in "\n".join(element.text for element in sanitized.slides[0].elements)
+        for placeholder in {"基准侧", "Agent 侧", "判断点 1", "判断点 2", "判断点 3"}
+    )

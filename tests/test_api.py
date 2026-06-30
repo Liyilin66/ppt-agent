@@ -153,6 +153,7 @@ def _fake_long_deck_run_report(request) -> LongDeckRunReport:
     plan_path = output_dir / "generated_long_deck_plan.json"
     merged_path = output_dir / "generated_long_deck_ir.json"
     qa_path = output_dir / "generated_long_deck_qa.json"
+    quality_gate_path = output_dir / "generated_long_deck_quality_gate.json"
     run_report_path = output_dir / "long_deck_run_report.json"
     batch_status_path = batch_dir / "batch_01_status.json"
     batch_deck_path = batch_dir / "batch_01_deck_ir.json"
@@ -162,6 +163,7 @@ def _fake_long_deck_run_report(request) -> LongDeckRunReport:
     plan_path.write_text('{"sections":[],"batches":[]}\n', encoding="utf-8")
     merged_path.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
     qa_path.write_text('{"score":0.82,"passed":true}\n', encoding="utf-8")
+    quality_gate_path.write_text('{"status":"passed","score":82,"issues":[],"blocked_codes":[],"blocked_slide_ids":[],"blocked_element_ids":[],"message":"passed"}\n', encoding="utf-8")
     batch_deck_path.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
     batch_qa_path.write_text('{"score":82}\n', encoding="utf-8")
     batch_attempts_path.write_text('{"attempts":[]}\n', encoding="utf-8")
@@ -188,6 +190,7 @@ def _fake_long_deck_run_report(request) -> LongDeckRunReport:
         batch_reports=[batch_report],
         merged_deck_ir_path=merged_path,
         long_deck_qa_path=qa_path,
+        long_deck_quality_gate_path=quality_gate_path,
         long_deck_plan_path=plan_path,
         run_report_path=run_report_path,
     )
@@ -211,6 +214,7 @@ def _install_fake_long_deck_backend(monkeypatch, captured: dict | None = None) -
             progress_logger("Completed batch_01 in 0.1s")
             progress_logger("Merging 15 batches")
             progress_logger("Running long deck QA")
+            progress_logger("Running long deck hard quality gate")
             progress_logger("Long deck run succeeded")
         return _fake_long_deck_run_report(request)
 
@@ -238,6 +242,66 @@ def _install_fake_long_deck_backend(monkeypatch, captured: dict | None = None) -
 
     monkeypatch.setattr(api, "run_long_deck_batch_generation", fake_run_long_deck_batch_generation)
     monkeypatch.setattr(api, "render_long_deck_ir_to_pptx", fake_render_long_deck_ir_to_pptx)
+
+
+def _install_fake_long_deck_quality_gate_failure(monkeypatch, captured: dict | None = None) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None, cancel_checker=None):
+        if captured is not None:
+            captured["request"] = request
+        if progress_logger is not None:
+            progress_logger("Starting long deck run: 30 slides, batch_size=2, total_batches=15")
+            progress_logger("Starting batch_01 slides 1-2")
+            progress_logger("Completed batch_01 in 0.1s")
+            progress_logger("Merging 15 batches")
+            progress_logger("Running long deck QA")
+            progress_logger("Running long deck hard quality gate")
+            progress_logger("Long deck run failed_quality_gate")
+        report = _fake_long_deck_run_report(request)
+        quality_gate_path = request.output_dir / "generated_long_deck_quality_gate.json"
+        quality_gate_path.write_text(
+            json.dumps(
+                {
+                    "status": "failed_quality_gate",
+                    "score": 68,
+                    "issues": [
+                        {
+                            "severity": "error",
+                            "slide_id": "slide_021",
+                            "element_id": "s021_e01",
+                            "code": "instruction_leakage",
+                            "message": "meta leakage",
+                        }
+                    ],
+                    "blocked_codes": ["instruction_leakage"],
+                    "blocked_slide_ids": ["slide_021"],
+                    "blocked_element_ids": ["s021_e01"],
+                    "message": "Long-deck hard quality gate failed because audience-visible instruction leakage or matrix placeholder content was detected.",
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        report = report.model_copy(
+            update={
+                "status": "failed_quality_gate",
+                "long_deck_quality_gate_path": quality_gate_path,
+                "error_message": "Long-deck hard quality gate failed because audience-visible instruction leakage or matrix placeholder content was detected.",
+                "error_type": "failed_quality_gate",
+                "suggestion": "Fix instruction leakage or placeholder matrix content before rendering PPTX.",
+            }
+        )
+        report.run_report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        return report
+
+    def fail_if_render_called(*args, **kwargs):
+        raise AssertionError("render_long_deck_ir_to_pptx should not be called after quality gate failure")
+
+    monkeypatch.setattr(api, "run_long_deck_batch_generation", fake_run_long_deck_batch_generation)
+    monkeypatch.setattr(api, "render_long_deck_ir_to_pptx", fail_if_render_called)
 
 
 def test_health_endpoint(tmp_path: Path) -> None:
@@ -325,7 +389,9 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert "任务运行时间较长，请检查后端日志" in response.text
     assert "generating_batch_" in response.text
     assert "正在生成长 PPT：batch" in response.text
+    assert "正在执行长 PPT质量门禁" in response.text
     assert "正在渲染长 PPT PPTX" in response.text
+    assert "质量门禁失败" in response.text
     assert "currentBatch" in response.text
     assert "totalBatches" in response.text
     assert "completedBatches" in response.text
@@ -447,6 +513,7 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
         "generated_long_deck_plan",
         "generated_long_deck_ir",
         "generated_long_deck_qa",
+        "generated_long_deck_quality_gate",
         "generated_long_deck",
         "long_deck_run_report",
         "long_deck_render_report",
@@ -482,6 +549,39 @@ def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, mo
         "generated_long_deck",
         "long_deck_run_report",
     }
+
+
+def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict = {}
+    _install_fake_long_deck_quality_gate_failure(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+    artifact_names = {artifact["name"] for artifact in artifacts}
+
+    assert body["status"] == "failed_quality_gate"
+    assert body["accepted"] is False
+    assert body["current_stage"] == "failed_quality_gate"
+    assert "quality gate failed" in body["error_message"].lower()
+    assert {
+        "generated_long_deck_plan",
+        "generated_long_deck_ir",
+        "generated_long_deck_qa",
+        "generated_long_deck_quality_gate",
+        "long_deck_run_report",
+        "long_deck_request",
+        "batch_01_status",
+        "batch_01_deck_ir",
+        "batch_01_qa_report",
+        "batch_01_attempts",
+    } <= artifact_names
+    assert "generated_long_deck" not in artifact_names
+    assert "long_deck_render_report" not in artifact_names
 
 
 def test_cancel_endpoint_marks_running_long_deck_job(tmp_path: Path) -> None:
@@ -549,6 +649,34 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["current_stage"] == "complete_job"
     assert body["last_updated_at"] == body["updated_at"]
     assert body["elapsed_seconds"] >= 0
+
+
+def test_latest_long_deck_job_can_be_queried(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_long_deck_backend(monkeypatch)
+    client = _client(tmp_path)
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+
+    response = client.get("/api/jobs/latest?job_type=long_deck")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] == job_id
+    assert body["job_type"] == "long_deck"
+
+
+def test_latest_long_deck_job_excludes_short_deck_jobs(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_backend(monkeypatch)
+    _install_fake_long_deck_backend(monkeypatch)
+    client = _client(tmp_path)
+    client.post("/api/jobs", json=_job_payload())
+    long_job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+
+    response = client.get("/api/jobs/latest?job_type=long_deck")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] == long_job_id
+    assert body["job_type"] == "long_deck"
 
 
 def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_path: Path, monkeypatch) -> None:

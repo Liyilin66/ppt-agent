@@ -273,6 +273,7 @@ INDEX_HTML = """<!doctype html>
       const artifacts = document.getElementById("artifacts");
       const cancelJobButton = document.getElementById("cancelJobButton");
       const resumeJobButton = document.getElementById("resumeJobButton");
+      const lastLongDeckJobStorageKey = "ppt_agent_last_long_deck_job_id";
       let pollTimer = null;
       let activeJobId = null;
 
@@ -286,9 +287,9 @@ INDEX_HTML = """<!doctype html>
       }
 
       function updateActionButtons(job) {
-        const terminal = job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled";
+        const terminal = job.status === "succeeded" || job.status === "failed" || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate" || job.status === "cancelled" || job.status === "partial_cancelled";
         cancelJobButton.disabled = !(isLongDeckJob(job) && !terminal && !job.cancel_requested);
-        resumeJobButton.disabled = !(isLongDeckJob(job) && (job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled"));
+        resumeJobButton.disabled = !(isLongDeckJob(job) && (job.status === "failed" || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate" || job.status === "cancelled" || job.status === "partial_cancelled"));
       }
 
       const statusText = {
@@ -298,6 +299,8 @@ INDEX_HTML = """<!doctype html>
         running: "生成中",
         succeeded: "已完成",
         failed: "失败",
+        failed_quality_gate: "质量门禁失败",
+        partial_failed_quality_gate: "部分生成后未通过质量门禁",
         cancelled: "已取消",
         partial_cancelled: "部分完成后取消"
       };
@@ -319,7 +322,10 @@ INDEX_HTML = """<!doctype html>
         preparing_long_deck_plan: "正在准备长 PPT规划",
         merging_long_deck_ir: "正在合并长 PPT Deck IR",
         running_long_deck_qa: "正在执行长 PPT QA",
+        running_long_deck_quality_gate: "正在执行长 PPT质量门禁",
         rendering_long_deck_pptx: "正在渲染长 PPT PPTX",
+        failed_quality_gate: "未通过质量门禁",
+        partial_failed_quality_gate: "部分生成后未通过质量门禁",
         completed: "已完成",
         cancel_requested: "已请求取消，当前 batch 完成后停止",
         cancelled: "已取消",
@@ -377,6 +383,16 @@ INDEX_HTML = """<!doctype html>
         artifacts.replaceChildren();
       }
 
+      function rememberActiveJob(job) {
+        if (job && job.job_type === "long_deck") {
+          localStorage.setItem(lastLongDeckJobStorageKey, job.job_id);
+        }
+      }
+
+      function forgetActiveJob() {
+        localStorage.removeItem(lastLongDeckJobStorageKey);
+      }
+
       function buildPayload() {
         const patchPath = document.getElementById("patch_path").value.trim();
         const userRequirements = document.getElementById("user_requirements").value.trim();
@@ -431,8 +447,21 @@ INDEX_HTML = """<!doctype html>
         }
       }
 
+      async function loadLatestLongDeckJob() {
+        const response = await fetch("/api/jobs/latest?job_type=long_deck");
+        if (!response.ok) {
+          return null;
+        }
+        const body = await response.json();
+        if (!body.job_id) {
+          return null;
+        }
+        return body;
+      }
+
       async function pollJob(id) {
         const job = await requestJson(`/api/jobs/${id}`);
+        rememberActiveJob(job);
         setStatus(job.status, job.accepted, job.error_message || "");
         setProgress(job);
         if (job.error_message) {
@@ -444,6 +473,9 @@ INDEX_HTML = """<!doctype html>
           }
           pollTimer = null;
           setBusy(false);
+          if (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled") {
+            rememberActiveJob(job);
+          }
           await loadArtifacts(id);
           return true;
         }
@@ -469,6 +501,7 @@ INDEX_HTML = """<!doctype html>
             body: JSON.stringify(payload)
           });
           activeJobId = job.job_id;
+          rememberActiveJob(job);
           jobId.textContent = job.job_id;
           setStatus(job.status, job.accepted, job.error_message || "");
           const finished = await pollJob(job.job_id);
@@ -484,6 +517,44 @@ INDEX_HTML = """<!doctype html>
           errorMessage.textContent = error.message;
           setStatus("failed");
           setBusy(false);
+        }
+      }
+
+      async function restoreLastLongDeckJob() {
+        const rememberedId = localStorage.getItem(lastLongDeckJobStorageKey);
+        if (rememberedId) {
+          try {
+            activeJobId = rememberedId;
+            const job = await requestJson(`/api/jobs/${rememberedId}`);
+            jobId.textContent = job.job_id;
+            setStatus(job.status, job.accepted, job.error_message || "");
+            setProgress(job);
+            if (job.error_message) {
+              errorMessage.textContent = job.error_message;
+            }
+            await loadArtifacts(rememberedId);
+            return;
+          } catch (error) {
+            forgetActiveJob();
+          }
+        }
+
+        try {
+          const latest = await loadLatestLongDeckJob();
+          if (!latest) {
+            return;
+          }
+          activeJobId = latest.job_id;
+          rememberActiveJob(latest);
+          jobId.textContent = latest.job_id;
+          setStatus(latest.status, latest.accepted, latest.error_message || "");
+          setProgress(latest);
+          if (latest.error_message) {
+            errorMessage.textContent = latest.error_message;
+          }
+          await loadArtifacts(latest.job_id);
+        } catch (error) {
+          errorMessage.textContent = error.message;
         }
       }
 
@@ -515,6 +586,12 @@ INDEX_HTML = """<!doctype html>
           return;
         }
         await submitJob(`/api/long-deck-jobs/${activeJobId}/resume`, {});
+      });
+
+      window.addEventListener("load", () => {
+        restoreLastLongDeckJob().catch((error) => {
+          errorMessage.textContent = error.message;
+        });
       });
     </script>
   </body>
@@ -549,7 +626,16 @@ class CreateLongDeckJobRequest(StrictModel):
 
 class CreateJobResponse(StrictModel):
     job_id: str
-    status: Literal["pending", "running", "succeeded", "failed", "cancelled", "partial_cancelled"]
+    status: Literal[
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "failed_quality_gate",
+        "partial_failed_quality_gate",
+        "cancelled",
+        "partial_cancelled",
+    ]
 
 
 class JobResponse(JobRecord):
@@ -663,6 +749,7 @@ def _timeout_seconds_for_stage(stage: str | None) -> int:
             "preparing_long_deck_plan",
             "merging_long_deck_ir",
             "running_long_deck_qa",
+            "running_long_deck_quality_gate",
             "rendering_long_deck_pptx",
             "cancel_requested",
         }
@@ -685,6 +772,8 @@ def _long_deck_stage_from_progress(message: str, total_batches: int) -> str | No
         return "merging_long_deck_ir"
     if message == "Running long deck QA":
         return "running_long_deck_qa"
+    if message == "Running long deck hard quality gate":
+        return "running_long_deck_quality_gate"
     if message == "Long deck run succeeded":
         return "completed"
     return None
@@ -917,6 +1006,17 @@ def _run_long_deck_job(
             )
             return
 
+        if run_report.status in {"failed_quality_gate", "partial_failed_quality_gate"}:
+            store.update_job(
+                job_id,
+                status=run_report.status,
+                error_message=run_report.error_message or "Long deck quality gate failed before render.",
+                accepted=False,
+                qa_score=qa_score,
+                current_stage=run_report.status,
+            )
+            return
+
         if run_report.status != "succeeded":
             error_message = run_report.error_message or "Long deck generation did not finish successfully."
             store.update_job(
@@ -1079,6 +1179,14 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if cancelled is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         return JobResponse.model_validate(cancelled.model_dump())
+
+    @app.get("/api/jobs/latest", response_model=JobResponse)
+    def get_latest_job(job_type: str | None = None) -> JobResponse:
+        job = app.state.job_store.get_latest_job(job_type=job_type)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        job = _expire_stale_job(app.state.job_store, job)
+        return JobResponse.model_validate(job.model_dump())
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def get_job(job_id: str) -> JobResponse:
