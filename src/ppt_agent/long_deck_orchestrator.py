@@ -98,7 +98,7 @@ def _output_dir_for_request(request: LongDeckRunRequest, run_id: str) -> Path:
 
 
 def _batch_file(output_dir: Path, batch_id: str, suffix: str) -> Path:
-    return output_dir / f"batch_{batch_id}_{suffix}.json"
+    return output_dir / "batches" / f"{batch_id}_{suffix}.json"
 
 
 def _build_long_deck_plan_for_run(request: LongDeckRunRequest) -> tuple[DeckBrief, LongDeckPlan]:
