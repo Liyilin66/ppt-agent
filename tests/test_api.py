@@ -7,6 +7,8 @@ import ppt_agent.api as api
 from ppt_agent.generation import GenerationAttempt, GenerationResult
 from ppt_agent.job_store import JobStore
 from ppt_agent.load import load_deck, load_patch
+from ppt_agent.long_deck_orchestrator import BatchRunReport, LongDeckRunReport
+from ppt_agent.long_deck_render import LongDeckRenderReport
 from ppt_agent.patch import build_patchable_elements_report
 from ppt_agent.pipeline import BuildArtifact, BuildPipelineResult
 from ppt_agent.qa import analyze_deck
@@ -28,6 +30,19 @@ def _job_payload() -> dict:
         "theme_path": str(EXAMPLES_DIR / "theme.json"),
         "min_qa_score": 80,
         "max_attempts": 2,
+    }
+
+
+def _long_deck_payload() -> dict:
+    return {
+        "topic": "AI 产品经理如何设计 Agent 产品",
+        "audience": "准备进入 AI 产品岗位的 IT 硕士学生",
+        "slide_count": 30,
+        "language": "zh-CN",
+        "deck_type": "technical_product_share",
+        "user_requirements": "讲技术边界、用户需求分析、工作流设计、评估指标和落地风险。",
+        "batch_size": 2,
+        "max_batch_attempts": 1,
     }
 
 
@@ -128,6 +143,100 @@ def _install_fake_backend(monkeypatch, accepted: bool = True) -> None:
     monkeypatch.setattr(api, "run_build_pipeline", fake_run_build_pipeline)
 
 
+def _fake_long_deck_run_report(request) -> LongDeckRunReport:
+    output_dir = request.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    batch_dir = output_dir / "batches"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    deck = load_deck(EXAMPLES_DIR / "sample_slide_ir.json")
+    plan_path = output_dir / "generated_long_deck_plan.json"
+    merged_path = output_dir / "generated_long_deck_ir.json"
+    qa_path = output_dir / "generated_long_deck_qa.json"
+    run_report_path = output_dir / "long_deck_run_report.json"
+    batch_status_path = batch_dir / "batch_01_status.json"
+    batch_deck_path = batch_dir / "batch_01_deck_ir.json"
+    batch_qa_path = batch_dir / "batch_01_qa_report.json"
+    batch_attempts_path = batch_dir / "batch_01_attempts.json"
+
+    plan_path.write_text('{"sections":[],"batches":[]}\n', encoding="utf-8")
+    merged_path.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
+    qa_path.write_text('{"score":0.82,"passed":true}\n', encoding="utf-8")
+    batch_deck_path.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
+    batch_qa_path.write_text('{"score":82}\n', encoding="utf-8")
+    batch_attempts_path.write_text('{"attempts":[]}\n', encoding="utf-8")
+    batch_status_path.write_text('{"status":"succeeded"}\n', encoding="utf-8")
+
+    batch_report = BatchRunReport(
+        batch_id="batch_01",
+        start_slide=1,
+        end_slide=request.batch_size,
+        status="succeeded",
+        deck_ir_path=batch_deck_path,
+        qa_report_path=batch_qa_path,
+        attempts_path=batch_attempts_path,
+        status_path=batch_status_path,
+    )
+    report = LongDeckRunReport(
+        run_id="test-long-deck-run",
+        slide_count=request.slide_count,
+        batch_size=request.batch_size,
+        total_batches=15,
+        completed_batches=["batch_01"],
+        failed_batches=[],
+        status="succeeded",
+        batch_reports=[batch_report],
+        merged_deck_ir_path=merged_path,
+        long_deck_qa_path=qa_path,
+        long_deck_plan_path=plan_path,
+        run_report_path=run_report_path,
+    )
+    run_report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    return report
+
+
+def _install_fake_long_deck_backend(monkeypatch, captured: dict | None = None) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None):
+        if captured is not None:
+            captured["request"] = request
+            captured["model"] = model
+        if progress_logger is not None:
+            progress_logger("Starting long deck run: 30 slides, batch_size=2, total_batches=15")
+            progress_logger("Starting batch_01 slides 1-2")
+            progress_logger("Merging 15 batches")
+            progress_logger("Running long deck QA")
+            progress_logger("Long deck run succeeded")
+        return _fake_long_deck_run_report(request)
+
+    def fake_render_long_deck_ir_to_pptx(
+        input_deck_ir_path,
+        output_pptx_path,
+        report_path,
+        *,
+        theme_path,
+        assets_dir=None,
+    ):
+        if captured is not None:
+            captured["render_input"] = input_deck_ir_path
+            captured["render_output"] = output_pptx_path
+        Path(output_pptx_path).write_bytes(b"fake long deck pptx")
+        report = LongDeckRenderReport(
+            status="succeeded",
+            input_deck_ir_path=Path(input_deck_ir_path),
+            output_pptx_path=Path(output_pptx_path),
+            slide_count=30,
+            generated_at="2026-06-30T00:00:00+00:00",
+        )
+        Path(report_path).write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        return report
+
+    monkeypatch.setattr(api, "run_long_deck_batch_generation", fake_run_long_deck_batch_generation)
+    monkeypatch.setattr(api, "render_long_deck_ir_to_pptx", fake_render_long_deck_ir_to_pptx)
+
+
 def test_health_endpoint(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/health")
 
@@ -161,6 +270,24 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
         assert text in response.text
 
 
+def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> None:
+    response = _client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    for text in [
+        "长 PPT实验模式",
+        "当前支持 30 页",
+        "mini-batch generation",
+        "默认 batch_size=2",
+        "耗时较长",
+        "experimental",
+        "生成 30 页长 PPT",
+    ]:
+        assert text in response.text
+    assert 'id="longDeckForm"' in response.text
+    assert 'id="long_slide_count" name="slide_count" type="number" min="30" max="30" value="30"' in response.text
+
+
 def test_index_page_keeps_required_job_field_names(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/")
 
@@ -191,6 +318,9 @@ def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
     assert "已生成，但 Patch 需要修正" in response.text
     assert "已生成，但 QA 和 Patch 仍需修正" in response.text
     assert "任务运行时间较长，请检查后端日志" in response.text
+    assert "generating_batch_" in response.text
+    assert "正在生成长 PPT：batch" in response.text
+    assert "正在渲染长 PPT PPTX" in response.text
 
 
 def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> None:
@@ -213,6 +343,15 @@ def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypa
     assert "OPENAI_API_KEY is not set" in response.json()["detail"]
 
 
+def test_create_long_deck_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = _client(tmp_path).post("/api/long-deck-jobs", json=_long_deck_payload())
+
+    assert response.status_code == 503
+    assert "OPENAI_API_KEY is not set" in response.json()["detail"]
+
+
 def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
     _install_fake_backend(monkeypatch)
 
@@ -222,6 +361,30 @@ def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
     body = response.json()
     assert body["job_id"]
     assert body["status"] == "pending"
+
+
+def test_create_long_deck_job_rejects_non_30_slide_count(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    response = _client(tmp_path).post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": 50},
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_long_deck_job_defaults_batch_size_to_two(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_long_deck_backend(monkeypatch, captured)
+    payload = _long_deck_payload()
+    payload.pop("batch_size")
+
+    response = _client(tmp_path).post("/api/long-deck-jobs", json=payload)
+
+    assert response.status_code == 202
+    assert captured["request"].batch_size == 2
+    assert captured["request"].slide_count == 30
 
 
 def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> None:
@@ -247,6 +410,58 @@ def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> No
     assert generation_request.user_requirements == "做一份中文课堂展示，提醒学术诚信风险。"
     assert generation_request.use_llm_brief is False
     assert generation_request.use_llm_plan is False
+
+
+def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+    artifact_names = {artifact["name"] for artifact in artifacts}
+
+    assert body["status"] == "succeeded"
+    assert body["accepted"] is True
+    assert body["qa_score"] == 82
+    assert body["current_stage"] == "completed"
+    assert captured["render_output"].name == "generated_long_deck.pptx"
+    assert {
+        "generated_long_deck_plan",
+        "generated_long_deck_ir",
+        "generated_long_deck_qa",
+        "generated_long_deck",
+        "long_deck_run_report",
+        "long_deck_render_report",
+        "batch_01_status",
+        "batch_01_deck_ir",
+        "batch_01_qa_report",
+        "batch_01_attempts",
+    } <= artifact_names
+
+    deck_ir_artifact = next(artifact for artifact in artifacts if artifact["name"] == "generated_long_deck_ir")
+    assert client.get(deck_ir_artifact["download_url"]).status_code == 200
+
+
+def test_long_deck_job_status_keeps_batch_stage_on_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None):
+        if progress_logger is not None:
+            progress_logger("Starting batch_01 slides 1-2")
+        raise RuntimeError("provider stopped")
+
+    monkeypatch.setattr(api, "run_long_deck_batch_generation", fake_run_long_deck_batch_generation)
+    client = _client(tmp_path)
+
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+
+    assert body["status"] == "failed"
+    assert body["current_stage"] == "generating_batch_01_of_15"
+    assert "provider stopped" in body["error_message"]
 
 
 def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:

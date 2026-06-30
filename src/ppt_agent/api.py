@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+import re
 import time
 from pathlib import Path
 from typing import Literal
@@ -15,6 +17,8 @@ from pydantic import Field
 
 from ppt_agent.generation import DeckGenerationRequest
 from ppt_agent.job_store import ArtifactRecord, JobRecord, JobStore
+from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunRequest, run_long_deck_batch_generation
+from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
@@ -23,7 +27,10 @@ from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODEL = "gpt-5.5"
 JOB_TIMEOUT_SECONDS = 600
+LONG_DECK_JOB_TIMEOUT_SECONDS = 3600
 LLM_TIMEOUT_SECONDS = 120
+DEFAULT_THEME_PATH = Path("examples/theme.json")
+DEFAULT_ASSETS_DIR = Path("examples")
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +75,13 @@ INDEX_HTML = """<!doctype html>
         border-radius: 8px;
         padding: 20px;
         margin-top: 18px;
+      }
+
+      .embedded-form {
+        background: transparent;
+        border: 0;
+        padding: 0;
+        margin-top: 0;
       }
 
       .grid {
@@ -188,6 +202,40 @@ INDEX_HTML = """<!doctype html>
       </form>
 
       <section>
+        <h2>长 PPT实验模式</h2>
+        <p>当前支持 30 页，使用 mini-batch generation，默认 batch_size=2。会生成 editable PPTX，但耗时较长。这是 experimental，不影响普通 8/10 页生成器。</p>
+        <form id="longDeckForm" class="embedded-form">
+          <div class="grid">
+            <label>
+              主题
+              <input id="long_topic" name="topic" required value="AI 产品经理如何设计 Agent 产品">
+            </label>
+            <label>
+              目标观众
+              <input id="long_audience" name="audience" required value="准备进入 AI 产品岗位的 IT 硕士学生">
+            </label>
+            <label>
+              页数
+              <input id="long_slide_count" name="slide_count" type="number" min="30" max="30" value="30" required>
+            </label>
+            <label>
+              batch_size
+              <input id="long_batch_size" name="batch_size" type="number" min="1" max="10" value="2" required>
+            </label>
+            <label>
+              最大 batch 尝试次数
+              <input id="long_max_batch_attempts" name="max_batch_attempts" type="number" min="1" max="3" value="1" required>
+            </label>
+          </div>
+          <label class="full">
+            长 PPT详细要求
+            <textarea id="long_user_requirements" name="user_requirements" required>中文技术产品分享，面向准备进入 AI 产品岗位的 IT 硕士学生。重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格像技术产品分享，不像营销材料。每页要有明确观点，避免空泛口号。长 PPT 要按章节推进，不要每 10 页重复开场。背景色极淡蓝绿色。PPT 最终需要可编辑。</textarea>
+          </label>
+          <button id="generateLongDeckButton" type="submit">生成 30 页长 PPT</button>
+        </form>
+      </section>
+
+      <section>
         <h2>任务状态</h2>
         <p>任务 ID：<span id="jobId">暂无</span></p>
         <p>状态：<span id="jobStatus">未开始</span></p>
@@ -205,7 +253,9 @@ INDEX_HTML = """<!doctype html>
 
     <script>
       const form = document.getElementById("jobForm");
+      const longDeckForm = document.getElementById("longDeckForm");
       const button = document.getElementById("generateButton");
+      const longDeckButton = document.getElementById("generateLongDeckButton");
       const jobId = document.getElementById("jobId");
       const jobStatus = document.getElementById("jobStatus");
       const currentStage = document.getElementById("currentStage");
@@ -217,6 +267,7 @@ INDEX_HTML = """<!doctype html>
 
       function setBusy(isBusy) {
         button.disabled = isBusy;
+        longDeckButton.disabled = isBusy;
       }
 
       const statusText = {
@@ -242,6 +293,11 @@ INDEX_HTML = """<!doctype html>
         render_pptx: "正在渲染 PPTX",
         apply_patch: "正在处理 Patch",
         save_artifacts: "正在保存文件",
+        preparing_long_deck_plan: "正在准备长 PPT规划",
+        merging_long_deck_ir: "正在合并长 PPT Deck IR",
+        running_long_deck_qa: "正在执行长 PPT QA",
+        rendering_long_deck_pptx: "正在渲染长 PPT PPTX",
+        completed: "已完成",
         complete_job: "正在完成任务"
       };
 
@@ -265,6 +321,10 @@ INDEX_HTML = """<!doctype html>
         const chunkMatch = /^generate_deck_chunk_(\\d+)_of_(\\d+)$/.exec(stage || "");
         if (chunkMatch) {
           return `正在生成 Deck：第 ${chunkMatch[1]}/${chunkMatch[2]} 组`;
+        }
+        const longBatchMatch = /^generating_batch_(\\d+)_of_(\\d+)$/.exec(stage || "");
+        if (longBatchMatch) {
+          return `正在生成长 PPT：batch ${longBatchMatch[1]}/${longBatchMatch[2]}`;
         }
         return stageText[stage] || stage || "暂无";
       }
@@ -301,6 +361,19 @@ INDEX_HTML = """<!doctype html>
           payload.user_requirements = userRequirements;
         }
         return payload;
+      }
+
+      function buildLongDeckPayload() {
+        return {
+          topic: document.getElementById("long_topic").value.trim(),
+          audience: document.getElementById("long_audience").value.trim(),
+          slide_count: Number(document.getElementById("long_slide_count").value),
+          language: "zh-CN",
+          deck_type: "technical_product_share",
+          user_requirements: document.getElementById("long_user_requirements").value.trim(),
+          batch_size: Number(document.getElementById("long_batch_size").value),
+          max_batch_attempts: Number(document.getElementById("long_max_batch_attempts").value)
+        };
       }
 
       async function requestJson(url, options) {
@@ -344,8 +417,7 @@ INDEX_HTML = """<!doctype html>
         return false;
       }
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
+      async function submitJob(url, payload) {
         if (pollTimer) {
           clearInterval(pollTimer);
         }
@@ -358,10 +430,10 @@ INDEX_HTML = """<!doctype html>
         clearArtifacts();
 
         try {
-          const job = await requestJson("/api/jobs", {
+          const job = await requestJson(url, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(buildPayload())
+            body: JSON.stringify(payload)
           });
           jobId.textContent = job.job_id;
           setStatus(job.status, job.accepted, job.error_message || "");
@@ -379,6 +451,16 @@ INDEX_HTML = """<!doctype html>
           setStatus("failed");
           setBusy(false);
         }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await submitJob("/api/jobs", buildPayload());
+      });
+
+      longDeckForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await submitJob("/api/long-deck-jobs", buildLongDeckPayload());
       });
     </script>
   </body>
@@ -398,6 +480,17 @@ class CreateJobRequest(StrictModel):
     min_qa_score: int = Field(default=80, ge=0, le=100)
     max_attempts: int = Field(default=2, ge=1)
     patch_path: str | None = Field(default=None, min_length=1)
+
+
+class CreateLongDeckJobRequest(StrictModel):
+    topic: str = Field(..., min_length=1)
+    audience: str = Field(..., min_length=1)
+    slide_count: Literal[30] = 30
+    language: str = Field(default="zh-CN", min_length=1)
+    deck_type: str = Field(default="technical_product_share", min_length=1)
+    user_requirements: str = Field(..., min_length=1)
+    batch_size: int = Field(default=2, ge=1, le=10)
+    max_batch_attempts: int = Field(default=1, ge=1, le=3)
 
 
 class CreateJobResponse(StrictModel):
@@ -423,7 +516,10 @@ class ArtifactListResponse(StrictModel):
 def _create_chat_model():
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model=os.getenv("OPENAI_MODEL", DEFAULT_MODEL))
+    kwargs = {"model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL)}
+    if os.getenv("OPENAI_BASE_URL"):
+        kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
+    return ChatOpenAI(**kwargs)
 
 
 def _artifact_response(artifact: ArtifactRecord) -> ArtifactResponse:
@@ -495,13 +591,72 @@ def _log_job_stage(
 
 
 def _expire_stale_job(store: JobStore, job: JobRecord) -> JobRecord:
-    if job.status not in {"pending", "running"} or job.elapsed_seconds <= JOB_TIMEOUT_SECONDS:
+    timeout_seconds = _timeout_seconds_for_stage(job.current_stage)
+    if job.status not in {"pending", "running"} or job.elapsed_seconds <= timeout_seconds:
         return job
 
     stage = job.current_stage or "unknown"
-    error_message = f"Job timed out after {JOB_TIMEOUT_SECONDS:g} seconds while running stage '{stage}'."
+    error_message = f"Job timed out after {timeout_seconds:g} seconds while running stage '{stage}'."
     store.update_job(job.job_id, status="failed", error_message=error_message, accepted=False)
     return store.get_job(job.job_id) or job
+
+
+def _timeout_seconds_for_stage(stage: str | None) -> int:
+    if stage and (
+        stage.startswith("generating_batch_")
+        or stage
+        in {
+            "preparing_long_deck_plan",
+            "merging_long_deck_ir",
+            "running_long_deck_qa",
+            "rendering_long_deck_pptx",
+        }
+    ):
+        return LONG_DECK_JOB_TIMEOUT_SECONDS
+    return JOB_TIMEOUT_SECONDS
+
+
+def _expected_long_deck_batches(payload: CreateLongDeckJobRequest) -> int:
+    return math.ceil(payload.slide_count / payload.batch_size)
+
+
+def _long_deck_stage_from_progress(message: str, total_batches: int) -> str | None:
+    if message.startswith("Starting long deck run:"):
+        return "preparing_long_deck_plan"
+    batch_match = re.match(r"^Starting batch_(\d+) slides ", message)
+    if batch_match:
+        return f"generating_batch_{batch_match.group(1)}_of_{total_batches}"
+    if message.startswith("Merging "):
+        return "merging_long_deck_ir"
+    if message == "Running long deck QA":
+        return "running_long_deck_qa"
+    if message == "Long deck run succeeded":
+        return "completed"
+    return None
+
+
+def _register_job_artifacts(store: JobStore, job_id: str, output_dir: Path) -> None:
+    for artifact_path in sorted(output_dir.rglob("*")):
+        if not artifact_path.is_file() or artifact_path.suffix.lower() not in {".json", ".pptx"}:
+            continue
+        kind: Literal["json", "pptx"] = "pptx" if artifact_path.suffix.lower() == ".pptx" else "json"
+        store.add_artifact(job_id, name=artifact_path.stem, kind=kind, path=artifact_path)
+
+
+def _read_long_deck_qa_score(path: Path | None) -> int | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        score = json.loads(path.read_text(encoding="utf-8")).get("score")
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(score, int | float):
+        return None
+    if 0 <= score <= 1:
+        return int(round(score * 100))
+    if 0 <= score <= 100:
+        return int(round(score))
+    return None
 
 
 def _run_job(
@@ -581,6 +736,111 @@ def _run_job(
         store.update_job(job_id, status="failed", error_message=error_message, accepted=False)
 
 
+def _run_long_deck_job(
+    store: JobStore,
+    jobs_root: Path,
+    job_id: str,
+    model,
+    payload: CreateLongDeckJobRequest,
+) -> None:
+    model_name = _model_name(model)
+    total_batches = _expected_long_deck_batches(payload)
+    output_dir = jobs_root / job_id
+    store.update_job(job_id, status="running", current_stage="preparing_long_deck_plan")
+
+    def progress_logger(message: str) -> None:
+        current_stage = _long_deck_stage_from_progress(message, total_batches)
+        if current_stage is not None:
+            store.update_progress(job_id, current_stage=current_stage)
+        logger.info(
+            "long_deck_job_stage %s",
+            json.dumps(
+                {
+                    "job_id": job_id,
+                    "message": message,
+                    "current_stage": current_stage,
+                    "model_name": model_name,
+                    "slide_count": payload.slide_count,
+                    "batch_size": payload.batch_size,
+                    "total_batches": total_batches,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    try:
+        run_report: LongDeckRunReport = run_long_deck_batch_generation(
+            LongDeckRunRequest(
+                topic=payload.topic,
+                audience=payload.audience,
+                slide_count=payload.slide_count,
+                language=payload.language,
+                deck_type=payload.deck_type,
+                user_requirements=payload.user_requirements,
+                batch_size=payload.batch_size,
+                max_batch_attempts=payload.max_batch_attempts,
+                output_dir=output_dir,
+            ),
+            model,
+            progress_logger=progress_logger,
+        )
+
+        render_report: LongDeckRenderReport | None = None
+        if run_report.merged_deck_ir_path is not None and run_report.status == "succeeded":
+            store.update_progress(job_id, current_stage="rendering_long_deck_pptx")
+            render_report = render_long_deck_ir_to_pptx(
+                run_report.merged_deck_ir_path,
+                output_dir / "generated_long_deck.pptx",
+                output_dir / "long_deck_render_report.json",
+                theme_path=DEFAULT_THEME_PATH,
+                assets_dir=DEFAULT_ASSETS_DIR,
+            )
+
+        _register_job_artifacts(store, job_id, output_dir)
+
+        qa_score = _read_long_deck_qa_score(run_report.long_deck_qa_path)
+        if run_report.status != "succeeded":
+            error_message = run_report.error_message or "Long deck generation did not finish successfully."
+            store.update_job(
+                job_id,
+                status="failed",
+                error_message=error_message,
+                accepted=False,
+                qa_score=qa_score,
+            )
+            return
+
+        if render_report is None or render_report.status != "succeeded":
+            error_message = (
+                render_report.error_message
+                if render_report is not None
+                else "Long deck render report was not produced."
+            )
+            store.update_job(
+                job_id,
+                status="failed",
+                error_message=error_message,
+                accepted=False,
+                qa_score=qa_score,
+            )
+            return
+
+        store.update_job(
+            job_id,
+            status="succeeded",
+            error_message=None,
+            accepted=True,
+            qa_score=qa_score,
+            current_stage="completed",
+        )
+    except Exception as exc:  # Keep partial long-deck artifacts inspectable.
+        error_message = sanitize_error_message(exc)
+        logger.error("long_deck_job_failed job_id=%s error=%s", job_id, error_message)
+        if output_dir.exists():
+            _register_job_artifacts(store, job_id, output_dir)
+        store.update_job(job_id, status="failed", error_message=error_message, accepted=False)
+
+
 def create_app(data_dir: str | Path | None = None, store: JobStore | None = None) -> FastAPI:
     app = FastAPI(title="ppt-agent API")
     root = Path(data_dir) if data_dir is not None else Path(os.getenv("PPT_AGENT_DATA_DIR", DEFAULT_DATA_DIR))
@@ -626,6 +886,32 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         with observed_stage(create_stage_observer, "create_job"):
             pass
         background_tasks.add_task(_run_job, app.state.job_store, app.state.jobs_root, job.job_id, model, payload)
+        return CreateJobResponse(job_id=job.job_id, status=job.status)
+
+    @app.post("/api/long-deck-jobs", response_model=CreateJobResponse, status_code=202)
+    def create_long_deck_job(
+        payload: CreateLongDeckJobRequest,
+        background_tasks: BackgroundTasks,
+    ) -> CreateJobResponse:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+
+        try:
+            model = _create_chat_model()
+        except Exception as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
+
+        job = app.state.job_store.create_job()
+        app.state.job_store.update_progress(job.job_id, current_stage="preparing_long_deck_plan")
+        background_tasks.add_task(
+            _run_long_deck_job,
+            app.state.job_store,
+            app.state.jobs_root,
+            job.job_id,
+            model,
+            payload,
+        )
         return CreateJobResponse(job_id=job.job_id, status=job.status)
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
