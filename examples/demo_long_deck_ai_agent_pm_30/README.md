@@ -1,6 +1,6 @@
 # 30-page long deck IR dry run
 
-This demo verifies the long-deck batch path for a 30-slide AI product manager deck. It is a dry run for Deck IR artifacts only.
+This demo verifies the long-deck batch path for a 30-slide AI product manager deck, then renders the stitched Deck IR to editable PPTX offline.
 
 It exercises:
 
@@ -9,14 +9,15 @@ It exercises:
 - per-batch validation and status files
 - deterministic batch merge into one long Deck IR
 - cross-batch long-deck QA
+- offline PPTX rendering from the already-generated Deck IR
 
-It does not render PPTX in this stage.
+The batch run calls the model. The render step does not call the model and does not require `OPENAI_API_KEY`.
 
-## Run
+## Run Dry Run
 
 ```bash
 export OPENAI_API_KEY="..."
-uv run python scripts/run_long_deck_demo.py
+uv run python scripts/run_long_deck_demo.py --batch-size 2
 ```
 
 The demo defaults to `batch_size=2`, so a 30-slide run produces 15 mini-batches. This keeps each model request small enough to avoid common proxy or Cloudflare 120-second read timeout limits. `batch_size=3` or `batch_size=5` may be faster, but they are more likely to timeout behind a proxy. If you use the official API or a more stable backend, you can try a larger batch size.
@@ -41,6 +42,29 @@ By default it writes:
 examples/demo_long_deck_ai_agent_pm_30/output/
 ```
 
+## Render PPTX
+
+After the dry run succeeds, render the stitched Deck IR to editable PPTX:
+
+```bash
+uv run python scripts/render_long_deck_demo.py
+```
+
+The render script reads:
+
+```text
+examples/demo_long_deck_ai_agent_pm_30/output/generated_long_deck_ir.json
+```
+
+By default it writes:
+
+```text
+examples/demo_long_deck_ai_agent_pm_30/output/generated_long_deck.pptx
+examples/demo_long_deck_ai_agent_pm_30/output/long_deck_render_report.json
+```
+
+This remains a local demo path, not a Web UI long-PPT entrypoint.
+
 ## Artifacts
 
 Expected output shape:
@@ -50,6 +74,8 @@ output/
   generated_long_deck_plan.json
   generated_long_deck_ir.json
   generated_long_deck_qa.json
+  generated_long_deck.pptx
+  long_deck_render_report.json
   long_deck_run_report.json
   batches/
     batch_01_deck_ir.json
@@ -86,6 +112,10 @@ output/
 `generated_long_deck_qa.json` is the deterministic cross-batch QA report.
 
 Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sections that may read thin, but they are not schema validation failures and do not block artifact generation.
+
+`generated_long_deck.pptx` is the editable PowerPoint rendered from the stitched Deck IR.
+
+`long_deck_render_report.json` records render status, input/output paths, slide count, timestamp, warnings, and any render error.
 
 `long_deck_run_report.json` is the run-level checkpoint summary.
 
