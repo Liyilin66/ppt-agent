@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
 from ppt_agent.layouts import is_template_layout
@@ -88,6 +90,8 @@ def _apply_text_style(run, style: TextStyle) -> None:
 def _write_text_to_shape(shape, text: str, style: TextStyle) -> None:
     text_frame = shape.text_frame
     text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
     lines = text.split("\n")
     for index, line in enumerate(lines):
@@ -226,7 +230,60 @@ def _title_and_body_texts(deck_slide) -> tuple[str, list[str]]:
     return title, body
 
 
+def _text_length_score(text: str) -> int:
+    cjk_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    non_cjk_chars = sum(1 for char in text if not char.isspace()) - cjk_chars
+    return cjk_chars + non_cjk_chars
+
+
+def _split_overloaded_body_text(text: str, slot_count: int) -> list[str]:
+    # This is a render-time safety pass, not semantic rewriting. The aim is to
+    # keep one oversized body from monopolizing all cards in a grid layout.
+    lines = [
+        line.strip(" -•\t")
+        for line in text.splitlines()
+        if line.strip(" -•\t")
+    ]
+    if len(lines) >= slot_count:
+        return lines[:slot_count]
+
+    sentence_parts = [
+        part.strip(" -•\t")
+        for part in re.split(r"[。；;]\s*", text)
+        if part.strip(" -•\t")
+    ]
+    if len(sentence_parts) >= slot_count:
+        return sentence_parts[:slot_count]
+
+    comma_parts = [
+        part.strip(" -•\t")
+        for part in re.split(r"[，,、]\s*", text)
+        if part.strip(" -•\t")
+    ]
+    if len(comma_parts) >= slot_count:
+        return comma_parts[:slot_count]
+
+    return lines or sentence_parts or comma_parts
+
+
+def _rebalance_body_texts(body_texts: list[str], slot_count: int) -> list[str]:
+    cleaned = [text for text in body_texts if text.strip()]
+    if slot_count <= 1 or len(cleaned) != 1:
+        return body_texts
+
+    only_text = cleaned[0]
+    if _text_length_score(only_text) < 60:
+        return body_texts
+
+    split_items = _split_overloaded_body_text(only_text, slot_count)
+    if len(split_items) < 2:
+        return body_texts
+
+    return split_items[:slot_count]
+
+
 def _slot_texts(body_texts: list[str], slot_count: int, fallback: str = "") -> list[str]:
+    body_texts = _rebalance_body_texts(body_texts, slot_count)
     slots = body_texts[:slot_count]
     if len(body_texts) > slot_count:
         slots[-1] = slots[-1] + "\n" + "\n".join(body_texts[slot_count:])
@@ -278,7 +335,9 @@ def _short_phrase(text: str, max_chars: int) -> str:
             break
         words.append(word)
 
-    return " ".join(words)
+    if words:
+        return " ".join(words)
+    return normalized[:max_chars].rstrip()
 
 
 def _safe_text(text: str, max_chars: int) -> str:
@@ -288,6 +347,15 @@ def _safe_text(text: str, max_chars: int) -> str:
     if max_chars <= 3:
         return normalized[:max_chars]
     return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _shrink_font_size_for_text(text: str, base_size_pt: float, *, min_size_pt: float, medium: int, long: int) -> float:
+    length_score = _text_length_score(text)
+    if length_score > long:
+        return min_size_pt
+    if length_score > medium:
+        return max(min_size_pt, base_size_pt - 1.8)
+    return base_size_pt
 
 
 def _keywords_from_title(title: str) -> list[str]:
@@ -369,14 +437,14 @@ def _strip_leading_index(text: str) -> str:
 
 def _action_fallback(deck: Deck, heading: str) -> str:
     if _is_english_language(deck):
-        return "Turn this point into a concrete owner, boundary, and next step."
+        return "Define one owner, boundary, and review checkpoint."
     if "边界" in heading:
         return "明确 Agent 能做、不能做、必须确认什么。"
     if "闭环" in heading or "工作流" in heading:
         return "把任务拆成输入、执行、校验、回滚和交付。"
     if "风险" in heading or "指标" in heading:
         return "用成功率、接管率和错误成本判断是否值得落地。"
-    return "把这一点转化为明确的下一步行动。"
+    return "先列出 Agent 不允许自动执行的动作。"
 
 
 def _action_pairs_from_body(body_texts: list[str], deck: Deck, limit: int = 3) -> list[tuple[str, str]]:
@@ -461,6 +529,25 @@ def _render_heading_body_card(
     body_size_pt: float = 13.5,
 ) -> None:
     heading, body = _split_heading_body(text)
+    # Clamp heading/body length and font size before placing text into a
+    # fixed-size card. The renderer should fail soft here, not overflow.
+    heading = _safe_text(_short_phrase(heading, 44), 44)
+    body_limit = 68 if height <= 1.35 else 96 if height <= 2.0 else 128
+    body = _safe_text(body, body_limit)
+    heading_size_pt = _shrink_font_size_for_text(
+        heading,
+        heading_size_pt,
+        min_size_pt=12.0,
+        medium=24,
+        long=36,
+    )
+    body_size_pt = _shrink_font_size_for_text(
+        body,
+        body_size_pt,
+        min_size_pt=8.8,
+        medium=48,
+        long=76,
+    )
     accent = accent_color or theme.colors.primary
     padding_x = 0.24
 
@@ -1065,8 +1152,8 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
         style=_theme_text_style(theme, font_size_pt=9.2, color=theme.colors.primary, bold=True),
     )
     for x, heading, accent, label in [
-        (table_x + dimension_width, left_heading, theme.colors.primary, _surface_label(deck, "Option A", "方案 A")),
-        (table_x + dimension_width + column_width, right_heading, theme.colors.secondary, _surface_label(deck, "Option B", "方案 B")),
+        (table_x + dimension_width, left_heading, theme.colors.primary, _surface_label(deck, "Baseline", "基准侧")),
+        (table_x + dimension_width + column_width, right_heading, theme.colors.secondary, _surface_label(deck, "Agent", "Agent 侧")),
     ]:
         _add_textbox(
             slide,
@@ -1091,11 +1178,11 @@ def _render_comparison_matrix_template(slide, deck_slide, deck: Deck, theme: The
     right_points = _compact_lines(right_body, 5)
     row_count = max(3, min(5, max(len(left_points), len(right_points))))
     dimensions = [
-        _surface_label(deck, "Input / Output", "输入输出"),
-        _surface_label(deck, "State", "状态管理"),
-        _surface_label(deck, "Tool Use", "工具调用"),
-        _surface_label(deck, "Failure", "失败处理"),
-        _surface_label(deck, "Product Focus", "产品重点"),
+        _surface_label(deck, "Decision 1", "判断点 1"),
+        _surface_label(deck, "Decision 2", "判断点 2"),
+        _surface_label(deck, "Decision 3", "判断点 3"),
+        _surface_label(deck, "Decision 4", "判断点 4"),
+        _surface_label(deck, "Decision 5", "判断点 5"),
     ]
     while len(left_points) < row_count:
         left_points.append("")
@@ -1310,7 +1397,7 @@ def _render_process_flow_template(slide, deck_slide, deck: Deck, theme: Theme, v
             )
             heading, body_text = _heading_body_with_fallback(
                 text,
-                _surface_label(deck, "Clarify the next action.", "明确下一步行动。"),
+                _surface_label(deck, "Set one checkpoint.", "设置一个校验点。"),
             )
             _add_textbox(
                 slide,
@@ -1426,8 +1513,8 @@ def _render_key_takeaway_template(slide, deck_slide, deck: Deck, theme: Theme, v
     takeaways = body[:4] if len(body) >= 2 else _slot_texts(body, 2, fallback=" ")
     fallback_explanation = _surface_label(
         deck,
-        "Turn this point into a concrete next action.",
-        "把这一点转化为明确的下一步行动。",
+        "Define one owner, boundary, and review checkpoint.",
+        "先列出 Agent 不允许自动执行的动作。",
     )
     main_heading, main_body = _heading_body_with_fallback(takeaways[0], fallback_explanation)
     action_items = [

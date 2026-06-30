@@ -389,6 +389,54 @@ def test_four_cards_renders_heading_and_body_as_editable_text(tmp_path: Path) ->
     assert "Choose high-value work" in editable_texts
 
 
+def test_four_cards_rebalances_one_overloaded_body_across_cards(tmp_path: Path) -> None:
+    theme = load_theme(EXAMPLES_DIR / "theme.json")
+    overloaded_text = (
+        "边界清单：先列禁止自动执行动作\n"
+        "权限确认：高风险工具必须人工确认\n"
+        "失败回退：异常时回到人工流程\n"
+        "上线指标：用接管率和错误成本判断"
+    )
+    deck = Deck.model_validate(
+        {
+            "deck_id": "four_cards_rebalance_demo",
+            "title": "Four Cards Rebalance Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_001",
+                    "title": "边界卡片",
+                    "layout": "four_cards",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "边界卡片",
+                        },
+                        {
+                            "element_id": "body",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.6},
+                            "text": overloaded_text,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    output_path = render_deck_to_pptx(deck, theme, tmp_path / "four_cards_rebalanced.pptx")
+    visible_texts = _visible_texts(Presentation(output_path))
+
+    assert overloaded_text not in visible_texts
+    assert "边界清单：先列禁止自动执行动作" in visible_texts
+    assert "权限确认：高风险工具必须人工确认" in visible_texts
+    assert "失败回退：异常时回到人工流程" in visible_texts
+    assert "上线指标：用接管率和错误成本判断" in visible_texts
+
+
 def test_chinese_deck_uses_chinese_card_labels(tmp_path: Path) -> None:
     theme = load_theme(EXAMPLES_DIR / "theme.json")
     deck = Deck.model_validate(
@@ -589,8 +637,10 @@ def test_professional_layouts_render_distinct_editable_templates(tmp_path: Path)
 
     assert len(presentation.slides) == 4
     visible_texts = _visible_texts(presentation)
-    assert "Option A" in visible_texts
-    assert "Option B" in visible_texts
+    assert "Baseline" in visible_texts
+    assert "Agent" in visible_texts
+    assert "Option A" not in visible_texts
+    assert "Option B" not in visible_texts
     assert "01" in visible_texts
     assert "Risk" in visible_texts
     assert "Mitigation" in visible_texts
@@ -755,10 +805,14 @@ def test_comparison_matrix_renders_aligned_rows(tmp_path: Path) -> None:
     visible_texts = _visible_texts(Presentation(output_path))
 
     assert "Dimension" in visible_texts
-    assert "Input / Output" in visible_texts
-    assert "State" in visible_texts
-    assert "Option A" in visible_texts
-    assert "Option B" in visible_texts
+    assert "Decision 1" in visible_texts
+    assert "Decision 2" in visible_texts
+    assert "Baseline" in visible_texts
+    assert "Agent" in visible_texts
+    assert "Input / Output" not in visible_texts
+    assert "State" not in visible_texts
+    assert "Option A" not in visible_texts
+    assert "Option B" not in visible_texts
     assert any("workflow ownership" in text for text in visible_texts)
 
 
@@ -944,4 +998,5 @@ def test_key_takeaway_renders_fallback_explanations(tmp_path: Path) -> None:
     visible_texts = _visible_texts(Presentation(output_path))
 
     assert "Keep human checkpoints" in visible_texts
-    assert "Turn this point into a concrete next action." in visible_texts
+    assert "Define one owner, boundary, and review checkpoint." in visible_texts
+    assert "Turn this point into a concrete next action." not in visible_texts

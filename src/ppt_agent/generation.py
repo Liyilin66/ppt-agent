@@ -54,6 +54,9 @@ ANTI_GENERIC_FEEDBACK_CODES = {
     "prompt_keyword_repetition",
     "weak_takeaway",
     "instruction_leakage",
+    "risk_matrix_placeholder",
+    "comparison_matrix_placeholder",
+    "placeholder_content",
     "risk_matrix_malformed_row",
     "card_body_contains_subheadings",
     "metric_explanation_contains_risk_governance",
@@ -94,8 +97,20 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
         "Compress the slide to one core judgment, remove secondary concepts, and keep body text "
         "within the layout content budget."
     ),
+    "slide_total_text_too_dense": (
+        "Reduce total slide copy; keep one core judgment and move secondary detail to another slide."
+    ),
+    "slide_title_too_long": (
+        "Shorten the slide title so it can render inside the slide without spilling past the edge."
+    ),
+    "text_element_too_long": (
+        "Split or shorten oversized text elements before rendering; do not pack long prose into one box."
+    ),
     "card_body_too_long": (
         "Shorten card, metric, step, table-cell, or action-item body text to one compact sentence."
+    ),
+    "card_content_imbalance": (
+        "Distribute content evenly across cards; do not put most of the slide body into one card while others are empty."
     ),
     "paragraph_like_slide": (
         "Rewrite report-style paragraphs into short presentation phrases; one sentence should "
@@ -124,6 +139,15 @@ QA_FEEDBACK_FIX_INSTRUCTIONS = {
     ),
     "instruction_leakage": (
         "Remove prompt-like meta language and rewrite it as audience-facing slide content."
+    ),
+    "risk_matrix_placeholder": (
+        "Replace risk/impact/mitigation placeholders with concrete risk events, consequences, and mitigation actions."
+    ),
+    "comparison_matrix_placeholder": (
+        "Replace comparison placeholders such as Option A/B or generic matrix dimensions with real comparison sides and judgments."
+    ),
+    "placeholder_content": (
+        "Replace template placeholder text with specific audience-facing content."
     ),
     "risk_matrix_malformed_row": (
         "Rewrite each risk-matrix row as risk, impact, and mitigation; use a specific risk event and a concrete mitigation action."
@@ -343,6 +367,7 @@ def _slide_content_contract_rules() -> str:
 - Final slide content must be audience-facing content only.
 - Do not copy prompt instructions, planning rules, QA rules, or content contract language into slide text.
 - Never write slide text such as "把这一点转化为明确的下一步行动", "明确下一步行动", "本页必须", "该页需要", "内容合同", "核心判断必须", "可执行建议应该", "根据用户要求", or "将用户要求转化为".
+- Do not use placeholder-only matrix labels such as "方案 A", "方案 B", "risk", "impact", "mitigation", "输入输出", "状态管理", or "工具调用" as final slide content.
 - Slide Content Contract:
   - comparison_matrix:
     - Use real comparison dimensions, not abstract labels.
@@ -609,6 +634,11 @@ Batch generation rules:
 - Visual cards and backgrounds are handled by the deterministic renderer based on slide layout.
 - Each slide should express content using title, layout, and text elements.
 - If a visual structure is needed, choose an existing layout such as two_column, three_column, four_cards, metric_cards, comparison_matrix, process_flow, or risk_matrix instead of manually drawing shapes.
+- Keep text density safe for PPT rendering: concise title, one core judgment per slide, and short text elements instead of long paragraphs.
+- For card layouts, distribute content across cards; do not put most of the slide body into one long card while sibling cards are empty.
+- Do not use placeholder-only labels such as 方案 A, 方案 B, risk, impact, mitigation, 输入输出, 状态管理, or 工具调用 as matrix/table cell content.
+- Do not use the same content layout for 3 consecutive slides in a long deck batch when a suitable alternative layout is available.
+- Use different layout families for opening, concept, decision, workflow, metrics, risk, and closing content.
 
 Hard schema rules reused from short-deck generation:
 {_deck_schema_compliance_rules()}

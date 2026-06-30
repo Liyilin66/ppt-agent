@@ -1138,6 +1138,7 @@ def test_build_generation_prompt_forbids_instruction_leakage() -> None:
     assert "Final slide content must be audience-facing content only" in prompt
     assert "Do not copy prompt instructions, planning rules, QA rules, or content contract language into final slide text" in prompt
     assert "把这一点转化为明确的下一步行动" in prompt
+    assert "Do not use placeholder-only matrix labels" in prompt
 
 
 def test_build_batch_generation_prompt_includes_batch_range_and_context() -> None:
@@ -1211,6 +1212,19 @@ def test_build_batch_generation_prompt_forbids_shape_schema_leakage() -> None:
 
     assert "Do not output shape fields: shape_type, fill_color, line_color, stroke, radius, background, border" in prompt
     assert "instead of manually drawing shapes" in prompt
+
+
+def test_build_batch_generation_prompt_includes_layout_quality_guard() -> None:
+    long_plan = build_deterministic_long_deck_plan(_long_deck_request(30), batch_size=10)
+    batch_request = build_batch_generation_request(long_plan, "batch_01")
+
+    prompt = build_batch_generation_prompt(batch_request)
+
+    assert "Keep text density safe for PPT rendering" in prompt
+    assert "distribute content across cards" in prompt
+    assert "Do not use placeholder-only labels such as 方案 A, 方案 B, risk, impact, mitigation" in prompt
+    assert "Do not use the same content layout for 3 consecutive slides" in prompt
+    assert "Use different layout families for opening, concept, decision, workflow, metrics, risk, and closing content" in prompt
 
 
 def test_build_batch_generation_prompt_contains_valid_deck_json_example() -> None:

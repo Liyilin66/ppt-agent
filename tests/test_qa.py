@@ -546,6 +546,7 @@ def test_visual_preflight_warns_on_title_wrapping_risk() -> None:
     report = analyze_deck(deck)
 
     assert "title_wrapping_risk" in _issue_codes(report)
+    assert "slide_title_too_long" in _issue_codes(report)
 
 
 def test_content_style_warns_on_slide_text_too_dense() -> None:
@@ -561,6 +562,26 @@ def test_content_style_warns_on_slide_text_too_dense() -> None:
 
     assert issues
     assert issues[0].severity == "warning"
+    assert "slide_total_text_too_dense" in _issue_codes(report)
+    assert report.score >= 60
+
+
+def test_text_density_guard_warns_on_single_text_element_too_long() -> None:
+    deck = _deck_with_text_slide(
+        "two_column",
+        "边界判断",
+        [
+            (
+                "Agent 产品经理需要把模型不确定性、工具调用可靠性、权限范围、上下文限制、"
+                "失败回退、人工接管、日志审计、指标复盘和上线门槛全部解释清楚，"
+                "否则一页会像长文档而不是可讲的 PPT。"
+            )
+        ],
+    )
+
+    report = analyze_deck(deck)
+
+    assert "text_element_too_long" in _issue_codes(report)
     assert report.score >= 60
 
 
@@ -579,6 +600,30 @@ def test_content_style_warns_on_card_body_too_long() -> None:
 
     report = analyze_deck(deck)
     issues = [issue for issue in report.issues if issue.code == "card_body_too_long"]
+
+    assert issues
+    assert issues[0].severity == "warning"
+    assert issues[0].element_id == "body_1"
+
+
+def test_qa_warns_on_card_content_imbalance() -> None:
+    deck = _deck_with_text_slide(
+        "four_cards",
+        "边界判断",
+        [
+            (
+                "边界清单\n"
+                "把模型能力、工具调用、权限控制、失败回退、人工接管、日志审计和上线指标都塞进一张卡，"
+                "会让其他卡片空着，演讲时也没有清晰层次。"
+            ),
+            "试点",
+            "回退",
+            "复盘",
+        ],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "card_content_imbalance"]
 
     assert issues
     assert issues[0].severity == "warning"
@@ -700,6 +745,37 @@ def test_qa_warns_on_instruction_leakage() -> None:
     report = analyze_deck(deck)
 
     assert "instruction_leakage" in _issue_codes(report)
+    assert any(issue.code == "instruction_leakage" and issue.severity == "error" for issue in report.issues)
+    assert report.score > 0
+
+
+def test_qa_detects_risk_matrix_placeholders_as_errors() -> None:
+    deck = _deck_with_text_slide(
+        "risk_matrix",
+        "风险矩阵",
+        ["risk\nimpact\nmitigation"],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "risk_matrix_placeholder"]
+
+    assert issues
+    assert issues[0].severity == "error"
+    assert report.score > 0
+
+
+def test_qa_detects_comparison_matrix_placeholders_as_errors() -> None:
+    deck = _deck_with_text_slide(
+        "comparison_matrix",
+        "责任对比",
+        ["方案 A\n输入输出", "方案 B\n状态管理"],
+    )
+
+    report = analyze_deck(deck)
+    issues = [issue for issue in report.issues if issue.code == "comparison_matrix_placeholder"]
+
+    assert issues
+    assert all(issue.severity == "error" for issue in issues)
     assert report.score > 0
 
 

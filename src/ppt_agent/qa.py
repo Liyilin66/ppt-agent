@@ -29,7 +29,11 @@ VISUAL_PATTERN_LAYOUTS = {
 }
 CONTENT_STYLE_WARNING_CODES = {
     "slide_text_too_dense",
+    "slide_total_text_too_dense",
+    "slide_title_too_long",
+    "text_element_too_long",
     "card_body_too_long",
+    "card_content_imbalance",
     "paragraph_like_slide",
     "long_enumeration",
     "weak_slide_message",
@@ -40,6 +44,9 @@ CONTENT_STYLE_WARNING_CODES = {
     "weak_takeaway",
     "instruction_leakage",
     "risk_matrix_malformed_row",
+    "risk_matrix_placeholder",
+    "comparison_matrix_placeholder",
+    "placeholder_content",
     "card_body_contains_subheadings",
     "metric_explanation_contains_risk_governance",
     "closing_action_not_executable",
@@ -64,6 +71,29 @@ SLIDE_TEXT_BUDGETS = {
     "closing_slide": 190,
 }
 DEFAULT_SLIDE_TEXT_BUDGET = 300
+TITLE_TEXT_BUDGETS = {
+    "title_slide": 34,
+    "section_divider": 42,
+    "comparison_matrix": 42,
+    "process_flow": 40,
+    "risk_matrix": 42,
+    "key_takeaway": 46,
+    "closing_slide": 44,
+}
+DEFAULT_TITLE_TEXT_BUDGET = 46
+TEXT_ELEMENT_BUDGETS = {
+    "title_slide": 110,
+    "two_column": 72,
+    "three_column": 105,
+    "four_cards": 68,
+    "metric_cards": 76,
+    "comparison_matrix": 90,
+    "process_flow": 72,
+    "risk_matrix": 78,
+    "key_takeaway": 105,
+    "closing_slide": 84,
+}
+DEFAULT_TEXT_ELEMENT_BUDGET = 120
 BODY_TEXT_BUDGETS = {
     "comparison_matrix": 42,
     "process_flow": 36,
@@ -174,6 +204,25 @@ INSTRUCTION_LEAKAGE_PHRASES = {
     "产品经理要清楚 AI Agent 需要理解的技术边界",
     "将用户要求转化为",
     "根据用户要求",
+}
+COMPARISON_MATRIX_PLACEHOLDERS = {
+    "方案 A",
+    "方案 B",
+    "Option A",
+    "Option B",
+}
+RISK_MATRIX_PLACEHOLDERS = {
+    "risk",
+    "impact",
+    "mitigation",
+}
+GENERIC_MATRIX_PLACEHOLDERS = {
+    "输入输出",
+    "状态管理",
+    "工具调用",
+    "Input / Output",
+    "State",
+    "Tool Use",
 }
 RISK_GOVERNANCE_TERMS = {
     "越权操作",
@@ -537,6 +586,208 @@ def _body_segments_for_budget(layout: str, text: str) -> list[str]:
     return lines
 
 
+def _cell_like_segments(text: str) -> list[str]:
+    segments: list[str] = []
+    raw_lines = [line.strip(" -•\t") for line in text.splitlines() if line.strip(" -•\t")]
+    if not raw_lines and text.strip():
+        raw_lines = [text.strip()]
+    for raw_line in raw_lines:
+        split_parts = raw_line.split("|") if "|" in raw_line else [raw_line]
+        for part in split_parts:
+            cleaned = part.strip(" \t-•:：,，.。;；")
+            if cleaned:
+                segments.append(cleaned)
+    return segments
+
+
+def _normalized_placeholder_segment(text: str) -> str:
+    return re.sub(r"[\s_/\-／]+", "", text.strip(" \t-•:：,，.。;；").lower())
+
+
+def _placeholder_hits(text: str, placeholders: set[str], *, allow_prefix: bool = False) -> list[str]:
+    normalized_placeholders = {
+        _normalized_placeholder_segment(placeholder): placeholder
+        for placeholder in placeholders
+    }
+    hits: list[str] = []
+    for segment in _cell_like_segments(text):
+        normalized_segment = _normalized_placeholder_segment(segment)
+        if normalized_segment in normalized_placeholders:
+            hits.append(normalized_placeholders[normalized_segment])
+            continue
+        if allow_prefix:
+            for normalized_placeholder, placeholder in normalized_placeholders.items():
+                if normalized_segment.startswith(normalized_placeholder) and len(normalized_segment) <= (
+                    len(normalized_placeholder) + 8
+                ):
+                    hits.append(placeholder)
+    return _dedupe_text(hits)
+
+
+def _dedupe_text(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _append_text_density_guard_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        # Keep this heuristic separate from schema validation: the goal is to
+        # warn before renderer overflow, not to reject otherwise valid Deck IR.
+        title_length = _text_length_score(slide.title)
+        title_budget = TITLE_TEXT_BUDGETS.get(slide.layout, DEFAULT_TITLE_TEXT_BUDGET)
+        if title_length > title_budget:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="slide_title_too_long",
+                    message=(
+                        f"Slide '{slide.slide_id}' title length score {title_length} exceeds "
+                        f"safe title budget {title_budget}. Compress the title before rendering."
+                    ),
+                )
+            )
+
+        text_elements = _text_elements(slide)
+        total_chars = sum(_text_length_score(element.text) for element in text_elements)
+        total_budget = SLIDE_TEXT_BUDGETS.get(slide.layout, DEFAULT_SLIDE_TEXT_BUDGET)
+        if total_chars > total_budget:
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    code="slide_total_text_too_dense",
+                    message=(
+                        f"Slide '{slide.slide_id}' has total text length score {total_chars}, "
+                        f"above safe budget {total_budget} for layout '{slide.layout}'."
+                    ),
+                )
+            )
+
+        element_budget = TEXT_ELEMENT_BUDGETS.get(slide.layout, DEFAULT_TEXT_ELEMENT_BUDGET)
+        for element in _body_texts(slide):
+            length_score = _text_length_score(element.text)
+            if length_score <= element_budget:
+                continue
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    element_id=element.element_id,
+                    code="text_element_too_long",
+                    message=(
+                        f"Text element '{element.element_id}' on slide '{slide.slide_id}' has "
+                        f"length score {length_score}, above safe element budget {element_budget}."
+                    ),
+                )
+            )
+
+
+def _append_card_balance_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    expected_slots_by_layout = {
+        "two_column": 2,
+        "three_column": 3,
+        "four_cards": 4,
+        "metric_cards": 3,
+    }
+    for slide in deck.slides:
+        if slide.layout not in CARD_GRID_PATTERN_LAYOUTS:
+            continue
+        body_texts = _body_texts(slide)
+        if not body_texts:
+            continue
+        scores = [(_text_length_score(element.text), element.element_id) for element in body_texts]
+        longest_score, longest_element_id = max(scores, key=lambda item: item[0])
+        short_scores = [score for score, _element_id in scores if score <= 18]
+        sibling_scores = [score for score, element_id in scores if element_id != longest_element_id]
+        expected_slots = expected_slots_by_layout.get(slide.layout, len(scores))
+        if longest_score < 55:
+            continue
+        if len(scores) < expected_slots or len(short_scores) >= max(1, len(scores) - 1) or (
+            sibling_scores and longest_score >= max(sibling_scores) * 2.5
+        ):
+            issues.append(
+                QAIssue(
+                    severity="warning",
+                    slide_id=slide.slide_id,
+                    element_id=longest_element_id,
+                    code="card_content_imbalance",
+                    message=(
+                        f"Slide '{slide.slide_id}' puts most card content into '{longest_element_id}' "
+                        "while sibling cards are empty or much shorter. Split the content across cards."
+                    ),
+                )
+            )
+
+
+def _append_placeholder_guard_issues(deck: Deck, issues: list[QAIssue]) -> None:
+    for slide in deck.slides:
+        for element in _body_texts(slide):
+            generic_hits = _placeholder_hits(element.text, GENERIC_MATRIX_PLACEHOLDERS)
+
+            if slide.layout == "comparison_matrix":
+                # Matrix placeholders are harder failures than generic wording
+                # because they leak template labels directly into the audience view.
+                hits = _dedupe_text(
+                    generic_hits
+                    + _placeholder_hits(element.text, COMPARISON_MATRIX_PLACEHOLDERS, allow_prefix=True)
+                )
+                if hits:
+                    issues.append(
+                        QAIssue(
+                            severity="error",
+                            slide_id=slide.slide_id,
+                            element_id=element.element_id,
+                            code="comparison_matrix_placeholder",
+                            message=(
+                                f"Comparison matrix element '{element.element_id}' uses placeholder "
+                                f"label(s): {', '.join(hits[:3])}. Name the actual comparison sides "
+                                "and judgment rows."
+                            ),
+                        )
+                    )
+                continue
+
+            if slide.layout == "risk_matrix":
+                hits = _dedupe_text(generic_hits + _placeholder_hits(element.text, RISK_MATRIX_PLACEHOLDERS))
+                if hits:
+                    issues.append(
+                        QAIssue(
+                            severity="error",
+                            slide_id=slide.slide_id,
+                            element_id=element.element_id,
+                            code="risk_matrix_placeholder",
+                            message=(
+                                f"Risk matrix row '{element.element_id}' contains placeholder "
+                                f"cell(s): {', '.join(hits[:3])}. Fill risk, impact, and mitigation "
+                                "with concrete content."
+                            ),
+                        )
+                    )
+                continue
+
+            if generic_hits:
+                issues.append(
+                    QAIssue(
+                        severity="warning",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="placeholder_content",
+                        message=(
+                            f"Text element '{element.element_id}' on slide '{slide.slide_id}' contains "
+                            f"template placeholder term(s): {', '.join(generic_hits[:3])}. "
+                            "Replace placeholders with audience-facing content."
+                        ),
+                    )
+                )
+
+
 def _punctuation_count(text: str) -> int:
     return sum(text.count(marker) for marker in ("，", "、", "；", "。", ",", ";", "."))
 
@@ -743,7 +994,7 @@ def _append_anti_generic_issues(deck: Deck, issues: list[QAIssue]) -> None:
         if instruction_hits:
             issues.append(
                 QAIssue(
-                    severity="warning",
+                    severity="error",
                     slide_id=slide.slide_id,
                     code="instruction_leakage",
                     message=(
@@ -1051,6 +1302,9 @@ def analyze_deck(deck: Deck, theme: Theme | None = None) -> QAReport:
     _append_layout_contract_issues(deck, issues)
     _append_risk_matrix_semantic_issues(deck, issues)
     _append_visual_preflight_issues(deck, issues)
+    _append_text_density_guard_issues(deck, issues)
+    _append_card_balance_issues(deck, issues)
+    _append_placeholder_guard_issues(deck, issues)
     _append_content_style_issues(deck, issues)
     _append_anti_generic_issues(deck, issues)
 
