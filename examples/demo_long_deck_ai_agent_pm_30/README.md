@@ -65,6 +65,26 @@ examples/demo_long_deck_ai_agent_pm_30/output/long_deck_render_report.json
 
 This remains a local demo path, not a Web UI long-PPT entrypoint.
 
+## Alternative rendering experiment: PPT Master Adapter
+
+The legacy renderer is still available, but this spike can export the stitched Deck IR as a Markdown source document for a manual ppt-master quality experiment.
+
+1. Generate the long deck IR with ppt-agent first.
+2. Run:
+
+```bash
+uv run python scripts/export_to_ppt_master.py
+```
+
+3. The adapter writes:
+
+```text
+examples/demo_long_deck_ai_agent_pm_30/output/ppt_master_source.md
+```
+
+4. Use that Markdown file as the source document in ppt-master manually.
+5. This project does not currently embed ppt-master, copy its source code, or guarantee the quality of ppt-master output.
+
 ## Artifacts
 
 Expected output shape:
@@ -75,6 +95,7 @@ output/
   generated_long_deck_ir.json
   generated_long_deck_qa.json
   generated_long_deck.pptx
+  ppt_master_source.md
   long_deck_render_report.json
   long_deck_run_report.json
   batches/
@@ -114,6 +135,8 @@ output/
 Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sections that may read thin, but they are not schema validation failures and do not block artifact generation.
 
 `generated_long_deck.pptx` is the editable PowerPoint rendered from the stitched Deck IR.
+
+`ppt_master_source.md` is a source Markdown outline for a manual ppt-master adapter experiment. It is generated from the already-validated Deck IR and does not call the model or run ppt-master.
 
 `long_deck_render_report.json` records render status, input/output paths, slide count, timestamp, warnings, and any render error.
 

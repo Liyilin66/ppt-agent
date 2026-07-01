@@ -16,11 +16,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import Field
 
 from ppt_agent.generation import DeckGenerationRequest
-from ppt_agent.job_store import ArtifactRecord, JobRecord, JobStore
+from ppt_agent.job_store import ArtifactKind, ArtifactRecord, JobRecord, JobStore
 from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunRequest, run_long_deck_batch_generation
 from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
+from ppt_agent.ppt_master_adapter import export_deck_ir_to_ppt_master_markdown
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
@@ -645,7 +646,7 @@ class JobResponse(JobRecord):
 class ArtifactResponse(StrictModel):
     artifact_id: str
     name: str
-    kind: Literal["json", "pptx"]
+    kind: ArtifactKind
     download_url: str
 
 
@@ -781,9 +782,10 @@ def _long_deck_stage_from_progress(message: str, total_batches: int) -> str | No
 
 def _register_job_artifacts(store: JobStore, job_id: str, output_dir: Path) -> None:
     for artifact_path in sorted(output_dir.rglob("*")):
-        if not artifact_path.is_file() or artifact_path.suffix.lower() not in {".json", ".pptx"}:
+        if not artifact_path.is_file() or artifact_path.suffix.lower() not in {".json", ".pptx", ".md"}:
             continue
-        kind: Literal["json", "pptx"] = "pptx" if artifact_path.suffix.lower() == ".pptx" else "json"
+        suffix = artifact_path.suffix.lower()
+        kind: ArtifactKind = "pptx" if suffix == ".pptx" else "md" if suffix == ".md" else "json"
         store.add_artifact(job_id, name=artifact_path.stem, kind=kind, path=artifact_path)
 
 
@@ -983,6 +985,10 @@ def _run_long_deck_job(
 
         render_report: LongDeckRenderReport | None = None
         if run_report.merged_deck_ir_path is not None and run_report.status == "succeeded":
+            export_deck_ir_to_ppt_master_markdown(
+                json.loads(run_report.merged_deck_ir_path.read_text(encoding="utf-8")),
+                output_dir / "ppt_master_source.md",
+            )
             store.update_progress(job_id, current_stage="rendering_long_deck_pptx")
             render_report = render_long_deck_ir_to_pptx(
                 run_report.merged_deck_ir_path,

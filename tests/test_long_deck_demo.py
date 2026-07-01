@@ -30,6 +30,10 @@ def _load_render_module():
     return _load_script_module("render_long_deck_demo.py")
 
 
+def _load_export_module():
+    return _load_script_module("export_to_ppt_master.py")
+
+
 def test_long_deck_demo_input_exists_and_requests_30_slides() -> None:
     module = _load_runner_module()
     request = module.load_long_deck_run_request()
@@ -102,6 +106,50 @@ def test_long_deck_render_script_default_paths() -> None:
     assert module.DEFAULT_INPUT_PATH == output_dir / "generated_long_deck_ir.json"
     assert module.DEFAULT_OUTPUT_PATH == output_dir / "generated_long_deck.pptx"
     assert module.DEFAULT_REPORT_PATH == output_dir / "long_deck_render_report.json"
+
+
+def test_ppt_master_export_script_default_paths() -> None:
+    module = _load_export_module()
+    output_dir = _repo_root() / "examples" / "demo_long_deck_ai_agent_pm_30" / "output"
+
+    assert module.DEFAULT_INPUT_PATH == output_dir / "generated_long_deck_ir.json"
+    assert module.DEFAULT_OUTPUT_PATH == output_dir / "ppt_master_source.md"
+
+
+def test_ppt_master_export_script_missing_input_reports_clear_error(tmp_path, capsys) -> None:
+    module = _load_export_module()
+    missing_input = tmp_path / "missing_long_deck_ir.json"
+    output_path = tmp_path / "ppt_master_source.md"
+
+    exit_code = module.main(["--input", str(missing_input), "--output", str(output_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "Input Deck IR not found" in captured.err
+    assert "Traceback" not in captured.err
+    assert not output_path.exists()
+
+
+def test_ppt_master_export_script_exports_source_markdown(tmp_path) -> None:
+    module = _load_export_module()
+    output_path = tmp_path / "ppt_master_source.md"
+
+    exit_code = module.main(
+        [
+            "--input",
+            str(_repo_root() / "examples" / "sample_slide_ir.json"),
+            "--output",
+            str(output_path),
+            "--style-notes",
+            "Use technical product share pacing.",
+        ]
+    )
+    markdown = output_path.read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert output_path.exists()
+    assert "# Presentation Request" in markdown
+    assert "Use technical product share pacing." in markdown
 
 
 def test_long_deck_render_script_missing_input_writes_clear_report(tmp_path, capsys) -> None:

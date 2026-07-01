@@ -24,6 +24,7 @@ JobStatus = Literal[
     "cancelled",
     "partial_cancelled",
 ]
+ArtifactKind = Literal["json", "pptx", "md"]
 
 
 class JobRecord(StrictModel):
@@ -49,7 +50,7 @@ class ArtifactRecord(StrictModel):
     artifact_id: str = Field(..., min_length=1)
     job_id: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
-    kind: Literal["json", "pptx"]
+    kind: ArtifactKind
     path: Path
     created_at: str
 
@@ -346,7 +347,7 @@ class JobStore:
             ).fetchone()
         return bool(row["cancel_requested"]) if row is not None else False
 
-    def add_artifact(self, job_id: str, *, name: str, kind: Literal["json", "pptx"], path: str | Path) -> ArtifactRecord:
+    def add_artifact(self, job_id: str, *, name: str, kind: ArtifactKind, path: str | Path) -> ArtifactRecord:
         artifact_id = uuid.uuid4().hex
         now = self._now()
         artifact_path = Path(path)
