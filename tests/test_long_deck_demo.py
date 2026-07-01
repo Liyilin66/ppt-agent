@@ -107,6 +107,9 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "ppt master recovery package" in text
     assert "package_mode: recovery" in text
     assert "not to bypass the quality gate" in text
+    assert "timeout / resume" in text
+    assert "long_deck_job_timeout_seconds" in text
+    assert "resume from the last completed batch" in text
 
 
 def test_long_deck_demo_runner_default_output_dir() -> None:

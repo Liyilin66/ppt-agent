@@ -345,6 +345,27 @@ def _install_fake_long_deck_quality_gate_failure(monkeypatch, captured: dict | N
     monkeypatch.setattr(api, "render_long_deck_ir_to_pptx", fail_if_render_called)
 
 
+def _install_fake_long_deck_timeout_before_merge(monkeypatch, captured: dict | None = None) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_chat_model", lambda: object())
+
+    def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None, cancel_checker=None):
+        if captured is not None:
+            captured["request"] = request
+        if progress_logger is not None:
+            progress_logger("Starting long deck run: 30 slides, batch_size=2, total_batches=15")
+            for batch_number in range(1, 13):
+                progress_logger(f"Starting batch_{batch_number:02d} slides 1-2")
+                progress_logger(f"Completed batch_{batch_number:02d} in 0.1s")
+            progress_logger("Starting batch_13 slides 25-26")
+        raise TimeoutError(
+            f"Job timed out after {api._long_deck_job_timeout_seconds()} seconds while running stage "
+            "'generating_batch_13_of_15'."
+        )
+
+    monkeypatch.setattr(api, "run_long_deck_batch_generation", fake_run_long_deck_batch_generation)
+
+
 def test_health_endpoint(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/health")
 
@@ -397,9 +418,12 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "PPT Master Run Prompt",
         "PPT Master Package Manifest",
         "PPT Master Package README",
+        "原因",
+        "建议",
         "package_mode",
         "quality_gate",
         "Recovery package 已生成",
+        "系统会从已完成 batch 后继续",
         "当前阶段不会自动运行 ppt-master",
     ]:
         assert text in response.text
@@ -563,6 +587,7 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
     assert body["ppt_master_package"]["available"] is True
     assert body["ppt_master_package"]["is_expected_repo"] is True
     assert body["ppt_master_package"]["package_mode"] == "normal"
+    assert body["ppt_master_package"]["reason"] == "normal_generated"
     assert body["ppt_master_package"]["source_quality_gate_status"] == "passed"
     assert body["ppt_master_package"]["warning"] is None
     assert body["ppt_master_package"]["ppt_master_root"] == str(ppt_master_root.resolve())
@@ -662,6 +687,7 @@ def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
     assert "quality gate failed" in body["error_message"].lower()
     assert body["ppt_master_package"]["generated"] is True
     assert body["ppt_master_package"]["package_mode"] == "recovery"
+    assert body["ppt_master_package"]["reason"] == "quality_gate_failed_recovery_generated"
     assert body["ppt_master_package"]["source_quality_gate_status"] == "failed_quality_gate"
     assert body["ppt_master_package"]["source_artifact_id"]
     assert "不会生成旧 renderer PPTX" in body["ppt_master_package"]["message"]
@@ -761,7 +787,34 @@ def test_long_deck_job_status_keeps_batch_stage_on_failure(tmp_path: Path, monke
     assert body["current_stage"] == "generating_batch_01_of_15"
     assert "provider stopped" in body["error_message"]
     assert body["ppt_master_package"]["generated"] is False
-    assert "not been generated" in body["ppt_master_package"]["message"]
+    assert body["ppt_master_package"]["reason"] == "batch_generation_failed_before_merge"
+    assert body["ppt_master_package"]["available"] is None
+    assert body["ppt_master_package"]["is_expected_repo"] is None
+    assert body["ppt_master_package"]["ppt_master_root"] is None
+    assert "Resume the job" in body["ppt_master_package"]["message"]
+    assert "ppt_master_source" not in {artifact["name"] for artifact in artifacts}
+
+
+def test_long_deck_job_timeout_before_merge_keeps_ppt_master_state_unknown(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_long_deck_timeout_before_merge(monkeypatch)
+    client = _client(tmp_path)
+
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+
+    assert body["status"] == "failed"
+    assert body["current_stage"] == "generating_batch_13_of_15"
+    assert "timed out after 3600 seconds" in body["error_message"]
+    assert body["ppt_master_package"]["generated"] is False
+    assert body["ppt_master_package"]["package_mode"] is None
+    assert body["ppt_master_package"]["reason"] == "job_timeout_before_merge"
+    assert body["ppt_master_package"]["available"] is None
+    assert body["ppt_master_package"]["is_expected_repo"] is None
+    assert body["ppt_master_package"]["ppt_master_root"] is None
+    assert body["ppt_master_package"]["missing_paths"] == []
+    assert "Resume the job" in body["ppt_master_package"]["message"]
+    assert "PPT Master package will be generated after merge" in body["ppt_master_package"]["message"]
     assert "ppt_master_source" not in {artifact["name"] for artifact in artifacts}
 
 
@@ -882,6 +935,19 @@ def test_job_timeout_marks_failed_with_clear_error(tmp_path: Path, monkeypatch) 
     assert body["status"] == "failed"
     assert "timed out" in body["error_message"]
     assert "generate_deck" in body["error_message"]
+
+
+def test_long_deck_job_timeout_seconds_can_be_configured(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LONG_DECK_JOB_TIMEOUT_SECONDS", "7200")
+    _install_fake_long_deck_timeout_before_merge(monkeypatch)
+    client = _client(tmp_path)
+
+    job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+
+    assert api._long_deck_job_timeout_seconds() == 7200
+    assert "timed out after 7200 seconds" in body["error_message"]
+    assert body["ppt_master_package"]["reason"] == "job_timeout_before_merge"
 
 
 def test_job_status_expires_stale_running_job(tmp_path: Path, monkeypatch) -> None:

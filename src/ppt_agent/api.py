@@ -28,7 +28,6 @@ from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODEL = "gpt-5.5"
 JOB_TIMEOUT_SECONDS = 600
-LONG_DECK_JOB_TIMEOUT_SECONDS = 3600
 LLM_TIMEOUT_SECONDS = 120
 DEFAULT_THEME_PATH = Path("examples/theme.json")
 DEFAULT_ASSETS_DIR = Path("examples")
@@ -39,6 +38,24 @@ PPT_MASTER_SOURCE_ARTIFACT = "ppt_master_source"
 PPT_MASTER_RUN_PROMPT_ARTIFACT = "ppt_master_run_prompt"
 PPT_MASTER_MANIFEST_ARTIFACT = "ppt_master_package_manifest"
 PPT_MASTER_README_ARTIFACT = "ppt_master_package_README"
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+DEFAULT_LONG_DECK_JOB_TIMEOUT_SECONDS = 3600
+
+
+def _long_deck_job_timeout_seconds() -> int:
+    return _env_int("LONG_DECK_JOB_TIMEOUT_SECONDS", DEFAULT_LONG_DECK_JOB_TIMEOUT_SECONDS)
 
 
 INDEX_HTML = """<!doctype html>
@@ -293,6 +310,10 @@ INDEX_HTML = """<!doctype html>
         <dl class="metadata-grid">
           <dt>package 状态</dt>
           <dd id="pptMasterGenerated">未生成</dd>
+          <dt>原因</dt>
+          <dd id="pptMasterReason">未评估</dd>
+          <dt>建议</dt>
+          <dd id="pptMasterSuggestion">无</dd>
           <dt>ppt-master 检测</dt>
           <dd id="pptMasterAvailable">未知</dd>
           <dt>官方仓库</dt>
@@ -329,6 +350,8 @@ INDEX_HTML = """<!doctype html>
       const pptMasterPackageSection = document.getElementById("pptMasterPackageSection");
       const pptMasterPackageMessage = document.getElementById("pptMasterPackageMessage");
       const pptMasterGenerated = document.getElementById("pptMasterGenerated");
+      const pptMasterReason = document.getElementById("pptMasterReason");
+      const pptMasterSuggestion = document.getElementById("pptMasterSuggestion");
       const pptMasterAvailable = document.getElementById("pptMasterAvailable");
       const pptMasterExpectedRepo = document.getElementById("pptMasterExpectedRepo");
       const pptMasterPackageMode = document.getElementById("pptMasterPackageMode");
@@ -376,6 +399,8 @@ INDEX_HTML = """<!doctype html>
         pptMasterPackageSection.hidden = true;
         pptMasterPackageMessage.textContent = "";
         pptMasterGenerated.textContent = "未生成";
+        pptMasterReason.textContent = "未评估";
+        pptMasterSuggestion.textContent = "无";
         pptMasterAvailable.textContent = "未知";
         pptMasterExpectedRepo.textContent = "未知";
         pptMasterPackageMode.textContent = "未知";
@@ -398,6 +423,19 @@ INDEX_HTML = """<!doctype html>
         } else {
           pptMasterGenerated.textContent = packageInfo.generated ? "已生成" : "未生成";
         }
+        if (packageInfo.reason === "job_timeout_before_merge" || packageInfo.reason === "batch_generation_failed_before_merge") {
+          pptMasterReason.textContent = "长 PPT 尚未完成合并，当前没有完整 Deck IR";
+          pptMasterSuggestion.textContent = "点击“继续/重试长 PPT”，系统会从已完成 batch 后继续。";
+          pptMasterAvailable.textContent = "未评估";
+          pptMasterExpectedRepo.textContent = "未评估";
+          pptMasterPackageMode.textContent = "未评估";
+          pptMasterQualityGate.textContent = "未评估";
+          pptMasterRoot.textContent = "未评估";
+          pptMasterMissingPaths.textContent = "未评估";
+          return;
+        }
+        pptMasterReason.textContent = packageInfo.reason || "未评估";
+        pptMasterSuggestion.textContent = packageInfo.generated ? "下载 package artifacts 后交给本地 ppt-master workflow。" : "等待长 PPT 生成完成。";
         pptMasterAvailable.textContent = booleanLabel(packageInfo.available);
         pptMasterExpectedRepo.textContent = booleanLabel(packageInfo.is_expected_repo);
         pptMasterPackageMode.textContent = packageInfo.package_mode || "未知";
@@ -801,9 +839,16 @@ class CreateJobResponse(StrictModel):
 
 class PptMasterPackageResponse(StrictModel):
     generated: bool
-    available: bool
-    is_expected_repo: bool | None = None
     package_mode: Literal["normal", "recovery"] | None = None
+    reason: Literal[
+        "job_timeout_before_merge",
+        "batch_generation_failed_before_merge",
+        "quality_gate_failed_recovery_generated",
+        "normal_generated",
+        "not_applicable",
+    ] = "not_applicable"
+    available: bool | None = None
+    is_expected_repo: bool | None = None
     source_quality_gate_status: str | None = None
     warning: str | None = None
     ppt_master_root: str | None = None
@@ -866,6 +911,23 @@ def _optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _timeout_seconds_for_stage(stage: str | None) -> int:
+    if stage and (
+        stage.startswith("generating_batch_")
+        or stage
+        in {
+            "preparing_long_deck_plan",
+            "merging_long_deck_ir",
+            "running_long_deck_qa",
+            "running_long_deck_quality_gate",
+            "rendering_long_deck_pptx",
+            "cancel_requested",
+        }
+    ):
+        return _long_deck_job_timeout_seconds()
+    return JOB_TIMEOUT_SECONDS
+
+
 def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPackageResponse | None:
     if job.job_type != "long_deck":
         return None
@@ -895,14 +957,17 @@ def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPa
                 "质量门禁未通过，因此不会生成旧 renderer PPTX。"
                 "但已生成 PPT Master recovery package，可用于交给本地 ppt-master 重新生成。"
             )
+            reason = "quality_gate_failed_recovery_generated"
         else:
             message = (
                 "PPT Master handoff package is ready. ppt-agent does not run ppt-master automatically."
                 if available
                 else "PPT Master handoff package is ready, but local ppt-master was not detected."
             )
+            reason = "normal_generated"
         return PptMasterPackageResponse(
             generated=True,
+            reason=reason,
             available=available,
             is_expected_repo=is_expected_repo,
             package_mode=package_mode,
@@ -920,11 +985,37 @@ def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPa
     if job.status in {"failed_quality_gate", "partial_failed_quality_gate"}:
         return PptMasterPackageResponse(
             generated=False,
-            available=False,
+            reason="not_applicable",
+            available=None,
             package_mode=None,
             source_quality_gate_status=job.status,
             missing_paths=[],
-            message="未找到 generated_long_deck_ir.json，因此未生成 PPT Master recovery package。",
+            message="质量门禁失败，但当前没有可用的 PPT Master package 状态记录。",
+        )
+
+    if job.status == "failed" and job.current_stage and job.current_stage.startswith("generating_batch_"):
+        timed_out = False
+        if job.error_message:
+            timeout_seconds = _timeout_seconds_for_stage(job.current_stage)
+            timed_out = f"timed out after {timeout_seconds:g} seconds" in job.error_message.lower()
+        reason = "job_timeout_before_merge" if timed_out else "batch_generation_failed_before_merge"
+        return PptMasterPackageResponse(
+            generated=False,
+            reason=reason,
+            available=None,
+            is_expected_repo=None,
+            package_mode=None,
+            ppt_master_root=None,
+            missing_paths=[],
+            message=(
+                "Long deck generation timed out before a complete merged Deck IR was available. "
+                "Resume the job to continue from the last completed batch. PPT Master package will be generated "
+                "after merge or quality gate evaluation."
+                if timed_out
+                else "Long deck batch generation stopped before a complete merged Deck IR was available. "
+                "Resume the job to continue from the last completed batch. PPT Master package will be generated "
+                "after merge or quality gate evaluation."
+            ),
         )
 
     if job.status in {"pending", "running"}:
@@ -933,7 +1024,11 @@ def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPa
         message = "PPT Master package has not been generated for this job."
     return PptMasterPackageResponse(
         generated=False,
-        available=False,
+        reason="not_applicable",
+        available=None,
+        is_expected_repo=None,
+        package_mode=None,
+        ppt_master_root=None,
         missing_paths=[],
         message=message,
     )
@@ -1014,23 +1109,6 @@ def _expire_stale_job(store: JobStore, job: JobRecord) -> JobRecord:
     error_message = f"Job timed out after {timeout_seconds:g} seconds while running stage '{stage}'."
     store.update_job(job.job_id, status="failed", error_message=error_message, accepted=False)
     return store.get_job(job.job_id) or job
-
-
-def _timeout_seconds_for_stage(stage: str | None) -> int:
-    if stage and (
-        stage.startswith("generating_batch_")
-        or stage
-        in {
-            "preparing_long_deck_plan",
-            "merging_long_deck_ir",
-            "running_long_deck_qa",
-            "running_long_deck_quality_gate",
-            "rendering_long_deck_pptx",
-            "cancel_requested",
-        }
-    ):
-        return LONG_DECK_JOB_TIMEOUT_SECONDS
-    return JOB_TIMEOUT_SECONDS
 
 
 def _expected_long_deck_batches(payload: CreateLongDeckJobRequest) -> int:

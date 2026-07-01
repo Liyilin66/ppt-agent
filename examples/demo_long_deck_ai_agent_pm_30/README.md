@@ -169,6 +169,20 @@ When `generated_long_deck_ir.json` exists, it still creates a PPT Master recover
 Download `run_prompt.md` and `source.md`, then hand them to the local ppt-master workflow.
 This is meant to recover from old renderer quality failures through a sanitized source document, not to bypass the quality gate and ship a bad PPTX.
 
+### Timeout / Resume
+
+If a long deck job times out during batch generation, there is no complete merged Deck IR yet.
+In that case, ppt-agent does not generate a PPT Master package, because there is no stitched `generated_long_deck_ir.json` to hand off.
+
+- Use the Web UI `继续/重试长 PPT` action to resume from the last completed batch.
+- Completed batch artifacts are reused; ppt-agent does not delete valid finished batch outputs.
+- `LONG_DECK_JOB_TIMEOUT_SECONDS` can be set on the server to adjust the long deck timeout without affecting short PPT jobs.
+
+Only after the merged Deck IR exists will ppt-agent generate either:
+
+- a normal PPT Master package after successful quality gate evaluation, or
+- a recovery PPT Master package after hard quality gate failure.
+
 ## Artifacts
 
 Expected output shape:
