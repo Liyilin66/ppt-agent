@@ -29,7 +29,7 @@ def evaluate_long_deck_quality_gate(deck: Deck) -> LongDeckQualityGateReport:
     if not blocking_issues:
         return LongDeckQualityGateReport(
             status="passed",
-            score=qa_report.score,
+            score=100,
             issues=[],
             blocked_codes=[],
             blocked_slide_ids=[],
@@ -46,9 +46,10 @@ def evaluate_long_deck_quality_gate(deck: Deck) -> LongDeckQualityGateReport:
             if issue.element_id
         }
     )
+    gate_score = max(0, 100 - 35 * len(blocking_issues))
     return LongDeckQualityGateReport(
         status="failed_quality_gate",
-        score=qa_report.score,
+        score=gate_score,
         issues=blocking_issues,
         blocked_codes=blocked_codes,
         blocked_slide_ids=blocked_slide_ids,

@@ -16,6 +16,7 @@ from ppt_agent.qa import (
     COMPARISON_MATRIX_PLACEHOLDERS,
     GENERIC_MATRIX_PLACEHOLDERS,
     INSTRUCTION_LEAKAGE_PHRASES,
+    RISK_LABEL_PREFIX_RE,
     RISK_MATRIX_PLACEHOLDERS,
 )
 from ppt_agent.renderer import render_deck_to_pptx
@@ -45,6 +46,7 @@ SAFE_ACTIONS_EN = [
     "Record failure samples",
     "Set one evaluation metric",
 ]
+RISK_LABEL_PREFIX_STRIP_RE = re.compile(r"^(risk|impact|mitigation)\s*[:：]\s*", re.IGNORECASE)
 
 
 def _normalized_segment(text: str) -> str:
@@ -105,6 +107,30 @@ def _strip_instruction_leakage_lines(text: str) -> tuple[str, bool]:
     if text.strip() and _contains_instruction_leakage(text.strip()):
         return "", True
     return text.strip(), removed
+
+
+def _strip_risk_label_prefix_lines(text: str) -> tuple[str, list[str]]:
+    kept_lines: list[str] = []
+    stripped_labels: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        label_match = RISK_LABEL_PREFIX_RE.match(line.strip(" -•\t"))
+        if label_match:
+            stripped_labels.append(label_match.group(1).lower())
+            line = RISK_LABEL_PREFIX_STRIP_RE.sub("", line.strip(" -•\t"), count=1).strip()
+        if line:
+            kept_lines.append(line)
+
+    if not text.splitlines() and text.strip():
+        line = text.strip()
+        label_match = RISK_LABEL_PREFIX_RE.match(line.strip(" -•\t"))
+        if label_match:
+            stripped_labels.append(label_match.group(1).lower())
+            line = RISK_LABEL_PREFIX_STRIP_RE.sub("", line.strip(" -•\t"), count=1).strip()
+        if line:
+            kept_lines.append(line)
+
+    return "\n".join(kept_lines), sorted(set(stripped_labels))
 
 
 def _is_placeholder_segment(text: str, placeholders: set[str]) -> bool:
@@ -294,6 +320,8 @@ def _sanitize_comparison_matrix_slide(slide_payload: dict, warnings: list[str]) 
         )
         return
 
+    # TODO: Calibrate comparison row parsing separately; some valid compact
+    # matrices currently fall back because this guard only counts line rows.
     warnings.append(
         f"{slide_payload['slide_id']}: comparison_matrix had fewer than two real comparison rows after sanitization; rendered as text fallback."
     )
@@ -319,11 +347,29 @@ def sanitize_deck_ir_for_render(deck_ir: Deck) -> tuple[Deck, list[str]]:
 
     for slide_payload in payload["slides"]:
         text_elements = _text_elements(slide_payload)
-        for element in text_elements[1:]:
-            cleaned_text, removed = _strip_instruction_leakage_lines(str(element.get("text", "")))
-            if removed:
-                warnings.append(f"{slide_payload['slide_id']}: removed instruction leakage from text content.")
+        stripped_risk_label_elements: list[str] = []
+        for index, element in enumerate(text_elements):
+            cleaned_text = str(element.get("text", ""))
+            if index > 0:
+                cleaned_text, removed = _strip_instruction_leakage_lines(cleaned_text)
+                if removed:
+                    warnings.append(f"{slide_payload['slide_id']}: removed instruction leakage from text content.")
+            cleaned_text, stripped_labels = _strip_risk_label_prefix_lines(cleaned_text)
+            if stripped_labels:
+                stripped_risk_label_elements.append(str(element.get("element_id", "")))
+                if slide_payload["layout"] != "risk_matrix":
+                    warnings.append(
+                        f"{slide_payload['slide_id']}: stripped risk/impact/mitigation label prefixes "
+                        f"from text element '{element.get('element_id')}'."
+                    )
             element["text"] = cleaned_text
+
+        if slide_payload["layout"] == "risk_matrix" and stripped_risk_label_elements:
+            element_list = ", ".join(element_id for element_id in stripped_risk_label_elements if element_id)
+            warnings.append(
+                f"{slide_payload['slide_id']}: stripped risk/impact/mitigation label prefixes "
+                f"from risk_matrix elements{': ' + element_list if element_list else ''}."
+            )
 
         if slide_payload["layout"] == "risk_matrix":
             _sanitize_risk_matrix_slide(slide_payload, warnings)

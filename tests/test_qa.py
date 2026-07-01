@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from ppt_agent.long_deck_quality import evaluate_long_deck_quality_gate
 from ppt_agent.load import load_deck, load_theme
 from ppt_agent.models import Deck
 from ppt_agent.qa import QAReport, analyze_deck
@@ -790,6 +793,43 @@ def test_qa_detects_uppercase_risk_matrix_placeholders_as_errors() -> None:
 
     assert issues
     assert issues[0].severity == "error"
+
+
+@pytest.mark.parametrize(
+    ("text", "label"),
+    [
+        ("risk：权限越界", "risk"),
+        ("impact：误操作影响用户数据", "impact"),
+        ("mitigation：设置人工确认", "mitigation"),
+        ("Risk: tool execution exceeds permission", "risk"),
+    ],
+)
+def test_long_deck_quality_gate_detects_risk_label_prefix_leakage(text: str, label: str) -> None:
+    deck = _deck_with_text_slide("risk_matrix", "风险治理", [text])
+
+    report = evaluate_long_deck_quality_gate(deck)
+
+    assert report.status == "failed_quality_gate"
+    assert report.issues
+    assert "risk_label_prefix_leakage" in report.blocked_codes
+    assert "slide_001" in report.blocked_slide_ids
+    assert "body_1" in report.blocked_element_ids
+    assert any(label in issue.message for issue in report.issues)
+
+
+def test_long_deck_quality_gate_does_not_flag_mid_sentence_risk_mitigation() -> None:
+    deck = _deck_with_text_slide(
+        "two_column",
+        "Risk wording in natural language",
+        ["The launch plan includes a risk mitigation strategy for provider timeout."],
+    )
+
+    report = evaluate_long_deck_quality_gate(deck)
+
+    assert report.status == "passed"
+    assert report.issues == []
+    assert report.blocked_codes == []
+    assert report.score == 100
 
 
 def test_qa_detects_comparison_matrix_placeholders_as_errors() -> None:

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from pptx.util import Inches
 from ppt_agent.layouts import TEMPLATE_LAYOUTS
 from ppt_agent.load import load_deck, load_theme
 from ppt_agent.models import Deck
-from ppt_agent.long_deck_render import sanitize_deck_ir_for_render
+from ppt_agent.long_deck_render import render_long_deck_ir_to_pptx, sanitize_deck_ir_for_render
 from ppt_agent.renderer import VISUAL_VARIANT_COUNTS, _visual_variant_for_slide, render_deck_to_pptx
 
 
@@ -1060,6 +1061,117 @@ def test_sanitize_deck_ir_for_render_removes_placeholder_risk_rows() -> None:
 
     assert all("risk\nimpact\nmitigation" not in text.lower() for text in body_texts)
     assert any("dropped placeholder-only risk matrix row" in warning for warning in warnings)
+
+
+def test_sanitize_deck_ir_for_render_strips_risk_label_prefixes() -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "sanitize_risk_prefix_demo",
+            "title": "Sanitize Risk Prefix Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_025",
+                    "title": "风险治理",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "风险治理",
+                        },
+                        {
+                            "element_id": "row_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.8},
+                            "text": "risk：权限越界\nimpact：误操作用户数据\nmitigation：限制高风险权限并要求人工确认",
+                        },
+                        {
+                            "element_id": "row_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.3, "width": 5.0, "height": 0.8},
+                            "text": "Risk: 日志缺失\nImpact: 问题无法追溯\nMitigation: 记录输入、工具调用和输出版本",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    sanitized, warnings = sanitize_deck_ir_for_render(deck)
+    body_text = "\n".join(element.text for element in sanitized.slides[0].elements[1:])
+
+    assert "risk：" not in body_text.lower()
+    assert "impact：" not in body_text.lower()
+    assert "mitigation：" not in body_text.lower()
+    assert "risk:" not in body_text.lower()
+    assert "impact:" not in body_text.lower()
+    assert "mitigation:" not in body_text.lower()
+    assert "权限越界" in body_text
+    assert "误操作用户数据" in body_text
+    assert "限制高风险权限并要求人工确认" in body_text
+    assert any(
+        "slide_025: stripped risk/impact/mitigation label prefixes from risk_matrix elements" in warning
+        for warning in warnings
+    )
+
+
+def test_render_long_deck_report_records_risk_label_prefix_sanitization(tmp_path: Path) -> None:
+    deck = Deck.model_validate(
+        {
+            "deck_id": "render_risk_prefix_demo",
+            "title": "Render Risk Prefix Demo",
+            "canvas_width_in": 13.333,
+            "canvas_height_in": 7.5,
+            "slides": [
+                {
+                    "slide_id": "slide_025",
+                    "title": "风险治理",
+                    "layout": "risk_matrix",
+                    "elements": [
+                        {
+                            "element_id": "title",
+                            "type": "text",
+                            "bbox": {"x": 0.5, "y": 0.5, "width": 6.0, "height": 0.6},
+                            "text": "风险治理",
+                        },
+                        {
+                            "element_id": "row_1",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 1.4, "width": 5.0, "height": 0.8},
+                            "text": "risk：权限越界\nimpact：误操作用户数据\nmitigation：限制高风险权限并要求人工确认",
+                        },
+                        {
+                            "element_id": "row_2",
+                            "type": "text",
+                            "bbox": {"x": 0.8, "y": 2.3, "width": 5.0, "height": 0.8},
+                            "text": "模型幻觉\n用户据此做出错误判断\n设置事实校验和人工确认",
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    input_path = tmp_path / "generated_long_deck_ir.json"
+    output_path = tmp_path / "generated_long_deck.pptx"
+    report_path = tmp_path / "long_deck_render_report.json"
+    input_path.write_text(json.dumps(deck.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8")
+
+    report = render_long_deck_ir_to_pptx(
+        input_path,
+        output_path,
+        report_path,
+        theme_path=EXAMPLES_DIR / "theme.json",
+        assets_dir=EXAMPLES_DIR,
+    )
+
+    saved_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report.status == "succeeded"
+    assert output_path.exists()
+    assert any("stripped risk/impact/mitigation label prefixes" in warning for warning in report.warnings)
+    assert any("stripped risk/impact/mitigation label prefixes" in warning for warning in saved_report["warnings"])
 
 
 def test_sanitize_deck_ir_for_render_falls_back_when_comparison_rows_are_placeholders() -> None:

@@ -44,6 +44,7 @@ CONTENT_STYLE_WARNING_CODES = {
     "weak_takeaway",
     "instruction_leakage",
     "risk_matrix_malformed_row",
+    "risk_label_prefix_leakage",
     "risk_matrix_placeholder",
     "comparison_matrix_placeholder",
     "placeholder_content",
@@ -234,8 +235,10 @@ GENERIC_MATRIX_PLACEHOLDERS = {
 HARD_QUALITY_GATE_CODES = {
     "instruction_leakage",
     "comparison_matrix_placeholder",
+    "risk_label_prefix_leakage",
     "risk_matrix_placeholder",
 }
+RISK_LABEL_PREFIX_RE = re.compile(r"^(risk|impact|mitigation)\s*[:：]\s*\S+", re.IGNORECASE)
 RISK_GOVERNANCE_TERMS = {
     "越权操作",
     "模型幻觉",
@@ -648,6 +651,16 @@ def _placeholder_hits(text: str, placeholders: set[str], *, allow_prefix: bool =
     return _dedupe_text(hits)
 
 
+def _risk_label_prefix_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    for raw_line in text.splitlines() or [text]:
+        line = raw_line.strip(" \t-•")
+        match = RISK_LABEL_PREFIX_RE.match(line)
+        if match:
+            hits.append(match.group(1).lower())
+    return _dedupe_text(hits)
+
+
 def _dedupe_text(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -752,6 +765,23 @@ def _append_card_balance_issues(deck: Deck, issues: list[QAIssue]) -> None:
 
 def _append_placeholder_guard_issues(deck: Deck, issues: list[QAIssue]) -> None:
     for slide in deck.slides:
+        for element in _text_elements(slide):
+            prefix_hits = _risk_label_prefix_hits(element.text)
+            if prefix_hits:
+                issues.append(
+                    QAIssue(
+                        severity="error",
+                        slide_id=slide.slide_id,
+                        element_id=element.element_id,
+                        code="risk_label_prefix_leakage",
+                        message=(
+                            f"Text element '{element.element_id}' on slide '{slide.slide_id}' starts "
+                            f"line(s) with risk/impact/mitigation label prefix(es): {', '.join(prefix_hits)}. "
+                            "Remove English table labels from audience-facing content."
+                        ),
+                    )
+                )
+
         for element in _body_texts(slide):
             generic_hits = _placeholder_hits(element.text, GENERIC_MATRIX_PLACEHOLDERS)
 
