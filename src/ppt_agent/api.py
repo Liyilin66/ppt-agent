@@ -22,6 +22,15 @@ from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
 from ppt_agent.ppt_master_integration import PPT_MASTER_RECOVERY_WARNING, create_ppt_master_job_package
+from ppt_agent.ppt_master_output import (
+    PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
+    PPT_MASTER_OUTPUT_MANIFEST_FILENAME,
+    PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
+    PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
+    PptMasterOutputManifest,
+    detect_ppt_master_output,
+    register_ppt_master_output_artifacts,
+)
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
@@ -329,6 +338,24 @@ INDEX_HTML = """<!doctype html>
         </dl>
         <p class="hint">当前阶段不会自动运行 ppt-master，只提供 handoff package。用户可以把 run_prompt.md 交给本地 ppt-master workflow 使用。</p>
       </section>
+
+      <section id="pptMasterOutputSection" hidden>
+        <h2>PPT Master 生成结果</h2>
+        <p id="pptMasterOutputMessage"></p>
+        <dl class="metadata-grid">
+          <dt>是否检测到 PPTX</dt>
+          <dd id="pptMasterOutputDetected">未检测到</dd>
+          <dt>slide_count</dt>
+          <dd id="pptMasterOutputSlideCount">未知</dd>
+          <dt>generation_status</dt>
+          <dd id="pptMasterOutputGenerationStatus">未知</dd>
+          <dt>output_dir</dt>
+          <dd id="pptMasterOutputDir">未检测到</dd>
+          <dt>generation_notes.md</dt>
+          <dd id="pptMasterOutputHasNotes">未知</dd>
+        </dl>
+        <p class="hint">如果这里还没有结果，请先用本地 PPT Master package 生成 PPTX，再运行注册脚本。</p>
+      </section>
     </main>
 
     <script>
@@ -358,6 +385,13 @@ INDEX_HTML = """<!doctype html>
       const pptMasterQualityGate = document.getElementById("pptMasterQualityGate");
       const pptMasterRoot = document.getElementById("pptMasterRoot");
       const pptMasterMissingPaths = document.getElementById("pptMasterMissingPaths");
+      const pptMasterOutputSection = document.getElementById("pptMasterOutputSection");
+      const pptMasterOutputMessage = document.getElementById("pptMasterOutputMessage");
+      const pptMasterOutputDetected = document.getElementById("pptMasterOutputDetected");
+      const pptMasterOutputSlideCount = document.getElementById("pptMasterOutputSlideCount");
+      const pptMasterOutputGenerationStatus = document.getElementById("pptMasterOutputGenerationStatus");
+      const pptMasterOutputDir = document.getElementById("pptMasterOutputDir");
+      const pptMasterOutputHasNotes = document.getElementById("pptMasterOutputHasNotes");
       const cancelJobButton = document.getElementById("cancelJobButton");
       const resumeJobButton = document.getElementById("resumeJobButton");
       const lastLongDeckJobStorageKey = "ppt_agent_last_long_deck_job_id";
@@ -365,13 +399,19 @@ INDEX_HTML = """<!doctype html>
         "ppt_master_source",
         "ppt_master_run_prompt",
         "ppt_master_package_manifest",
-        "ppt_master_package_README"
+        "ppt_master_package_README",
+        "ppt_master_generated_pptx",
+        "ppt_master_generation_notes",
+        "ppt_master_output_manifest"
       ]);
       const artifactDisplayNames = {
         ppt_master_source: "PPT Master Source Markdown",
         ppt_master_run_prompt: "PPT Master Run Prompt",
         ppt_master_package_manifest: "PPT Master Package Manifest",
-        ppt_master_package_README: "PPT Master Package README"
+        ppt_master_package_README: "PPT Master Package README",
+        ppt_master_generated_pptx: "PPT Master Generated PPTX",
+        ppt_master_generation_notes: "PPT Master Generation Notes",
+        ppt_master_output_manifest: "PPT Master Output Manifest"
       };
       let pollTimer = null;
       let activeJobId = null;
@@ -409,6 +449,16 @@ INDEX_HTML = """<!doctype html>
         pptMasterMissingPaths.textContent = "无";
       }
 
+      function clearPptMasterOutput() {
+        pptMasterOutputSection.hidden = true;
+        pptMasterOutputMessage.textContent = "";
+        pptMasterOutputDetected.textContent = "未检测到";
+        pptMasterOutputSlideCount.textContent = "未知";
+        pptMasterOutputGenerationStatus.textContent = "未知";
+        pptMasterOutputDir.textContent = "未检测到";
+        pptMasterOutputHasNotes.textContent = "未知";
+      }
+
       function updatePptMasterPackage(job) {
         if (!isLongDeckJob(job) || !job.ppt_master_package) {
           clearPptMasterPackage();
@@ -443,6 +493,21 @@ INDEX_HTML = """<!doctype html>
         pptMasterRoot.textContent = packageInfo.ppt_master_root || "未检测到";
         const missingPaths = packageInfo.missing_paths || [];
         pptMasterMissingPaths.textContent = missingPaths.length ? missingPaths.join(", ") : "无";
+      }
+
+      function updatePptMasterOutput(job) {
+        if (!isLongDeckJob(job) || !job.ppt_master_output) {
+          clearPptMasterOutput();
+          return;
+        }
+        const output = job.ppt_master_output;
+        pptMasterOutputSection.hidden = false;
+        pptMasterOutputMessage.textContent = output.message || "";
+        pptMasterOutputDetected.textContent = output.detected ? "已检测到" : "未检测到";
+        pptMasterOutputSlideCount.textContent = output.slide_count == null ? "未知" : String(output.slide_count);
+        pptMasterOutputGenerationStatus.textContent = output.generation_status || "未知";
+        pptMasterOutputDir.textContent = output.output_dir || "未检测到";
+        pptMasterOutputHasNotes.textContent = output.notes_artifact_id ? "已检测到" : "未检测到";
       }
 
       function artifactLabel(artifact) {
@@ -659,6 +724,7 @@ INDEX_HTML = """<!doctype html>
         setStatus(job.status, job.accepted, job.error_message || "");
         setProgress(job);
         updatePptMasterPackage(job);
+        updatePptMasterOutput(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
         }
@@ -689,6 +755,7 @@ INDEX_HTML = """<!doctype html>
         errorMessage.textContent = "";
         clearArtifacts();
         clearPptMasterPackage();
+        clearPptMasterOutput();
 
         try {
           const job = await requestJson(url, {
@@ -726,6 +793,7 @@ INDEX_HTML = """<!doctype html>
             setStatus(job.status, job.accepted, job.error_message || "");
             setProgress(job);
             updatePptMasterPackage(job);
+            updatePptMasterOutput(job);
             if (job.error_message) {
               errorMessage.textContent = job.error_message;
             }
@@ -747,6 +815,7 @@ INDEX_HTML = """<!doctype html>
           setStatus(latest.status, latest.accepted, latest.error_message || "");
           setProgress(latest);
           updatePptMasterPackage(latest);
+          updatePptMasterOutput(latest);
           if (latest.error_message) {
             errorMessage.textContent = latest.error_message;
           }
@@ -860,8 +929,20 @@ class PptMasterPackageResponse(StrictModel):
     message: str
 
 
+class PptMasterOutputResponse(StrictModel):
+    detected: bool
+    pptx_artifact_id: str | None = None
+    notes_artifact_id: str | None = None
+    manifest_artifact_id: str | None = None
+    output_dir: str | None = None
+    slide_count: int | None = Field(default=None, ge=0)
+    generation_status: str | None = None
+    message: str
+
+
 class JobResponse(JobRecord):
     ppt_master_package: PptMasterPackageResponse | None = None
+    ppt_master_output: PptMasterOutputResponse | None = None
 
 
 class ArtifactResponse(StrictModel):
@@ -899,6 +980,13 @@ def _read_ppt_master_manifest(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _read_ppt_master_output_manifest(path: Path) -> PptMasterOutputManifest | None:
+    try:
+        return PptMasterOutputManifest.model_validate_json(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def _string_list(value: Any) -> list[str]:
@@ -1034,10 +1122,84 @@ def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPa
     )
 
 
-def _job_response(store: JobStore, job: JobRecord) -> JobResponse:
+def _ppt_master_output_dir_for_job(jobs_root: Path, job_id: str) -> Path:
+    return jobs_root / job_id / "ppt_master_output"
+
+
+def _ensure_registered_ppt_master_output(
+    store: JobStore,
+    jobs_root: Path,
+    job: JobRecord,
+) -> None:
+    if job.job_type != "long_deck":
+        return
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    if (
+        PPT_MASTER_OUTPUT_PPTX_ARTIFACT in artifacts_by_name
+        and PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT in artifacts_by_name
+    ):
+        return
+    output_dir = _ppt_master_output_dir_for_job(jobs_root, job.job_id)
+    manifest = detect_ppt_master_output(output_dir)
+    if not manifest.detected or manifest.pptx_path is None:
+        return
+    register_ppt_master_output_artifacts(store, job_id=job.job_id, output_dir=output_dir)
+
+
+def _ppt_master_output_response(
+    store: JobStore,
+    jobs_root: Path,
+    job: JobRecord,
+) -> PptMasterOutputResponse | None:
+    if job.job_type != "long_deck":
+        return None
+
+    _ensure_registered_ppt_master_output(store, jobs_root, job)
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    pptx_artifact = artifacts_by_name.get(PPT_MASTER_OUTPUT_PPTX_ARTIFACT)
+    notes_artifact = artifacts_by_name.get(PPT_MASTER_OUTPUT_NOTES_ARTIFACT)
+    manifest_artifact = artifacts_by_name.get(PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT)
+
+    if pptx_artifact and manifest_artifact:
+        manifest = _read_ppt_master_output_manifest(manifest_artifact.path)
+        output_dir = None
+        slide_count = None
+        generation_status = None
+        if manifest is not None:
+            output_dir = str(manifest.output_dir)
+            slide_count = manifest.slide_count
+            generation_status = manifest.generation_status
+        else:
+            output_dir = str(manifest_artifact.path.parent)
+        return PptMasterOutputResponse(
+            detected=True,
+            pptx_artifact_id=pptx_artifact.artifact_id,
+            notes_artifact_id=notes_artifact.artifact_id if notes_artifact is not None else None,
+            manifest_artifact_id=manifest_artifact.artifact_id,
+            output_dir=output_dir,
+            slide_count=slide_count,
+            generation_status=generation_status or "succeeded",
+            message="PPT Master output has been registered for this job.",
+        )
+
+    return PptMasterOutputResponse(
+        detected=False,
+        pptx_artifact_id=None,
+        notes_artifact_id=None,
+        manifest_artifact_id=None,
+        output_dir=None,
+        slide_count=None,
+        generation_status=None,
+        message="No PPT Master output has been registered for this job.",
+    )
+
+
+def _job_response(store: JobStore, jobs_root: Path, job: JobRecord) -> JobResponse:
     data = job.model_dump(mode="python")
     package = _ppt_master_package_response(store, job)
+    output = _ppt_master_output_response(store, jobs_root, job)
     data["ppt_master_package"] = package.model_dump(mode="python") if package is not None else None
+    data["ppt_master_output"] = output.model_dump(mode="python") if output is not None else None
     return JobResponse.model_validate(data)
 
 
@@ -1144,6 +1306,9 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
         Path("ppt_master_package/run_prompt.md"): PPT_MASTER_RUN_PROMPT_ARTIFACT,
         Path("ppt_master_package/README.md"): PPT_MASTER_README_ARTIFACT,
         Path("ppt_master_package/manifest.json"): PPT_MASTER_MANIFEST_ARTIFACT,
+        Path("ppt_master_output/generated_by_ppt_master.pptx"): PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
+        Path("ppt_master_output/generation_notes.md"): PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
+        Path(f"ppt_master_output/{PPT_MASTER_OUTPUT_MANIFEST_FILENAME}"): PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
     }
     return ppt_master_package_names.get(relative_path, artifact_path.stem)
 
@@ -1601,13 +1766,13 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job.job_type != "long_deck":
             raise HTTPException(status_code=400, detail="Only long deck jobs can be cancelled.")
         if job.status not in {"pending", "running"}:
-            return _job_response(app.state.job_store, job)
+            return _job_response(app.state.job_store, app.state.jobs_root, job)
 
         app.state.job_store.request_cancel(job_id)
         cancelled = app.state.job_store.get_job(job_id)
         if cancelled is None:
             raise HTTPException(status_code=404, detail="Job not found.")
-        return _job_response(app.state.job_store, cancelled)
+        return _job_response(app.state.job_store, app.state.jobs_root, cancelled)
 
     @app.get("/api/jobs/latest", response_model=JobResponse)
     def get_latest_job(job_type: str | None = None) -> JobResponse:
@@ -1615,7 +1780,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         job = _expire_stale_job(app.state.job_store, job)
-        return _job_response(app.state.job_store, job)
+        return _job_response(app.state.job_store, app.state.jobs_root, job)
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def get_job(job_id: str) -> JobResponse:
@@ -1623,7 +1788,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         job = _expire_stale_job(app.state.job_store, job)
-        return _job_response(app.state.job_store, job)
+        return _job_response(app.state.job_store, app.state.jobs_root, job)
 
     @app.get("/api/jobs/{job_id}/artifacts", response_model=ArtifactListResponse)
     def list_artifacts(job_id: str) -> ArtifactListResponse:

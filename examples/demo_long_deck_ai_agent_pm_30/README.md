@@ -155,6 +155,34 @@ The Web UI can show the PPT Master handoff package after a successful long deck 
 5. In `/Users/jay/Documents/ppt-master`, use Claude Code, Codex, or CodeBuddy to execute the generated `run_prompt.md`.
 6. ppt-agent does not automatically run ppt-master in this stage.
 
+## PPT Master Output Registration
+
+When local ppt-master has already generated a PPTX, register that output back into ppt-agent so the Web UI can show it as a formal artifact.
+
+1. Put the local ppt-master result under:
+
+```text
+data/jobs/<job_id>/ppt_master_output/
+```
+
+Typical files:
+
+```text
+data/jobs/<job_id>/ppt_master_output/generated_by_ppt_master.pptx
+data/jobs/<job_id>/ppt_master_output/generation_notes.md
+```
+
+2. Register the result:
+
+```bash
+uv run python scripts/register_ppt_master_output.py \
+  --job-id <job_id> \
+  --output-dir data/jobs/<job_id>/ppt_master_output
+```
+
+3. Go back to the Web UI and open the `PPT Master 生成结果` section.
+4. Download `generated_by_ppt_master.pptx`, the generation notes, or the output manifest.
+
 ### PPT Master Recovery Package
 
 If the hard quality gate fails, ppt-agent does not generate the old renderer PPTX.
@@ -199,6 +227,10 @@ output/
     run_prompt.md
     README.md
     manifest.json
+  ppt_master_output/
+    generated_by_ppt_master.pptx
+    generation_notes.md
+    ppt_master_output_manifest.json
   long_deck_render_report.json
   long_deck_run_report.json
   batches/
@@ -242,6 +274,8 @@ Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sect
 `ppt_master_source.md` is a source Markdown outline for a manual ppt-master adapter experiment. It is generated from the already-validated Deck IR and does not call the model or run ppt-master.
 
 `ppt_master_package/` is the local integration handoff package. It contains the same source document, a runnable prompt for a local ppt-master checkout, a README, and a manifest with ppt-master availability warnings. If the hard quality gate failed after the stitched IR was created, the manifest uses `package_mode: recovery` and records the quality gate report path.
+
+`ppt_master_output/` is the optional local result directory after a separate ppt-master workflow has already generated a PPTX. `register_ppt_master_output.py` turns those files into formal ppt-agent artifacts so the Web UI can display and download them.
 
 `long_deck_render_report.json` records render status, input/output paths, slide count, timestamp, warnings, and any render error.
 

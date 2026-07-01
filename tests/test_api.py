@@ -14,6 +14,12 @@ from ppt_agent.patch import build_patchable_elements_report
 from ppt_agent.pipeline import BuildArtifact, BuildPipelineResult
 from ppt_agent.qa import analyze_deck
 from ppt_agent.patch import apply_patch
+from ppt_agent.ppt_master_output import (
+    PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
+    PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
+    PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
+    register_ppt_master_output_artifacts,
+)
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -63,6 +69,29 @@ def _mock_expected_ppt_master_root(tmp_path: Path) -> Path:
         capture_output=True,
     )
     return root
+
+
+def _build_mock_ppt_master_output(output_dir: Path, *, slide_count: int = 3) -> Path:
+    from pptx import Presentation
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    presentation = Presentation()
+    while len(presentation.slides) < slide_count:
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        textbox = slide.shapes.add_textbox(50, 50, 400, 80)
+        textbox.text_frame.text = f"Slide {len(presentation.slides)}"
+    if len(presentation.slides) > slide_count:
+        while len(presentation.slides) > slide_count:
+            slide_id = presentation.slides._sldIdLst[-1].rId  # type: ignore[attr-defined]
+            presentation.part.drop_rel(slide_id)
+            del presentation.slides._sldIdLst[-1]  # type: ignore[attr-defined]
+    presentation.save(output_dir / "generated_by_ppt_master.pptx")
+    (output_dir / "generation_notes.md").write_text(
+        "# Notes\n\nMode: Native DrawingML shapes (directly editable)\n",
+        encoding="utf-8",
+    )
+    (output_dir / "agent_pm_recovery_ppt169_20260701" / "svg_output").mkdir(parents=True, exist_ok=True)
+    return output_dir
 
 
 def _generation_result(accepted: bool = True) -> GenerationResult:
@@ -414,10 +443,14 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "取消长 PPT任务",
         "继续/重试长 PPT",
         "PPT Master 渲染包",
+        "PPT Master 生成结果",
         "PPT Master Source Markdown",
         "PPT Master Run Prompt",
         "PPT Master Package Manifest",
         "PPT Master Package README",
+        "PPT Master Generated PPTX",
+        "PPT Master Generation Notes",
+        "PPT Master Output Manifest",
         "原因",
         "建议",
         "package_mode",
@@ -835,6 +868,7 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["last_updated_at"] == body["updated_at"]
     assert body["elapsed_seconds"] >= 0
     assert body["ppt_master_package"] is None
+    assert body["ppt_master_output"] is None
 
 
 def test_latest_long_deck_job_can_be_queried(tmp_path: Path, monkeypatch) -> None:
@@ -878,6 +912,53 @@ def test_old_long_deck_job_without_ppt_master_package_still_returns_status(tmp_p
     body = response.json()
     assert body["ppt_master_package"]["generated"] is False
     assert "not been generated" in body["ppt_master_package"]["message"]
+    assert body["ppt_master_output"]["detected"] is False
+    assert body["ppt_master_output"]["message"] == "No PPT Master output has been registered for this job."
+
+
+def test_long_deck_job_status_reports_registered_ppt_master_output(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="succeeded", accepted=True, current_stage="completed")
+    output_dir = tmp_path / "jobs" / job.job_id / "ppt_master_output"
+    _build_mock_ppt_master_output(output_dir, slide_count=30)
+    register_ppt_master_output_artifacts(store, job_id=job.job_id, output_dir=output_dir)
+
+    response = client.get(f"/api/jobs/{job.job_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ppt_master_output"]["detected"] is True
+    assert body["ppt_master_output"]["slide_count"] == 30
+    assert body["ppt_master_output"]["generation_status"] == "succeeded"
+    assert body["ppt_master_output"]["pptx_artifact_id"]
+    assert body["ppt_master_output"]["notes_artifact_id"]
+    assert body["ppt_master_output"]["manifest_artifact_id"]
+    assert body["ppt_master_output"]["output_dir"] == str(output_dir.resolve())
+
+
+def test_long_deck_job_status_auto_registers_existing_ppt_master_output(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="succeeded", accepted=True, current_stage="completed")
+    output_dir = tmp_path / "jobs" / job.job_id / "ppt_master_output"
+    _build_mock_ppt_master_output(output_dir, slide_count=30)
+
+    response = client.get(f"/api/jobs/{job.job_id}")
+    artifacts = client.get(f"/api/jobs/{job.job_id}/artifacts").json()["artifacts"]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ppt_master_output"]["detected"] is True
+    assert {artifact["name"] for artifact in artifacts} >= {
+        PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
+        PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
+        PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
+    }
 
 
 def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_path: Path, monkeypatch) -> None:
