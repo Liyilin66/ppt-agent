@@ -144,6 +144,31 @@ git pull
 
 ppt-agent does not automatically update ppt-master. This avoids silently changing the user's local checkout.
 
+## Web Handoff UX
+
+The Web UI can show the PPT Master handoff package after a successful long deck run.
+
+1. Set `PPT_MASTER_DIR`, or prepare packages with a local ppt-master root such as `/Users/jay/Documents/ppt-master`.
+2. Run the 30-page long deck flow in the Web UI.
+3. After success, open the `PPT Master 渲染包` section.
+4. Download `run_prompt.md`, `source.md`, `manifest.json`, and `README.md`.
+5. In `/Users/jay/Documents/ppt-master`, use Claude Code, Codex, or CodeBuddy to execute the generated `run_prompt.md`.
+6. ppt-agent does not automatically run ppt-master in this stage.
+
+### PPT Master Recovery Package
+
+If the hard quality gate fails, ppt-agent does not generate the old renderer PPTX.
+When `generated_long_deck_ir.json` exists, it still creates a PPT Master recovery package:
+
+- `ppt_master_source.md`
+- `ppt_master_package/source.md`
+- `ppt_master_package/run_prompt.md`
+- `ppt_master_package/README.md`
+- `ppt_master_package/manifest.json`
+
+Download `run_prompt.md` and `source.md`, then hand them to the local ppt-master workflow.
+This is meant to recover from old renderer quality failures through a sanitized source document, not to bypass the quality gate and ship a bad PPTX.
+
 ## Artifacts
 
 Expected output shape:
@@ -202,7 +227,7 @@ Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sect
 
 `ppt_master_source.md` is a source Markdown outline for a manual ppt-master adapter experiment. It is generated from the already-validated Deck IR and does not call the model or run ppt-master.
 
-`ppt_master_package/` is the local integration handoff package. It contains the same source document, a runnable prompt for a local ppt-master checkout, a README, and a manifest with ppt-master availability warnings.
+`ppt_master_package/` is the local integration handoff package. It contains the same source document, a runnable prompt for a local ppt-master checkout, a README, and a manifest with ppt-master availability warnings. If the hard quality gate failed after the stitched IR was created, the manifest uses `package_mode: recovery` and records the quality gate report path.
 
 `long_deck_render_report.json` records render status, input/output paths, slide count, timestamp, warnings, and any render error.
 

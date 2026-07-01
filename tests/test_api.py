@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -44,6 +45,24 @@ def _long_deck_payload() -> dict:
         "batch_size": 2,
         "max_batch_attempts": 1,
     }
+
+
+def _mock_expected_ppt_master_root(tmp_path: Path) -> Path:
+    root = tmp_path / "ppt-master"
+    skill_dir = root / "skills" / "ppt-master"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text("# PPT Master Skill\n", encoding="utf-8")
+    (skill_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    (root / "requirements.txt").write_text("# test requirements\n", encoding="utf-8")
+    (root / "README.md").write_text("# ppt-master\n", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/hugohe3/ppt-master.git"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    return root
 
 
 def _generation_result(accepted: bool = True) -> GenerationResult:
@@ -198,8 +217,28 @@ def _fake_long_deck_run_report(request) -> LongDeckRunReport:
     return report
 
 
-def _install_fake_long_deck_backend(monkeypatch, captured: dict | None = None) -> None:
+def _inject_recovery_source_noise(deck_ir_path: Path) -> None:
+    payload = json.loads(deck_ir_path.read_text(encoding="utf-8"))
+    payload["slides"][0]["title"] = "slide_id: leaked internal field"
+    payload["slides"][0]["elements"][0]["text"] = "risk: 把这一点转化为明确的下一步行动"
+    payload["slides"][0]["elements"][1]["text"] = (
+        "Impact：先列出 Agent 不允许自动执行的动作\n"
+        "判断点 1：用户任务要先被拆成可执行工作流"
+    )
+    payload["slides"][1]["elements"][0]["text"] = "Mitigation：用灰度和回滚控制上线质量"
+    payload["slides"][1]["elements"][1]["text"] = "Option A: element_id should not leak"
+    deck_ir_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _install_fake_long_deck_backend(
+    monkeypatch,
+    captured: dict | None = None,
+    *,
+    ppt_master_root: Path | None = None,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    if ppt_master_root is not None:
+        monkeypatch.setenv("PPT_MASTER_DIR", str(ppt_master_root))
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
 
     def fake_run_long_deck_batch_generation(request, model, *, progress_logger=None, cancel_checker=None):
@@ -260,6 +299,8 @@ def _install_fake_long_deck_quality_gate_failure(monkeypatch, captured: dict | N
             progress_logger("Running long deck hard quality gate")
             progress_logger("Long deck run failed_quality_gate")
         report = _fake_long_deck_run_report(request)
+        if report.merged_deck_ir_path is not None:
+            _inject_recovery_source_noise(report.merged_deck_ir_path)
         quality_gate_path = request.output_dir / "generated_long_deck_quality_gate.json"
         quality_gate_path.write_text(
             json.dumps(
@@ -351,6 +392,15 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "生成 30 页长 PPT",
         "取消长 PPT任务",
         "继续/重试长 PPT",
+        "PPT Master 渲染包",
+        "PPT Master Source Markdown",
+        "PPT Master Run Prompt",
+        "PPT Master Package Manifest",
+        "PPT Master Package README",
+        "package_mode",
+        "quality_gate",
+        "Recovery package 已生成",
+        "当前阶段不会自动运行 ppt-master",
     ]:
         assert text in response.text
     assert 'id="longDeckForm"' in response.text
@@ -490,7 +540,8 @@ def test_create_job_accepts_user_requirements(tmp_path: Path, monkeypatch) -> No
 
 def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, monkeypatch) -> None:
     captured: dict = {}
-    _install_fake_long_deck_backend(monkeypatch, captured)
+    ppt_master_root = _mock_expected_ppt_master_root(tmp_path)
+    _install_fake_long_deck_backend(monkeypatch, captured, ppt_master_root=ppt_master_root)
     client = _client(tmp_path)
 
     job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
@@ -508,6 +559,18 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
     assert body["failed_batches"] == 0
     assert body["current_batch"] == "batch_01"
     assert body["cancel_requested"] is False
+    assert body["ppt_master_package"]["generated"] is True
+    assert body["ppt_master_package"]["available"] is True
+    assert body["ppt_master_package"]["is_expected_repo"] is True
+    assert body["ppt_master_package"]["package_mode"] == "normal"
+    assert body["ppt_master_package"]["source_quality_gate_status"] == "passed"
+    assert body["ppt_master_package"]["warning"] is None
+    assert body["ppt_master_package"]["ppt_master_root"] == str(ppt_master_root.resolve())
+    assert body["ppt_master_package"]["missing_paths"] == []
+    assert body["ppt_master_package"]["source_artifact_id"]
+    assert body["ppt_master_package"]["run_prompt_artifact_id"]
+    assert body["ppt_master_package"]["manifest_artifact_id"]
+    assert body["ppt_master_package"]["readme_artifact_id"]
     assert captured["render_output"].name == "generated_long_deck.pptx"
     assert {
         "generated_long_deck_plan",
@@ -531,11 +594,26 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
     deck_ir_artifact = next(artifact for artifact in artifacts if artifact["name"] == "generated_long_deck_ir")
     ppt_master_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_source")
     ppt_master_prompt_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_run_prompt")
+    ppt_master_manifest_artifact = next(
+        artifact for artifact in artifacts if artifact["name"] == "ppt_master_package_manifest"
+    )
+    ppt_master_readme_artifact = next(
+        artifact for artifact in artifacts if artifact["name"] == "ppt_master_package_README"
+    )
     assert client.get(deck_ir_artifact["download_url"]).status_code == 200
     assert ppt_master_artifact["kind"] == "md"
     assert client.get(ppt_master_artifact["download_url"]).status_code == 200
     assert ppt_master_prompt_artifact["kind"] == "md"
     assert client.get(ppt_master_prompt_artifact["download_url"]).status_code == 200
+    assert ppt_master_manifest_artifact["kind"] == "json"
+    assert ppt_master_readme_artifact["kind"] == "md"
+    assert client.get(ppt_master_readme_artifact["download_url"]).status_code == 200
+    manifest_response = client.get(ppt_master_manifest_artifact["download_url"])
+    assert manifest_response.status_code == 200
+    manifest = manifest_response.json()
+    assert manifest["is_available"] is True
+    assert manifest["is_expected_repo"] is True
+    assert manifest["package_mode"] == "normal"
 
 
 def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, monkeypatch) -> None:
@@ -582,11 +660,22 @@ def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
     assert body["accepted"] is False
     assert body["current_stage"] == "failed_quality_gate"
     assert "quality gate failed" in body["error_message"].lower()
+    assert body["ppt_master_package"]["generated"] is True
+    assert body["ppt_master_package"]["package_mode"] == "recovery"
+    assert body["ppt_master_package"]["source_quality_gate_status"] == "failed_quality_gate"
+    assert body["ppt_master_package"]["source_artifact_id"]
+    assert "不会生成旧 renderer PPTX" in body["ppt_master_package"]["message"]
+    assert "recovery package" in body["ppt_master_package"]["message"]
+    assert "failed the hard quality gate" in body["ppt_master_package"]["warning"]
     assert {
         "generated_long_deck_plan",
         "generated_long_deck_ir",
         "generated_long_deck_qa",
         "generated_long_deck_quality_gate",
+        "ppt_master_source",
+        "ppt_master_run_prompt",
+        "ppt_master_package_manifest",
+        "ppt_master_package_README",
         "long_deck_run_report",
         "long_deck_request",
         "batch_01_status",
@@ -596,10 +685,31 @@ def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
     } <= artifact_names
     assert "generated_long_deck" not in artifact_names
     assert "long_deck_render_report" not in artifact_names
-    assert "ppt_master_source" not in artifact_names
-    assert "ppt_master_run_prompt" not in artifact_names
-    assert "ppt_master_package_manifest" not in artifact_names
-    assert "ppt_master_package_README" not in artifact_names
+    source_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_source")
+    manifest_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_package_manifest")
+    source_markdown = client.get(source_artifact["download_url"]).text
+    lowered_source = source_markdown.lower()
+    assert "risk:" not in lowered_source
+    assert "risk：" not in lowered_source
+    assert "impact:" not in lowered_source
+    assert "impact：" not in lowered_source
+    assert "mitigation:" not in lowered_source
+    assert "mitigation：" not in lowered_source
+    assert "判断点 1" not in source_markdown
+    assert "Option A" not in source_markdown
+    assert "把这一点转化为明确的下一步行动" not in source_markdown
+    assert "先列出 Agent 不允许自动执行的动作" not in source_markdown
+    assert "bbox" not in source_markdown
+    assert "element_id" not in source_markdown
+    assert "slide_id" not in source_markdown
+    manifest = client.get(manifest_artifact["download_url"]).json()
+    assert manifest["package_mode"] == "recovery"
+    assert manifest["source_quality_gate_status"] == "failed_quality_gate"
+    assert manifest["source_quality_gate_report_path"].endswith("generated_long_deck_quality_gate.json")
+    assert manifest["warning"] == (
+        "This package was generated from a Deck IR that failed the hard quality gate. "
+        "It is intended for PPT Master recovery rendering, not direct renderer output."
+    )
 
 
 def test_cancel_endpoint_marks_running_long_deck_job(tmp_path: Path) -> None:
@@ -645,10 +755,14 @@ def test_long_deck_job_status_keeps_batch_stage_on_failure(tmp_path: Path, monke
 
     job_id = client.post("/api/long-deck-jobs", json=_long_deck_payload()).json()["job_id"]
     body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
 
     assert body["status"] == "failed"
     assert body["current_stage"] == "generating_batch_01_of_15"
     assert "provider stopped" in body["error_message"]
+    assert body["ppt_master_package"]["generated"] is False
+    assert "not been generated" in body["ppt_master_package"]["message"]
+    assert "ppt_master_source" not in {artifact["name"] for artifact in artifacts}
 
 
 def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
@@ -667,6 +781,7 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["current_stage"] == "complete_job"
     assert body["last_updated_at"] == body["updated_at"]
     assert body["elapsed_seconds"] >= 0
+    assert body["ppt_master_package"] is None
 
 
 def test_latest_long_deck_job_can_be_queried(tmp_path: Path, monkeypatch) -> None:
@@ -695,6 +810,21 @@ def test_latest_long_deck_job_excludes_short_deck_jobs(tmp_path: Path, monkeypat
     body = response.json()
     assert body["job_id"] == long_job_id
     assert body["job_type"] == "long_deck"
+
+
+def test_old_long_deck_job_without_ppt_master_package_still_returns_status(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="succeeded", accepted=True, current_stage="completed")
+
+    response = client.get(f"/api/jobs/{job.job_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ppt_master_package"]["generated"] is False
+    assert "not been generated" in body["ppt_master_package"]["message"]
 
 
 def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_path: Path, monkeypatch) -> None:

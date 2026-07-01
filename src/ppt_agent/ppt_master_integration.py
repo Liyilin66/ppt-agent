@@ -14,7 +14,7 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -28,6 +28,10 @@ PPT_MASTER_UNAVAILABLE_WARNING = (
 )
 EXPECTED_PPT_MASTER_REPO = "github.com/hugohe3/ppt-master"
 EXPECTED_PPT_MASTER_CLONE_URL = "https://github.com/hugohe3/ppt-master.git"
+PPT_MASTER_RECOVERY_WARNING = (
+    "This package was generated from a Deck IR that failed the hard quality gate. "
+    "It is intended for PPT Master recovery rendering, not direct renderer output."
+)
 
 
 class PptMasterInstallation(StrictModel):
@@ -46,6 +50,11 @@ class PptMasterPackageManifest(StrictModel):
     ppt_master_root: Path | None = None
     created_at: str
     is_available: bool
+    is_expected_repo: bool | None = None
+    package_mode: Literal["normal", "recovery"] = "normal"
+    source_quality_gate_status: str | None = None
+    source_quality_gate_report_path: Path | None = None
+    warning: str | None = None
     missing_paths: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     topic: str | None = None
@@ -178,16 +187,23 @@ def create_ppt_master_job_package(
     style_notes: str | Iterable[str] | None = None,
     audience: str | None = None,
     topic: str | None = None,
+    package_mode: Literal["normal", "recovery"] = "normal",
+    source_quality_gate_status: str | None = None,
+    source_quality_gate_report_path: str | Path | None = None,
+    warning: str | None = None,
 ) -> PptMasterJobPackage:
     """Create a local handoff package for a ppt-master workflow."""
 
     installation = detect_ppt_master_installation(ppt_master_root)
+    setup_check = check_ppt_master_setup(ppt_master_root)
     package_dir = Path(output_dir).expanduser().resolve(strict=False)
     package_dir.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
     if not installation.is_available:
         warnings.append(PPT_MASTER_UNAVAILABLE_WARNING)
+    if warning:
+        warnings.append(warning)
 
     source_path = package_dir / "source.md"
     export_deck_ir_to_ppt_master_markdown(
@@ -230,6 +246,15 @@ def create_ppt_master_job_package(
         ppt_master_root=installation.root_path,
         created_at=datetime.now(UTC).isoformat(),
         is_available=installation.is_available,
+        is_expected_repo=setup_check.is_expected_repo,
+        package_mode=package_mode,
+        source_quality_gate_status=source_quality_gate_status,
+        source_quality_gate_report_path=(
+            Path(source_quality_gate_report_path).expanduser().resolve(strict=False)
+            if source_quality_gate_report_path is not None
+            else None
+        ),
+        warning=warning,
         missing_paths=installation.missing_paths,
         warnings=warnings,
         topic=topic,

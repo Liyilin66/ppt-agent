@@ -100,6 +100,13 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "web ui long-ppt entrypoint" in text
     assert "local ppt master setup check" in text
     assert "check_ppt_master_setup.py" in text
+    assert "web handoff ux" in text
+    assert "ppt master 渲染包" in text
+    assert "run_prompt.md" in text
+    assert "does not automatically run ppt-master" in text
+    assert "ppt master recovery package" in text
+    assert "package_mode: recovery" in text
+    assert "not to bypass the quality gate" in text
 
 
 def test_long_deck_demo_runner_default_output_dir() -> None:

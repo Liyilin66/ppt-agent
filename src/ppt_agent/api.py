@@ -9,7 +9,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -21,7 +21,7 @@ from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunReque
 from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
-from ppt_agent.ppt_master_integration import create_ppt_master_job_package
+from ppt_agent.ppt_master_integration import PPT_MASTER_RECOVERY_WARNING, create_ppt_master_job_package
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
@@ -34,6 +34,11 @@ DEFAULT_THEME_PATH = Path("examples/theme.json")
 DEFAULT_ASSETS_DIR = Path("examples")
 
 logger = logging.getLogger(__name__)
+
+PPT_MASTER_SOURCE_ARTIFACT = "ppt_master_source"
+PPT_MASTER_RUN_PROMPT_ARTIFACT = "ppt_master_run_prompt"
+PPT_MASTER_MANIFEST_ARTIFACT = "ppt_master_package_manifest"
+PPT_MASTER_README_ARTIFACT = "ppt_master_package_README"
 
 
 INDEX_HTML = """<!doctype html>
@@ -161,6 +166,33 @@ INDEX_HTML = """<!doctype html>
         color: #2457c5;
         font-weight: 700;
       }
+
+      .artifact-group-label {
+        margin-top: 6px;
+        color: #172033;
+        font-weight: 800;
+      }
+
+      .metadata-grid {
+        display: grid;
+        grid-template-columns: minmax(150px, 0.35fr) 1fr;
+        gap: 8px 14px;
+        margin: 0 0 18px;
+      }
+
+      .metadata-grid dt {
+        color: #506078;
+        font-weight: 700;
+      }
+
+      .metadata-grid dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .hint {
+        margin-bottom: 0;
+      }
     </style>
   </head>
   <body>
@@ -254,6 +286,28 @@ INDEX_HTML = """<!doctype html>
         <h2>生成文件</h2>
         <ul id="artifacts"></ul>
       </section>
+
+      <section id="pptMasterPackageSection" hidden>
+        <h2>PPT Master 渲染包</h2>
+        <p id="pptMasterPackageMessage"></p>
+        <dl class="metadata-grid">
+          <dt>package 状态</dt>
+          <dd id="pptMasterGenerated">未生成</dd>
+          <dt>ppt-master 检测</dt>
+          <dd id="pptMasterAvailable">未知</dd>
+          <dt>官方仓库</dt>
+          <dd id="pptMasterExpectedRepo">未知</dd>
+          <dt>package_mode</dt>
+          <dd id="pptMasterPackageMode">未知</dd>
+          <dt>quality_gate</dt>
+          <dd id="pptMasterQualityGate">未知</dd>
+          <dt>PPT_MASTER_DIR / root</dt>
+          <dd id="pptMasterRoot">未检测到</dd>
+          <dt>missing_paths</dt>
+          <dd id="pptMasterMissingPaths">无</dd>
+        </dl>
+        <p class="hint">当前阶段不会自动运行 ppt-master，只提供 handoff package。用户可以把 run_prompt.md 交给本地 ppt-master workflow 使用。</p>
+      </section>
     </main>
 
     <script>
@@ -272,11 +326,106 @@ INDEX_HTML = """<!doctype html>
       const longRunningNotice = document.getElementById("longRunningNotice");
       const errorMessage = document.getElementById("errorMessage");
       const artifacts = document.getElementById("artifacts");
+      const pptMasterPackageSection = document.getElementById("pptMasterPackageSection");
+      const pptMasterPackageMessage = document.getElementById("pptMasterPackageMessage");
+      const pptMasterGenerated = document.getElementById("pptMasterGenerated");
+      const pptMasterAvailable = document.getElementById("pptMasterAvailable");
+      const pptMasterExpectedRepo = document.getElementById("pptMasterExpectedRepo");
+      const pptMasterPackageMode = document.getElementById("pptMasterPackageMode");
+      const pptMasterQualityGate = document.getElementById("pptMasterQualityGate");
+      const pptMasterRoot = document.getElementById("pptMasterRoot");
+      const pptMasterMissingPaths = document.getElementById("pptMasterMissingPaths");
       const cancelJobButton = document.getElementById("cancelJobButton");
       const resumeJobButton = document.getElementById("resumeJobButton");
       const lastLongDeckJobStorageKey = "ppt_agent_last_long_deck_job_id";
+      const pptMasterArtifactNames = new Set([
+        "ppt_master_source",
+        "ppt_master_run_prompt",
+        "ppt_master_package_manifest",
+        "ppt_master_package_README"
+      ]);
+      const artifactDisplayNames = {
+        ppt_master_source: "PPT Master Source Markdown",
+        ppt_master_run_prompt: "PPT Master Run Prompt",
+        ppt_master_package_manifest: "PPT Master Package Manifest",
+        ppt_master_package_README: "PPT Master Package README"
+      };
       let pollTimer = null;
       let activeJobId = null;
+
+      function isTerminalStatus(status) {
+        return status === "succeeded"
+          || status === "failed"
+          || status === "failed_quality_gate"
+          || status === "partial_failed_quality_gate"
+          || status === "cancelled"
+          || status === "partial_cancelled";
+      }
+
+      function booleanLabel(value) {
+        if (value === true) {
+          return "true";
+        }
+        if (value === false) {
+          return "false";
+        }
+        return "未知";
+      }
+
+      function clearPptMasterPackage() {
+        pptMasterPackageSection.hidden = true;
+        pptMasterPackageMessage.textContent = "";
+        pptMasterGenerated.textContent = "未生成";
+        pptMasterAvailable.textContent = "未知";
+        pptMasterExpectedRepo.textContent = "未知";
+        pptMasterPackageMode.textContent = "未知";
+        pptMasterQualityGate.textContent = "未知";
+        pptMasterRoot.textContent = "未检测到";
+        pptMasterMissingPaths.textContent = "无";
+      }
+
+      function updatePptMasterPackage(job) {
+        if (!isLongDeckJob(job) || !job.ppt_master_package) {
+          clearPptMasterPackage();
+          return;
+        }
+
+        const packageInfo = job.ppt_master_package;
+        pptMasterPackageSection.hidden = false;
+        pptMasterPackageMessage.textContent = packageInfo.message || "";
+        if (packageInfo.generated && packageInfo.package_mode === "recovery") {
+          pptMasterGenerated.textContent = "Recovery package 已生成";
+        } else {
+          pptMasterGenerated.textContent = packageInfo.generated ? "已生成" : "未生成";
+        }
+        pptMasterAvailable.textContent = booleanLabel(packageInfo.available);
+        pptMasterExpectedRepo.textContent = booleanLabel(packageInfo.is_expected_repo);
+        pptMasterPackageMode.textContent = packageInfo.package_mode || "未知";
+        pptMasterQualityGate.textContent = packageInfo.source_quality_gate_status || "未知";
+        pptMasterRoot.textContent = packageInfo.ppt_master_root || "未检测到";
+        const missingPaths = packageInfo.missing_paths || [];
+        pptMasterMissingPaths.textContent = missingPaths.length ? missingPaths.join(", ") : "无";
+      }
+
+      function artifactLabel(artifact) {
+        return artifactDisplayNames[artifact.name] || `${artifact.name}.${artifact.kind}`;
+      }
+
+      function appendArtifactGroupLabel(text) {
+        const item = document.createElement("li");
+        item.className = "artifact-group-label";
+        item.textContent = text;
+        artifacts.appendChild(item);
+      }
+
+      function appendArtifactLink(artifact) {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = artifact.download_url;
+        link.textContent = `下载 ${artifactLabel(artifact)}`;
+        item.appendChild(link);
+        artifacts.appendChild(item);
+      }
 
       function setBusy(isBusy) {
         button.disabled = isBusy;
@@ -288,7 +437,7 @@ INDEX_HTML = """<!doctype html>
       }
 
       function updateActionButtons(job) {
-        const terminal = job.status === "succeeded" || job.status === "failed" || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate" || job.status === "cancelled" || job.status === "partial_cancelled";
+        const terminal = isTerminalStatus(job.status);
         cancelJobButton.disabled = !(isLongDeckJob(job) && !terminal && !job.cancel_requested);
         resumeJobButton.disabled = !(isLongDeckJob(job) && (job.status === "failed" || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate" || job.status === "cancelled" || job.status === "partial_cancelled"));
       }
@@ -369,7 +518,7 @@ INDEX_HTML = """<!doctype html>
         completedBatches.textContent = String(job.completed_batches || 0);
         failedBatches.textContent = String(job.failed_batches || 0);
         elapsedSeconds.textContent = String(job.elapsed_seconds || 0);
-        const isTerminal = job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled";
+        const isTerminal = isTerminalStatus(job.status);
         if (job.cancel_requested && !isTerminal) {
           longRunningNotice.textContent = "取消请求已发送；当前 batch 完成后会停止。";
         } else if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
@@ -438,13 +587,19 @@ INDEX_HTML = """<!doctype html>
       async function loadArtifacts(id) {
         const body = await requestJson(`/api/jobs/${id}/artifacts`);
         clearArtifacts();
+        const pptMasterArtifacts = [];
         for (const artifact of body.artifacts) {
-          const item = document.createElement("li");
-          const link = document.createElement("a");
-          link.href = artifact.download_url;
-          link.textContent = `下载 ${artifact.name}.${artifact.kind}`;
-          item.appendChild(link);
-          artifacts.appendChild(item);
+          if (pptMasterArtifactNames.has(artifact.name)) {
+            pptMasterArtifacts.push(artifact);
+          } else {
+            appendArtifactLink(artifact);
+          }
+        }
+        if (pptMasterArtifacts.length) {
+          appendArtifactGroupLabel("PPT Master 渲染包");
+          for (const artifact of pptMasterArtifacts) {
+            appendArtifactLink(artifact);
+          }
         }
       }
 
@@ -465,16 +620,17 @@ INDEX_HTML = """<!doctype html>
         rememberActiveJob(job);
         setStatus(job.status, job.accepted, job.error_message || "");
         setProgress(job);
+        updatePptMasterPackage(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
         }
-        if (job.status === "succeeded" || job.status === "failed") {
+        if (isTerminalStatus(job.status)) {
           if (pollTimer) {
             clearInterval(pollTimer);
           }
           pollTimer = null;
           setBusy(false);
-          if (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled" || job.status === "partial_cancelled") {
+          if (isTerminalStatus(job.status)) {
             rememberActiveJob(job);
           }
           await loadArtifacts(id);
@@ -494,6 +650,7 @@ INDEX_HTML = """<!doctype html>
         longRunningNotice.textContent = "";
         errorMessage.textContent = "";
         clearArtifacts();
+        clearPptMasterPackage();
 
         try {
           const job = await requestJson(url, {
@@ -530,6 +687,7 @@ INDEX_HTML = """<!doctype html>
             jobId.textContent = job.job_id;
             setStatus(job.status, job.accepted, job.error_message || "");
             setProgress(job);
+            updatePptMasterPackage(job);
             if (job.error_message) {
               errorMessage.textContent = job.error_message;
             }
@@ -550,6 +708,7 @@ INDEX_HTML = """<!doctype html>
           jobId.textContent = latest.job_id;
           setStatus(latest.status, latest.accepted, latest.error_message || "");
           setProgress(latest);
+          updatePptMasterPackage(latest);
           if (latest.error_message) {
             errorMessage.textContent = latest.error_message;
           }
@@ -576,6 +735,7 @@ INDEX_HTML = """<!doctype html>
         try {
           const job = await requestJson(`/api/jobs/${activeJobId}/cancel`, {method: "POST"});
           setProgress(job);
+          updatePptMasterPackage(job);
           setStatus(job.status, job.accepted, job.error_message || "");
         } catch (error) {
           errorMessage.textContent = error.message;
@@ -639,8 +799,24 @@ class CreateJobResponse(StrictModel):
     ]
 
 
+class PptMasterPackageResponse(StrictModel):
+    generated: bool
+    available: bool
+    is_expected_repo: bool | None = None
+    package_mode: Literal["normal", "recovery"] | None = None
+    source_quality_gate_status: str | None = None
+    warning: str | None = None
+    ppt_master_root: str | None = None
+    missing_paths: list[str] = Field(default_factory=list)
+    source_artifact_id: str | None = None
+    run_prompt_artifact_id: str | None = None
+    manifest_artifact_id: str | None = None
+    readme_artifact_id: str | None = None
+    message: str
+
+
 class JobResponse(JobRecord):
-    pass
+    ppt_master_package: PptMasterPackageResponse | None = None
 
 
 class ArtifactResponse(StrictModel):
@@ -670,6 +846,104 @@ def _artifact_response(artifact: ArtifactRecord) -> ArtifactResponse:
         kind=artifact.kind,
         download_url=f"/api/artifacts/{artifact.artifact_id}",
     )
+
+
+def _read_ppt_master_manifest(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _optional_str(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _ppt_master_package_response(store: JobStore, job: JobRecord) -> PptMasterPackageResponse | None:
+    if job.job_type != "long_deck":
+        return None
+
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    source_artifact = artifacts_by_name.get(PPT_MASTER_SOURCE_ARTIFACT)
+    run_prompt_artifact = artifacts_by_name.get(PPT_MASTER_RUN_PROMPT_ARTIFACT)
+    manifest_artifact = artifacts_by_name.get(PPT_MASTER_MANIFEST_ARTIFACT)
+    readme_artifact = artifacts_by_name.get(PPT_MASTER_README_ARTIFACT)
+
+    if source_artifact and run_prompt_artifact and manifest_artifact and readme_artifact:
+        manifest = _read_ppt_master_manifest(manifest_artifact.path)
+        is_expected_repo = manifest.get("is_expected_repo")
+        if not isinstance(is_expected_repo, bool):
+            is_expected_repo = None
+        ppt_master_root = manifest.get("ppt_master_root")
+        if not isinstance(ppt_master_root, str):
+            ppt_master_root = None
+        available = manifest.get("is_available") is True
+        package_mode = manifest.get("package_mode")
+        if package_mode not in {"normal", "recovery"}:
+            package_mode = "normal"
+        source_quality_gate_status = _optional_str(manifest.get("source_quality_gate_status"))
+        warning = _optional_str(manifest.get("warning"))
+        if package_mode == "recovery":
+            message = (
+                "质量门禁未通过，因此不会生成旧 renderer PPTX。"
+                "但已生成 PPT Master recovery package，可用于交给本地 ppt-master 重新生成。"
+            )
+        else:
+            message = (
+                "PPT Master handoff package is ready. ppt-agent does not run ppt-master automatically."
+                if available
+                else "PPT Master handoff package is ready, but local ppt-master was not detected."
+            )
+        return PptMasterPackageResponse(
+            generated=True,
+            available=available,
+            is_expected_repo=is_expected_repo,
+            package_mode=package_mode,
+            source_quality_gate_status=source_quality_gate_status,
+            warning=warning,
+            ppt_master_root=ppt_master_root,
+            missing_paths=_string_list(manifest.get("missing_paths")),
+            source_artifact_id=source_artifact.artifact_id,
+            run_prompt_artifact_id=run_prompt_artifact.artifact_id,
+            manifest_artifact_id=manifest_artifact.artifact_id,
+            readme_artifact_id=readme_artifact.artifact_id,
+            message=message,
+        )
+
+    if job.status in {"failed_quality_gate", "partial_failed_quality_gate"}:
+        return PptMasterPackageResponse(
+            generated=False,
+            available=False,
+            package_mode=None,
+            source_quality_gate_status=job.status,
+            missing_paths=[],
+            message="未找到 generated_long_deck_ir.json，因此未生成 PPT Master recovery package。",
+        )
+
+    if job.status in {"pending", "running"}:
+        message = "PPT Master package will be generated after the long deck passes the quality gate."
+    else:
+        message = "PPT Master package has not been generated for this job."
+    return PptMasterPackageResponse(
+        generated=False,
+        available=False,
+        missing_paths=[],
+        message=message,
+    )
+
+
+def _job_response(store: JobStore, job: JobRecord) -> JobResponse:
+    data = job.model_dump(mode="python")
+    package = _ppt_master_package_response(store, job)
+    data["ppt_master_package"] = package.model_dump(mode="python") if package is not None else None
+    return JobResponse.model_validate(data)
 
 
 def _path_within(path: Path, root: Path) -> bool:
@@ -789,9 +1063,9 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
     if relative_path == Path("ppt_master_package/source.md"):
         return None
     ppt_master_package_names = {
-        Path("ppt_master_package/run_prompt.md"): "ppt_master_run_prompt",
-        Path("ppt_master_package/README.md"): "ppt_master_package_README",
-        Path("ppt_master_package/manifest.json"): "ppt_master_package_manifest",
+        Path("ppt_master_package/run_prompt.md"): PPT_MASTER_RUN_PROMPT_ARTIFACT,
+        Path("ppt_master_package/README.md"): PPT_MASTER_README_ARTIFACT,
+        Path("ppt_master_package/manifest.json"): PPT_MASTER_MANIFEST_ARTIFACT,
     }
     return ppt_master_package_names.get(relative_path, artifact_path.stem)
 
@@ -842,6 +1116,42 @@ def _load_long_deck_request_artifact(output_dir: Path) -> CreateLongDeckJobReque
             "Long deck request metadata is missing; this job cannot be resumed from the Web UI."
         )
     return CreateLongDeckJobRequest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _read_quality_gate_status(path: Path | None, *, fallback: str | None = None) -> str | None:
+    if path is None or not path.is_file():
+        return fallback
+    try:
+        status = json.loads(path.read_text(encoding="utf-8")).get("status")
+    except (OSError, json.JSONDecodeError):
+        return fallback
+    return status if isinstance(status, str) else fallback
+
+
+def _create_long_deck_ppt_master_package(
+    *,
+    deck_ir_path: Path,
+    output_dir: Path,
+    payload: CreateLongDeckJobRequest,
+    package_mode: Literal["normal", "recovery"],
+    source_quality_gate_status: str | None,
+    source_quality_gate_report_path: Path | None,
+) -> None:
+    warning = PPT_MASTER_RECOVERY_WARNING if package_mode == "recovery" else None
+    ppt_master_package = create_ppt_master_job_package(
+        json.loads(deck_ir_path.read_text(encoding="utf-8")),
+        output_dir / "ppt_master_package",
+        topic=payload.topic,
+        audience=payload.audience,
+        package_mode=package_mode,
+        source_quality_gate_status=source_quality_gate_status,
+        source_quality_gate_report_path=source_quality_gate_report_path,
+        warning=warning,
+    )
+    (output_dir / "ppt_master_source.md").write_text(
+        ppt_master_package.source_path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
 
 def _run_job(
@@ -1003,17 +1313,27 @@ def _run_long_deck_job(
         )
 
         render_report: LongDeckRenderReport | None = None
+        if run_report.merged_deck_ir_path is not None and run_report.status in {
+            "succeeded",
+            "failed_quality_gate",
+            "partial_failed_quality_gate",
+        }:
+            package_mode: Literal["normal", "recovery"] = (
+                "normal" if run_report.status == "succeeded" else "recovery"
+            )
+            _create_long_deck_ppt_master_package(
+                deck_ir_path=run_report.merged_deck_ir_path,
+                output_dir=output_dir,
+                payload=payload,
+                package_mode=package_mode,
+                source_quality_gate_status=_read_quality_gate_status(
+                    run_report.long_deck_quality_gate_path,
+                    fallback=run_report.status,
+                ),
+                source_quality_gate_report_path=run_report.long_deck_quality_gate_path,
+            )
+
         if run_report.merged_deck_ir_path is not None and run_report.status == "succeeded":
-            ppt_master_package = create_ppt_master_job_package(
-                json.loads(run_report.merged_deck_ir_path.read_text(encoding="utf-8")),
-                output_dir / "ppt_master_package",
-                topic=payload.topic,
-                audience=payload.audience,
-            )
-            (output_dir / "ppt_master_source.md").write_text(
-                ppt_master_package.source_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
             store.update_progress(job_id, current_stage="rendering_long_deck_pptx")
             render_report = render_long_deck_ir_to_pptx(
                 run_report.merged_deck_ir_path,
@@ -1203,13 +1523,13 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job.job_type != "long_deck":
             raise HTTPException(status_code=400, detail="Only long deck jobs can be cancelled.")
         if job.status not in {"pending", "running"}:
-            return JobResponse.model_validate(job.model_dump())
+            return _job_response(app.state.job_store, job)
 
         app.state.job_store.request_cancel(job_id)
         cancelled = app.state.job_store.get_job(job_id)
         if cancelled is None:
             raise HTTPException(status_code=404, detail="Job not found.")
-        return JobResponse.model_validate(cancelled.model_dump())
+        return _job_response(app.state.job_store, cancelled)
 
     @app.get("/api/jobs/latest", response_model=JobResponse)
     def get_latest_job(job_type: str | None = None) -> JobResponse:
@@ -1217,7 +1537,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         job = _expire_stale_job(app.state.job_store, job)
-        return JobResponse.model_validate(job.model_dump())
+        return _job_response(app.state.job_store, job)
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def get_job(job_id: str) -> JobResponse:
@@ -1225,7 +1545,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         job = _expire_stale_job(app.state.job_store, job)
-        return JobResponse.model_validate(job.model_dump())
+        return _job_response(app.state.job_store, job)
 
     @app.get("/api/jobs/{job_id}/artifacts", response_model=ArtifactListResponse)
     def list_artifacts(job_id: str) -> ArtifactListResponse:

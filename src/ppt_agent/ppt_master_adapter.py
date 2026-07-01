@@ -46,6 +46,11 @@ INSTRUCTION_LEAKAGE_RE = re.compile(
     r"\b(?:instruction\s+leakage|instruction[-_ ]?leak|prompt\s+leakage|risk_label_prefix_leakage)\b",
     re.IGNORECASE,
 )
+SCHEMA_FIELD_RE = re.compile(r"\b(?:bbox|element_id|slide_id)\b", re.IGNORECASE)
+FORBIDDEN_INSTRUCTION_PHRASES = (
+    "把这一点转化为明确的下一步行动",
+    "先列出 Agent 不允许自动执行的动作",
+)
 BULLET_MARKER_RE = re.compile(r"^\s*(?:[-*•]\s+|\d+[.)、]\s*|[A-Za-z][.)]\s*)")
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[。.!?！？])\s+")
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -267,6 +272,8 @@ def _text_candidates(slide: Slide) -> list[str]:
 
 def _clean_text(value: str) -> str:
     text = value.replace("\r", "\n").strip()
+    if SCHEMA_FIELD_RE.search(text):
+        return ""
     text = BULLET_MARKER_RE.sub("", text).strip()
     previous = None
     while previous != text:
@@ -274,6 +281,8 @@ def _clean_text(value: str) -> str:
         text = NOISE_PREFIX_RE.sub("", text).strip()
         text = PLACEHOLDER_PREFIX_RE.sub("", text).strip()
     text = INSTRUCTION_LEAKAGE_RE.sub("", text).strip()
+    for phrase in FORBIDDEN_INSTRUCTION_PHRASES:
+        text = text.replace(phrase, "").strip()
     text = re.sub(r"\s+", " ", text).strip(" -:：/|")
     if not text or STANDALONE_PLACEHOLDER_RE.fullmatch(text):
         return ""

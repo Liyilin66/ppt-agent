@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ppt_agent.ppt_master_integration import (
     EXPECTED_PPT_MASTER_CLONE_URL,
+    PPT_MASTER_RECOVERY_WARNING,
     check_ppt_master_setup,
     create_ppt_master_job_package,
     detect_ppt_master_installation,
@@ -99,6 +100,7 @@ def test_create_ppt_master_job_package_prompt_contains_skill_and_source_paths(tm
 
 def test_create_ppt_master_job_package_manifest_records_availability(tmp_path: Path) -> None:
     root = _mock_ppt_master_root(tmp_path)
+    _init_git_repo(root, "https://github.com/hugohe3/ppt-master.git")
     package = create_ppt_master_job_package(
         _sample_deck_payload(),
         tmp_path / "package",
@@ -110,7 +112,31 @@ def test_create_ppt_master_job_package_manifest_records_availability(tmp_path: P
     assert manifest["source_path"] == str(package.source_path)
     assert manifest["ppt_master_root"] == str(root.resolve())
     assert manifest["is_available"] is True
+    assert manifest["is_expected_repo"] is True
     assert manifest["warnings"] == []
+
+
+def test_create_ppt_master_job_package_manifest_records_recovery_mode(tmp_path: Path) -> None:
+    root = _mock_ppt_master_root(tmp_path)
+    quality_gate_path = tmp_path / "generated_long_deck_quality_gate.json"
+    quality_gate_path.write_text('{"status":"failed_quality_gate"}\n', encoding="utf-8")
+
+    package = create_ppt_master_job_package(
+        _sample_deck_payload(),
+        tmp_path / "package",
+        ppt_master_root=root,
+        package_mode="recovery",
+        source_quality_gate_status="failed_quality_gate",
+        source_quality_gate_report_path=quality_gate_path,
+        warning=PPT_MASTER_RECOVERY_WARNING,
+    )
+    manifest = json.loads(package.manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["package_mode"] == "recovery"
+    assert manifest["source_quality_gate_status"] == "failed_quality_gate"
+    assert manifest["source_quality_gate_report_path"] == str(quality_gate_path.resolve())
+    assert manifest["warning"] == PPT_MASTER_RECOVERY_WARNING
+    assert PPT_MASTER_RECOVERY_WARNING in manifest["warnings"]
 
 
 def test_create_ppt_master_job_package_missing_root_keeps_handoff_files(tmp_path: Path) -> None:

@@ -55,6 +55,9 @@ def _deck_payload() -> dict:
                 "elements": [
                     _text_element("s4_heading", "判断点 3"),
                     _text_element("s4_body", "任务完成率、人工接管率、用户修正次数要一起看"),
+                    _text_element("s4_instruction", "把这一点转化为明确的下一步行动"),
+                    _text_element("s4_policy", "先列出 Agent 不允许自动执行的动作"),
+                    _text_element("s4_schema", "slide_id / element_id / bbox should never leak"),
                 ],
             },
         ],
@@ -128,6 +131,11 @@ def test_export_deck_ir_to_ppt_master_markdown_sanitizes_bad_content(tmp_path: P
     assert "方案 B" not in markdown
     assert "Option A" not in markdown
     assert "Option B" not in markdown
+    assert "把这一点转化为明确的下一步行动" not in markdown
+    assert "先列出 Agent 不允许自动执行的动作" not in markdown
+    assert "bbox" not in markdown
+    assert "element_id" not in markdown
+    assert "slide_id" not in markdown
     assert "\n- \n" not in markdown
     assert "Risk：instruction leakage" in original_payload["slides"][0]["elements"][1]["text"]
 
