@@ -21,7 +21,7 @@ from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunReque
 from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
-from ppt_agent.ppt_master_adapter import export_deck_ir_to_ppt_master_markdown
+from ppt_agent.ppt_master_integration import create_ppt_master_job_package
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
@@ -780,13 +780,32 @@ def _long_deck_stage_from_progress(message: str, total_batches: int) -> str | No
     return None
 
 
+def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None:
+    try:
+        relative_path = artifact_path.relative_to(output_dir)
+    except ValueError:
+        relative_path = artifact_path
+
+    if relative_path == Path("ppt_master_package/source.md"):
+        return None
+    ppt_master_package_names = {
+        Path("ppt_master_package/run_prompt.md"): "ppt_master_run_prompt",
+        Path("ppt_master_package/README.md"): "ppt_master_package_README",
+        Path("ppt_master_package/manifest.json"): "ppt_master_package_manifest",
+    }
+    return ppt_master_package_names.get(relative_path, artifact_path.stem)
+
+
 def _register_job_artifacts(store: JobStore, job_id: str, output_dir: Path) -> None:
     for artifact_path in sorted(output_dir.rglob("*")):
         if not artifact_path.is_file() or artifact_path.suffix.lower() not in {".json", ".pptx", ".md"}:
             continue
+        artifact_name = _artifact_name_for_path(output_dir, artifact_path)
+        if artifact_name is None:
+            continue
         suffix = artifact_path.suffix.lower()
         kind: ArtifactKind = "pptx" if suffix == ".pptx" else "md" if suffix == ".md" else "json"
-        store.add_artifact(job_id, name=artifact_path.stem, kind=kind, path=artifact_path)
+        store.add_artifact(job_id, name=artifact_name, kind=kind, path=artifact_path)
 
 
 def _read_long_deck_qa_score(path: Path | None) -> int | None:
@@ -985,9 +1004,15 @@ def _run_long_deck_job(
 
         render_report: LongDeckRenderReport | None = None
         if run_report.merged_deck_ir_path is not None and run_report.status == "succeeded":
-            export_deck_ir_to_ppt_master_markdown(
+            ppt_master_package = create_ppt_master_job_package(
                 json.loads(run_report.merged_deck_ir_path.read_text(encoding="utf-8")),
-                output_dir / "ppt_master_source.md",
+                output_dir / "ppt_master_package",
+                topic=payload.topic,
+                audience=payload.audience,
+            )
+            (output_dir / "ppt_master_source.md").write_text(
+                ppt_master_package.source_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
             )
             store.update_progress(job_id, current_stage="rendering_long_deck_pptx")
             render_report = render_long_deck_ir_to_pptx(

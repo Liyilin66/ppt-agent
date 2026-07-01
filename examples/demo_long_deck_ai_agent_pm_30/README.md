@@ -85,6 +85,65 @@ examples/demo_long_deck_ai_agent_pm_30/output/ppt_master_source.md
 4. Use that Markdown file as the source document in ppt-master manually.
 5. This project does not currently embed ppt-master, copy its source code, or guarantee the quality of ppt-master output.
 
+## PPT Master Local Integration Spike
+
+For a local workflow handoff, prepare a job package that can be used from a separate ppt-master checkout.
+
+1. Install or clone ppt-master locally, for example:
+
+```text
+/Users/jay/Documents/ppt-master
+```
+
+2. Set the local ppt-master root:
+
+```bash
+export PPT_MASTER_DIR="/Users/jay/Documents/ppt-master"
+```
+
+3. Prepare the package:
+
+```bash
+uv run python scripts/prepare_ppt_master_package.py \
+  --input examples/demo_long_deck_ai_agent_pm_30/output/generated_long_deck_ir.json \
+  --output-dir examples/demo_long_deck_ai_agent_pm_30/output/ppt_master_package
+```
+
+4. Open the generated `run_prompt.md`.
+5. In Claude Code, Codex, or CodeBuddy, open the ppt-master repo and run that prompt there.
+6. ppt-agent does not automatically run ppt-master in this stage. This spike only generates a job package that can be handed to the local ppt-master workflow.
+
+## Local PPT Master Setup Check
+
+Check the local ppt-master checkout before preparing or running a package:
+
+```bash
+uv run python scripts/check_ppt_master_setup.py --ppt-master-dir /Users/jay/Documents/ppt-master
+```
+
+For machine-readable output:
+
+```bash
+uv run python scripts/check_ppt_master_setup.py --ppt-master-dir /Users/jay/Documents/ppt-master --json
+```
+
+If the directory does not exist, clone the official repository:
+
+```bash
+cd /Users/jay/Documents
+git clone https://github.com/hugohe3/ppt-master.git
+```
+
+If the directory already exists but may be old, inspect and update it manually:
+
+```bash
+cd /Users/jay/Documents/ppt-master
+git status
+git pull
+```
+
+ppt-agent does not automatically update ppt-master. This avoids silently changing the user's local checkout.
+
 ## Artifacts
 
 Expected output shape:
@@ -96,6 +155,11 @@ output/
   generated_long_deck_qa.json
   generated_long_deck.pptx
   ppt_master_source.md
+  ppt_master_package/
+    source.md
+    run_prompt.md
+    README.md
+    manifest.json
   long_deck_render_report.json
   long_deck_run_report.json
   batches/
@@ -137,6 +201,8 @@ Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sect
 `generated_long_deck.pptx` is the editable PowerPoint rendered from the stitched Deck IR.
 
 `ppt_master_source.md` is a source Markdown outline for a manual ppt-master adapter experiment. It is generated from the already-validated Deck IR and does not call the model or run ppt-master.
+
+`ppt_master_package/` is the local integration handoff package. It contains the same source document, a runnable prompt for a local ppt-master checkout, a README, and a manifest with ppt-master availability warnings.
 
 `long_deck_render_report.json` records render status, input/output paths, slide count, timestamp, warnings, and any render error.
 

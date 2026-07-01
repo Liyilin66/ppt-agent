@@ -56,29 +56,38 @@ def export_deck_ir_to_ppt_master_markdown(
     output_path: str | Path,
     *,
     style_notes: str | Iterable[str] | None = None,
+    topic: str | None = None,
+    audience: str | None = None,
 ) -> Path:
     """Write a human-readable ppt-master source Markdown file from Deck IR."""
 
     deck = deck_ir if isinstance(deck_ir, Deck) else Deck.model_validate(deck_ir)
-    markdown = _build_markdown(deck, style_notes=style_notes)
+    markdown = _build_markdown(deck, style_notes=style_notes, topic=topic, audience=audience)
     resolved_output_path = Path(output_path)
     resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
     resolved_output_path.write_text(markdown, encoding="utf-8")
     return resolved_output_path
 
 
-def _build_markdown(deck: Deck, *, style_notes: str | Iterable[str] | None) -> str:
+def _build_markdown(
+    deck: Deck,
+    *,
+    style_notes: str | Iterable[str] | None,
+    topic: str | None,
+    audience: str | None,
+) -> str:
     language = "zh-CN" if _deck_uses_cjk(deck) else "en-US"
-    audience = "沿用原始 Deck IR 生成请求中的目标观众"
+    topic_text = _clean_text(topic or deck.title) or "Untitled presentation"
+    audience_text = _clean_text(audience or "沿用原始 Deck IR 生成请求中的目标观众")
 
     lines = [
         "# Presentation Request",
         "",
         "## Topic",
-        _clean_text(deck.title) or "Untitled presentation",
+        topic_text,
         "",
         "## Audience",
-        audience,
+        audience_text,
         "",
         "## Language",
         language,

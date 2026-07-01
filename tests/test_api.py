@@ -516,6 +516,9 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
         "generated_long_deck_quality_gate",
         "generated_long_deck",
         "ppt_master_source",
+        "ppt_master_run_prompt",
+        "ppt_master_package_manifest",
+        "ppt_master_package_README",
         "long_deck_run_report",
         "long_deck_render_report",
         "long_deck_request",
@@ -527,9 +530,12 @@ def test_long_deck_job_writes_ir_pptx_and_registers_artifacts(tmp_path: Path, mo
 
     deck_ir_artifact = next(artifact for artifact in artifacts if artifact["name"] == "generated_long_deck_ir")
     ppt_master_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_source")
+    ppt_master_prompt_artifact = next(artifact for artifact in artifacts if artifact["name"] == "ppt_master_run_prompt")
     assert client.get(deck_ir_artifact["download_url"]).status_code == 200
     assert ppt_master_artifact["kind"] == "md"
     assert client.get(ppt_master_artifact["download_url"]).status_code == 200
+    assert ppt_master_prompt_artifact["kind"] == "md"
+    assert client.get(ppt_master_prompt_artifact["download_url"]).status_code == 200
 
 
 def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, monkeypatch) -> None:
@@ -552,6 +558,9 @@ def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, mo
         "generated_long_deck_ir",
         "generated_long_deck",
         "ppt_master_source",
+        "ppt_master_run_prompt",
+        "ppt_master_package_manifest",
+        "ppt_master_package_README",
         "long_deck_run_report",
     }
 
@@ -588,6 +597,9 @@ def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
     assert "generated_long_deck" not in artifact_names
     assert "long_deck_render_report" not in artifact_names
     assert "ppt_master_source" not in artifact_names
+    assert "ppt_master_run_prompt" not in artifact_names
+    assert "ppt_master_package_manifest" not in artifact_names
+    assert "ppt_master_package_README" not in artifact_names
 
 
 def test_cancel_endpoint_marks_running_long_deck_job(tmp_path: Path) -> None:

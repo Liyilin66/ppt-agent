@@ -34,6 +34,14 @@ def _load_export_module():
     return _load_script_module("export_to_ppt_master.py")
 
 
+def _load_prepare_package_module():
+    return _load_script_module("prepare_ppt_master_package.py")
+
+
+def _load_check_setup_module():
+    return _load_script_module("check_ppt_master_setup.py")
+
+
 def test_long_deck_demo_input_exists_and_requests_30_slides() -> None:
     module = _load_runner_module()
     request = module.load_long_deck_run_request()
@@ -90,6 +98,8 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "batch_size=2" in text
     assert "15 mini-batches" in text
     assert "web ui long-ppt entrypoint" in text
+    assert "local ppt master setup check" in text
+    assert "check_ppt_master_setup.py" in text
 
 
 def test_long_deck_demo_runner_default_output_dir() -> None:
@@ -114,6 +124,67 @@ def test_ppt_master_export_script_default_paths() -> None:
 
     assert module.DEFAULT_INPUT_PATH == output_dir / "generated_long_deck_ir.json"
     assert module.DEFAULT_OUTPUT_PATH == output_dir / "ppt_master_source.md"
+
+
+def test_ppt_master_package_script_default_paths() -> None:
+    module = _load_prepare_package_module()
+    output_dir = _repo_root() / "examples" / "demo_long_deck_ai_agent_pm_30" / "output"
+
+    assert module.DEFAULT_INPUT_PATH == output_dir / "generated_long_deck_ir.json"
+    assert module.DEFAULT_OUTPUT_DIR == output_dir / "ppt_master_package"
+
+
+def test_ppt_master_setup_check_script_json_contains_expected_fields(tmp_path, capsys) -> None:
+    module = _load_check_setup_module()
+    missing_ppt_master_dir = tmp_path / "ppt-master"
+
+    exit_code = module.main(["--ppt-master-dir", str(missing_ppt_master_dir), "--json"])
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    for field in [
+        "root_path",
+        "is_available",
+        "missing_paths",
+        "skill_path",
+        "scripts_path",
+        "has_requirements",
+        "has_readme",
+        "has_readme_cn",
+        "is_git_repo",
+        "git_remote_origin",
+        "git_branch",
+        "git_commit",
+        "is_expected_repo",
+        "warnings",
+        "suggested_commands",
+    ]:
+        assert field in payload
+    assert payload["is_available"] is False
+    assert payload["is_expected_repo"] is False
+    assert payload["suggested_commands"] == [
+        f"cd {tmp_path}",
+        "git clone https://github.com/hugohe3/ppt-master.git",
+    ]
+
+
+def test_ppt_master_setup_check_script_human_output_suggests_clone_without_running_it(
+    tmp_path,
+    capsys,
+) -> None:
+    module = _load_check_setup_module()
+    missing_ppt_master_dir = tmp_path / "ppt-master"
+
+    exit_code = module.main(["--ppt-master-dir", str(missing_ppt_master_dir)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "root_path:" in captured.out
+    assert "is_expected_repo: False" in captured.out
+    assert "git clone https://github.com/hugohe3/ppt-master.git" in captured.out
+    assert "git pull" not in captured.out
+    assert not missing_ppt_master_dir.exists()
 
 
 def test_ppt_master_export_script_missing_input_reports_clear_error(tmp_path, capsys) -> None:
@@ -150,6 +221,45 @@ def test_ppt_master_export_script_exports_source_markdown(tmp_path) -> None:
     assert output_path.exists()
     assert "# Presentation Request" in markdown
     assert "Use technical product share pacing." in markdown
+
+
+def test_ppt_master_package_script_supports_arguments_and_missing_ppt_master_warning(
+    tmp_path,
+    capsys,
+) -> None:
+    module = _load_prepare_package_module()
+    output_dir = tmp_path / "ppt_master_package"
+    missing_ppt_master_dir = tmp_path / "missing-ppt-master"
+
+    exit_code = module.main(
+        [
+            "--input",
+            str(_repo_root() / "examples" / "sample_slide_ir.json"),
+            "--output-dir",
+            str(output_dir),
+            "--ppt-master-dir",
+            str(missing_ppt_master_dir),
+            "--audience",
+            "准备进入 AI 产品岗位的 IT 硕士学生",
+            "--topic",
+            "AI 产品经理如何设计 Agent 产品",
+            "--style-notes",
+            "Prefer local ppt-master visual polish.",
+        ]
+    )
+    captured = capsys.readouterr()
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    source = (output_dir / "source.md").read_text(encoding="utf-8")
+    run_prompt = (output_dir / "run_prompt.md").read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert "warning:" in captured.err
+    assert "PPT_MASTER_DIR" in captured.err
+    assert "Traceback" not in captured.err
+    assert manifest["is_available"] is False
+    assert manifest["audience"] == "准备进入 AI 产品岗位的 IT 硕士学生"
+    assert "准备进入 AI 产品岗位的 IT 硕士学生" in source
+    assert "准备进入 AI 产品岗位的 IT 硕士学生" in run_prompt
 
 
 def test_long_deck_render_script_missing_input_writes_clear_report(tmp_path, capsys) -> None:
