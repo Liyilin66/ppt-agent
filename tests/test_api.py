@@ -12,6 +12,7 @@ from ppt_agent.long_deck_orchestrator import BatchRunReport, LongDeckRunReport
 from ppt_agent.long_deck_render import LongDeckRenderReport
 from ppt_agent.patch import build_patchable_elements_report
 from ppt_agent.pipeline import BuildArtifact, BuildPipelineResult
+from ppt_agent.ppt_master_execution import PPT_MASTER_EXECUTION_PLAN_ARTIFACT
 from ppt_agent.qa import analyze_deck
 from ppt_agent.patch import apply_patch
 from ppt_agent.ppt_master_output import (
@@ -92,6 +93,16 @@ def _build_mock_ppt_master_output(output_dir: Path, *, slide_count: int = 3) -> 
     )
     (output_dir / "agent_pm_recovery_ppt169_20260701" / "svg_output").mkdir(parents=True, exist_ok=True)
     return output_dir
+
+
+def _build_mock_ppt_master_package(job_dir: Path) -> Path:
+    package_dir = job_dir / "ppt_master_package"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "source.md").write_text("# Presentation Request\n", encoding="utf-8")
+    (package_dir / "run_prompt.md").write_text("# PPT Master Local Job Prompt\n", encoding="utf-8")
+    (package_dir / "README.md").write_text("# PPT Master Job Package\n", encoding="utf-8")
+    (package_dir / "manifest.json").write_text('{"is_available": true}\n', encoding="utf-8")
+    return package_dir
 
 
 def _generation_result(accepted: bool = True) -> GenerationResult:
@@ -443,14 +454,19 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "取消长 PPT任务",
         "继续/重试长 PPT",
         "PPT Master 渲染包",
+        "PPT Master 执行桥",
         "PPT Master 生成结果",
         "PPT Master Source Markdown",
         "PPT Master Run Prompt",
         "PPT Master Package Manifest",
         "PPT Master Package README",
+        "PPT Master Execution Plan",
         "PPT Master Generated PPTX",
         "PPT Master Generation Notes",
         "PPT Master Output Manifest",
+        "准备 PPT Master 执行计划",
+        "execution status",
+        "expected pptx",
         "原因",
         "建议",
         "package_mode",
@@ -868,6 +884,7 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["last_updated_at"] == body["updated_at"]
     assert body["elapsed_seconds"] >= 0
     assert body["ppt_master_package"] is None
+    assert body["ppt_master_execution"] is None
     assert body["ppt_master_output"] is None
 
 
@@ -912,6 +929,8 @@ def test_old_long_deck_job_without_ppt_master_package_still_returns_status(tmp_p
     body = response.json()
     assert body["ppt_master_package"]["generated"] is False
     assert "not been generated" in body["ppt_master_package"]["message"]
+    assert body["ppt_master_execution"]["status"] == "not_prepared"
+    assert "has not been prepared" in body["ppt_master_execution"]["message"]
     assert body["ppt_master_output"]["detected"] is False
     assert body["ppt_master_output"]["message"] == "No PPT Master output has been registered for this job."
 
@@ -959,6 +978,115 @@ def test_long_deck_job_status_auto_registers_existing_ppt_master_output(tmp_path
         PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
         PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
     }
+
+
+def test_prepare_ppt_master_execution_endpoint_returns_waiting_status(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = _mock_expected_ppt_master_root(tmp_path)
+    monkeypatch.setenv("PPT_MASTER_DIR", str(root))
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+    _build_mock_ppt_master_package(tmp_path / "jobs" / job.job_id)
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+    status_response = client.get(f"/api/jobs/{job.job_id}")
+    artifacts = client.get(f"/api/jobs/{job.job_id}/artifacts").json()["artifacts"]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "waiting_for_external_ppt_master_run"
+    assert body["plan_artifact_id"]
+    assert body["expected_pptx_path"].endswith("generated_by_ppt_master.pptx")
+    assert any("run_prompt.md" in step for step in body["suggested_steps"])
+    assert any("register_ppt_master_output.py" in step for step in body["suggested_steps"])
+    status_body = status_response.json()
+    assert status_body["ppt_master_execution"]["status"] == "waiting_for_external_ppt_master_run"
+    assert status_body["ppt_master_execution"]["plan_artifact_id"]
+    assert PPT_MASTER_EXECUTION_PLAN_ARTIFACT in {artifact["name"] for artifact in artifacts}
+
+
+def test_prepare_ppt_master_execution_endpoint_detects_output_and_registers_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = _mock_expected_ppt_master_root(tmp_path)
+    monkeypatch.setenv("PPT_MASTER_DIR", str(root))
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+    job_dir = tmp_path / "jobs" / job.job_id
+    _build_mock_ppt_master_package(job_dir)
+    _build_mock_ppt_master_output(job_dir / "ppt_master_output", slide_count=30)
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+    status_response = client.get(f"/api/jobs/{job.job_id}")
+    artifacts = client.get(f"/api/jobs/{job.job_id}/artifacts").json()["artifacts"]
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "output_detected"
+    status_body = status_response.json()
+    assert status_body["ppt_master_execution"]["status"] == "output_detected"
+    assert status_body["ppt_master_output"]["detected"] is True
+    assert status_body["ppt_master_output"]["slide_count"] == 30
+    assert {artifact["name"] for artifact in artifacts} >= {
+        PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
+        PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
+        PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
+        PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
+    }
+
+
+def test_prepare_ppt_master_execution_endpoint_reports_missing_package(tmp_path: Path) -> None:
+    root = _mock_expected_ppt_master_root(tmp_path)
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "missing_package"
+    assert (tmp_path / "jobs" / job.job_id / "ppt_master_execution_plan.json").exists()
+    assert root.exists()
+
+
+def test_prepare_ppt_master_execution_endpoint_reports_unavailable_ppt_master(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PPT_MASTER_DIR", str(tmp_path / "missing-ppt-master"))
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+    _build_mock_ppt_master_package(tmp_path / "jobs" / job.job_id)
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ppt_master_unavailable"
+
+
+def test_prepare_ppt_master_execution_endpoint_rejects_short_deck_job(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="short_deck")
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+
+    assert response.status_code == 400
+    assert "Only long deck jobs" in response.json()["detail"]
 
 
 def test_job_qa_gate_failure_is_completed_with_artifacts_not_runtime_failed(tmp_path: Path, monkeypatch) -> None:

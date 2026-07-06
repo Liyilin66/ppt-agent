@@ -21,6 +21,12 @@ from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunReque
 from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
 from ppt_agent.pipeline import BuildPipelineRequest, run_build_pipeline
+from ppt_agent.ppt_master_execution import (
+    PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
+    PPT_MASTER_EXECUTION_PLAN_FILENAME,
+    PptMasterExecutionPlan,
+    prepare_ppt_master_execution,
+)
 from ppt_agent.ppt_master_integration import PPT_MASTER_RECOVERY_WARNING, create_ppt_master_job_package
 from ppt_agent.ppt_master_output import (
     PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
@@ -339,6 +345,25 @@ INDEX_HTML = """<!doctype html>
         <p class="hint">当前阶段不会自动运行 ppt-master，只提供 handoff package。用户可以把 run_prompt.md 交给本地 ppt-master workflow 使用。</p>
       </section>
 
+      <section id="pptMasterExecutionSection" hidden>
+        <h2>PPT Master 执行桥</h2>
+        <p id="pptMasterExecutionMessage"></p>
+        <dl class="metadata-grid">
+          <dt>execution status</dt>
+          <dd id="pptMasterExecutionStatus">未准备</dd>
+          <dt>output_dir</dt>
+          <dd id="pptMasterExecutionOutputDir">未检测到</dd>
+          <dt>expected pptx</dt>
+          <dd id="pptMasterExecutionExpectedPptx">未检测到</dd>
+          <dt>execution plan</dt>
+          <dd id="pptMasterExecutionPlanState">未生成</dd>
+          <dt>下一步</dt>
+          <dd id="pptMasterExecutionSteps">无</dd>
+        </dl>
+        <button id="preparePptMasterExecutionButton" type="button" disabled>准备 PPT Master 执行计划</button>
+        <p class="hint">执行桥只生成 plan 和注册已有输出；当前阶段不会自动运行 ppt-master。</p>
+      </section>
+
       <section id="pptMasterOutputSection" hidden>
         <h2>PPT Master 生成结果</h2>
         <p id="pptMasterOutputMessage"></p>
@@ -385,6 +410,14 @@ INDEX_HTML = """<!doctype html>
       const pptMasterQualityGate = document.getElementById("pptMasterQualityGate");
       const pptMasterRoot = document.getElementById("pptMasterRoot");
       const pptMasterMissingPaths = document.getElementById("pptMasterMissingPaths");
+      const pptMasterExecutionSection = document.getElementById("pptMasterExecutionSection");
+      const pptMasterExecutionMessage = document.getElementById("pptMasterExecutionMessage");
+      const pptMasterExecutionStatus = document.getElementById("pptMasterExecutionStatus");
+      const pptMasterExecutionOutputDir = document.getElementById("pptMasterExecutionOutputDir");
+      const pptMasterExecutionExpectedPptx = document.getElementById("pptMasterExecutionExpectedPptx");
+      const pptMasterExecutionPlanState = document.getElementById("pptMasterExecutionPlanState");
+      const pptMasterExecutionSteps = document.getElementById("pptMasterExecutionSteps");
+      const preparePptMasterExecutionButton = document.getElementById("preparePptMasterExecutionButton");
       const pptMasterOutputSection = document.getElementById("pptMasterOutputSection");
       const pptMasterOutputMessage = document.getElementById("pptMasterOutputMessage");
       const pptMasterOutputDetected = document.getElementById("pptMasterOutputDetected");
@@ -400,6 +433,7 @@ INDEX_HTML = """<!doctype html>
         "ppt_master_run_prompt",
         "ppt_master_package_manifest",
         "ppt_master_package_README",
+        "ppt_master_execution_plan",
         "ppt_master_generated_pptx",
         "ppt_master_generation_notes",
         "ppt_master_output_manifest"
@@ -409,6 +443,7 @@ INDEX_HTML = """<!doctype html>
         ppt_master_run_prompt: "PPT Master Run Prompt",
         ppt_master_package_manifest: "PPT Master Package Manifest",
         ppt_master_package_README: "PPT Master Package README",
+        ppt_master_execution_plan: "PPT Master Execution Plan",
         ppt_master_generated_pptx: "PPT Master Generated PPTX",
         ppt_master_generation_notes: "PPT Master Generation Notes",
         ppt_master_output_manifest: "PPT Master Output Manifest"
@@ -459,6 +494,17 @@ INDEX_HTML = """<!doctype html>
         pptMasterOutputHasNotes.textContent = "未知";
       }
 
+      function clearPptMasterExecution() {
+        pptMasterExecutionSection.hidden = true;
+        pptMasterExecutionMessage.textContent = "";
+        pptMasterExecutionStatus.textContent = "未准备";
+        pptMasterExecutionOutputDir.textContent = "未检测到";
+        pptMasterExecutionExpectedPptx.textContent = "未检测到";
+        pptMasterExecutionPlanState.textContent = "未生成";
+        pptMasterExecutionSteps.textContent = "无";
+        preparePptMasterExecutionButton.disabled = true;
+      }
+
       function updatePptMasterPackage(job) {
         if (!isLongDeckJob(job) || !job.ppt_master_package) {
           clearPptMasterPackage();
@@ -493,6 +539,23 @@ INDEX_HTML = """<!doctype html>
         pptMasterRoot.textContent = packageInfo.ppt_master_root || "未检测到";
         const missingPaths = packageInfo.missing_paths || [];
         pptMasterMissingPaths.textContent = missingPaths.length ? missingPaths.join(", ") : "无";
+      }
+
+      function updatePptMasterExecution(job) {
+        if (!isLongDeckJob(job) || !job.ppt_master_execution) {
+          clearPptMasterExecution();
+          return;
+        }
+        const execution = job.ppt_master_execution;
+        pptMasterExecutionSection.hidden = false;
+        pptMasterExecutionMessage.textContent = execution.message || "";
+        pptMasterExecutionStatus.textContent = execution.status || "未准备";
+        pptMasterExecutionOutputDir.textContent = execution.output_dir || "未检测到";
+        pptMasterExecutionExpectedPptx.textContent = execution.expected_pptx_path || "未检测到";
+        pptMasterExecutionPlanState.textContent = execution.plan_artifact_id ? "已生成" : "未生成";
+        const steps = execution.suggested_steps || [];
+        pptMasterExecutionSteps.textContent = steps.length ? steps.join("\\n") : "无";
+        preparePptMasterExecutionButton.disabled = !activeJobId;
       }
 
       function updatePptMasterOutput(job) {
@@ -724,6 +787,7 @@ INDEX_HTML = """<!doctype html>
         setStatus(job.status, job.accepted, job.error_message || "");
         setProgress(job);
         updatePptMasterPackage(job);
+        updatePptMasterExecution(job);
         updatePptMasterOutput(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
@@ -755,6 +819,7 @@ INDEX_HTML = """<!doctype html>
         errorMessage.textContent = "";
         clearArtifacts();
         clearPptMasterPackage();
+        clearPptMasterExecution();
         clearPptMasterOutput();
 
         try {
@@ -793,6 +858,7 @@ INDEX_HTML = """<!doctype html>
             setStatus(job.status, job.accepted, job.error_message || "");
             setProgress(job);
             updatePptMasterPackage(job);
+            updatePptMasterExecution(job);
             updatePptMasterOutput(job);
             if (job.error_message) {
               errorMessage.textContent = job.error_message;
@@ -815,6 +881,7 @@ INDEX_HTML = """<!doctype html>
           setStatus(latest.status, latest.accepted, latest.error_message || "");
           setProgress(latest);
           updatePptMasterPackage(latest);
+          updatePptMasterExecution(latest);
           updatePptMasterOutput(latest);
           if (latest.error_message) {
             errorMessage.textContent = latest.error_message;
@@ -843,9 +910,30 @@ INDEX_HTML = """<!doctype html>
           const job = await requestJson(`/api/jobs/${activeJobId}/cancel`, {method: "POST"});
           setProgress(job);
           updatePptMasterPackage(job);
+          updatePptMasterExecution(job);
+          updatePptMasterOutput(job);
           setStatus(job.status, job.accepted, job.error_message || "");
         } catch (error) {
           errorMessage.textContent = error.message;
+        }
+      });
+
+      preparePptMasterExecutionButton.addEventListener("click", async () => {
+        if (!activeJobId) {
+          return;
+        }
+        preparePptMasterExecutionButton.disabled = true;
+        try {
+          await requestJson(`/api/long-deck-jobs/${activeJobId}/prepare-ppt-master-execution`, {method: "POST"});
+          const job = await requestJson(`/api/jobs/${activeJobId}`);
+          updatePptMasterPackage(job);
+          updatePptMasterExecution(job);
+          updatePptMasterOutput(job);
+          await loadArtifacts(activeJobId);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+        } finally {
+          preparePptMasterExecutionButton.disabled = false;
         }
       });
 
@@ -940,8 +1028,18 @@ class PptMasterOutputResponse(StrictModel):
     message: str
 
 
+class PptMasterExecutionResponse(StrictModel):
+    status: str
+    plan_artifact_id: str | None = None
+    output_dir: str | None = None
+    expected_pptx_path: str | None = None
+    suggested_steps: list[str] = Field(default_factory=list)
+    message: str
+
+
 class JobResponse(JobRecord):
     ppt_master_package: PptMasterPackageResponse | None = None
+    ppt_master_execution: PptMasterExecutionResponse | None = None
     ppt_master_output: PptMasterOutputResponse | None = None
 
 
@@ -987,6 +1085,30 @@ def _read_ppt_master_output_manifest(path: Path) -> PptMasterOutputManifest | No
         return PptMasterOutputManifest.model_validate_json(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _read_ppt_master_execution_plan(path: Path) -> PptMasterExecutionPlan | None:
+    try:
+        return PptMasterExecutionPlan.model_validate_json(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _ensure_artifact(
+    store: JobStore,
+    *,
+    job_id: str,
+    name: str,
+    kind: ArtifactKind,
+    path: Path,
+) -> ArtifactRecord:
+    resolved_path = path.expanduser().resolve(strict=False)
+    for artifact in reversed(store.list_artifacts(job_id)):
+        if artifact.name != name:
+            continue
+        if artifact.kind == kind and artifact.path.expanduser().resolve(strict=False) == resolved_path:
+            return artifact
+    return store.add_artifact(job_id, name=name, kind=kind, path=resolved_path)
 
 
 def _string_list(value: Any) -> list[str]:
@@ -1126,6 +1248,73 @@ def _ppt_master_output_dir_for_job(jobs_root: Path, job_id: str) -> Path:
     return jobs_root / job_id / "ppt_master_output"
 
 
+def _ppt_master_execution_plan_path_for_job(jobs_root: Path, job_id: str) -> Path:
+    return jobs_root / job_id / PPT_MASTER_EXECUTION_PLAN_FILENAME
+
+
+def _ppt_master_execution_response(
+    store: JobStore,
+    jobs_root: Path,
+    job: JobRecord,
+) -> PptMasterExecutionResponse | None:
+    if job.job_type != "long_deck":
+        return None
+
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    plan_artifact = artifacts_by_name.get(PPT_MASTER_EXECUTION_PLAN_ARTIFACT)
+    plan_path = _ppt_master_execution_plan_path_for_job(jobs_root, job.job_id)
+    plan = None
+    if plan_artifact is not None:
+        plan = _read_ppt_master_execution_plan(plan_artifact.path)
+    elif plan_path.is_file():
+        plan = _read_ppt_master_execution_plan(plan_path)
+        if plan is not None:
+            plan_artifact = _ensure_artifact(
+                store,
+                job_id=job.job_id,
+                name=PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
+                kind="json",
+                path=plan_path,
+            )
+
+    if plan is not None:
+        return PptMasterExecutionResponse(
+            status=plan.status,
+            plan_artifact_id=plan_artifact.artifact_id if plan_artifact is not None else None,
+            output_dir=str(plan.output_dir),
+            expected_pptx_path=str(plan.expected_pptx_path),
+            suggested_steps=plan.suggested_steps,
+            message=_ppt_master_execution_message(plan.status),
+        )
+
+    output_dir = _ppt_master_output_dir_for_job(jobs_root, job.job_id)
+    return PptMasterExecutionResponse(
+        status="not_prepared",
+        plan_artifact_id=None,
+        output_dir=str(output_dir),
+        expected_pptx_path=str(output_dir / "generated_by_ppt_master.pptx"),
+        suggested_steps=[
+            f"Call POST /api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution to create an execution plan."
+        ],
+        message="PPT Master execution plan has not been prepared for this job.",
+    )
+
+
+def _ppt_master_execution_message(status: str) -> str:
+    if status == "waiting_for_external_ppt_master_run":
+        return (
+            "PPT Master package 已准备好，但当前阶段不会自动运行 ppt-master。"
+            "请让本地 AI IDE 使用 run_prompt.md 执行，完成后系统可注册输出。"
+        )
+    if status == "output_detected":
+        return "检测到 PPT Master 输出，可注册或已注册。"
+    if status == "ppt_master_unavailable":
+        return "PPT Master package 已准备好，但本地 ppt-master 不可用。请检查 PPT_MASTER_DIR。"
+    if status == "missing_package":
+        return "当前 job 缺少完整 ppt_master_package，因此不能准备执行桥。"
+    return "PPT Master execution plan has not been prepared for this job."
+
+
 def _ensure_registered_ppt_master_output(
     store: JobStore,
     jobs_root: Path,
@@ -1197,8 +1386,10 @@ def _ppt_master_output_response(
 def _job_response(store: JobStore, jobs_root: Path, job: JobRecord) -> JobResponse:
     data = job.model_dump(mode="python")
     package = _ppt_master_package_response(store, job)
+    execution = _ppt_master_execution_response(store, jobs_root, job)
     output = _ppt_master_output_response(store, jobs_root, job)
     data["ppt_master_package"] = package.model_dump(mode="python") if package is not None else None
+    data["ppt_master_execution"] = execution.model_dump(mode="python") if execution is not None else None
     data["ppt_master_output"] = output.model_dump(mode="python") if output is not None else None
     return JobResponse.model_validate(data)
 
@@ -1306,6 +1497,7 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
         Path("ppt_master_package/run_prompt.md"): PPT_MASTER_RUN_PROMPT_ARTIFACT,
         Path("ppt_master_package/README.md"): PPT_MASTER_README_ARTIFACT,
         Path("ppt_master_package/manifest.json"): PPT_MASTER_MANIFEST_ARTIFACT,
+        Path(PPT_MASTER_EXECUTION_PLAN_FILENAME): PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
         Path("ppt_master_output/generated_by_ppt_master.pptx"): PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
         Path("ppt_master_output/generation_notes.md"): PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
         Path(f"ppt_master_output/{PPT_MASTER_OUTPUT_MANIFEST_FILENAME}"): PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
@@ -1757,6 +1949,44 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             resume=True,
         )
         return CreateJobResponse(job_id=resume_job.job_id, status=resume_job.status)
+
+    @app.post(
+        "/api/long-deck-jobs/{job_id}/prepare-ppt-master-execution",
+        response_model=PptMasterExecutionResponse,
+    )
+    def prepare_long_deck_ppt_master_execution(job_id: str) -> PptMasterExecutionResponse:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type != "long_deck":
+            raise HTTPException(status_code=400, detail="Only long deck jobs can prepare PPT Master execution.")
+
+        job_dir = app.state.jobs_root / job_id
+        try:
+            plan = prepare_ppt_master_execution(job_id, job_dir)
+            plan_artifact = _ensure_artifact(
+                app.state.job_store,
+                job_id=job_id,
+                name=PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
+                kind="json",
+                path=job_dir / PPT_MASTER_EXECUTION_PLAN_FILENAME,
+            )
+            if plan.status == "output_detected":
+                _ensure_registered_ppt_master_output(app.state.job_store, app.state.jobs_root, job)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not prepare PPT Master execution plan: {sanitize_error_message(exc)}",
+            ) from exc
+
+        return PptMasterExecutionResponse(
+            status=plan.status,
+            plan_artifact_id=plan_artifact.artifact_id,
+            output_dir=str(plan.output_dir),
+            expected_pptx_path=str(plan.expected_pptx_path),
+            suggested_steps=plan.suggested_steps,
+            message=_ppt_master_execution_message(plan.status),
+        )
 
     @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
     def cancel_job(job_id: str) -> JobResponse:

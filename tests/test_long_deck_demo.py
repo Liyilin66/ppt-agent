@@ -46,6 +46,10 @@ def _load_register_output_module():
     return _load_script_module("register_ppt_master_output.py")
 
 
+def _load_prepare_execution_module():
+    return _load_script_module("prepare_ppt_master_execution.py")
+
+
 def test_long_deck_demo_input_exists_and_requests_30_slides() -> None:
     module = _load_runner_module()
     request = module.load_long_deck_run_request()
@@ -118,6 +122,10 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "register_ppt_master_output.py" in text
     assert "ppt master 生成结果" in text
     assert "generated_by_ppt_master.pptx" in text
+    assert "ppt master execution bridge v0" in text
+    assert "prepare_ppt_master_execution.py" in text
+    assert "ppt master 执行桥" in text
+    assert "ppt_master_execution_plan.json" in text
 
 
 def test_long_deck_demo_runner_default_output_dir() -> None:
@@ -157,6 +165,14 @@ def test_ppt_master_output_register_script_default_paths() -> None:
     output_dir = _repo_root() / "data" / "jobs" / module.DEFAULT_JOB_ID / "ppt_master_output"
 
     assert module.DEFAULT_OUTPUT_DIR == output_dir
+    assert module.DEFAULT_DB_PATH == _repo_root() / "data" / "jobs.sqlite3"
+
+
+def test_ppt_master_execution_script_default_paths() -> None:
+    module = _load_prepare_execution_module()
+
+    assert module.DEFAULT_JOB_ID == "02619bd8da5e49449f3b940a0f84771c"
+    assert module.DEFAULT_JOB_DIR == _repo_root() / "data" / "jobs" / module.DEFAULT_JOB_ID
     assert module.DEFAULT_DB_PATH == _repo_root() / "data" / "jobs.sqlite3"
 
 

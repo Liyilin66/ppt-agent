@@ -183,6 +183,42 @@ uv run python scripts/register_ppt_master_output.py \
 3. Go back to the Web UI and open the `PPT Master 生成结果` section.
 4. Download `generated_by_ppt_master.pptx`, the generation notes, or the output manifest.
 
+## PPT Master Execution Bridge v0
+
+Execution Bridge v0 prepares the next step inside ppt-agent without running ppt-master.
+It checks the job package, checks the local ppt-master checkout, creates `ppt_master_output/`, and writes `ppt_master_execution_plan.json`.
+
+1. In the Web UI, first generate or recover a `PPT Master 渲染包`.
+2. Click `准备 PPT Master 执行计划`, or run:
+
+```bash
+uv run python scripts/prepare_ppt_master_execution.py \
+  --job-id <job_id> \
+  --job-dir data/jobs/<job_id> \
+  --ppt-master-dir /Users/jay/Documents/ppt-master
+```
+
+3. Open the Web UI `PPT Master 执行桥` section and download `PPT Master Execution Plan`.
+4. In `/Users/jay/Documents/ppt-master`, let Claude Code, Codex, or CodeBuddy read the plan and `run_prompt.md`.
+5. The external ppt-master workflow should write:
+
+```text
+data/jobs/<job_id>/ppt_master_output/generated_by_ppt_master.pptx
+data/jobs/<job_id>/ppt_master_output/generation_notes.md
+```
+
+6. Register the output:
+
+```bash
+uv run python scripts/register_ppt_master_output.py \
+  --job-id <job_id> \
+  --output-dir data/jobs/<job_id>/ppt_master_output
+```
+
+7. Return to the Web UI and download `generated_by_ppt_master.pptx` from `PPT Master 生成结果`.
+
+ppt-agent still does not automatically run ppt-master, call a model, install ppt-master requirements, or open PowerPoint in this stage.
+
 ### PPT Master Recovery Package
 
 If the hard quality gate fails, ppt-agent does not generate the old renderer PPTX.
@@ -227,6 +263,7 @@ output/
     run_prompt.md
     README.md
     manifest.json
+  ppt_master_execution_plan.json
   ppt_master_output/
     generated_by_ppt_master.pptx
     generation_notes.md
@@ -274,6 +311,8 @@ Long-deck QA is a diagnostic quality radar. Coverage warnings help identify sect
 `ppt_master_source.md` is a source Markdown outline for a manual ppt-master adapter experiment. It is generated from the already-validated Deck IR and does not call the model or run ppt-master.
 
 `ppt_master_package/` is the local integration handoff package. It contains the same source document, a runnable prompt for a local ppt-master checkout, a README, and a manifest with ppt-master availability warnings. If the hard quality gate failed after the stitched IR was created, the manifest uses `package_mode: recovery` and records the quality gate report path.
+
+`ppt_master_execution_plan.json` is the Execution Bridge v0 plan. It records the local ppt-master root, package paths, expected output paths, current execution status, and suggested next steps. It does not mean ppt-master has been run.
 
 `ppt_master_output/` is the optional local result directory after a separate ppt-master workflow has already generated a PPTX. `register_ppt_master_output.py` turns those files into formal ppt-agent artifacts so the Web UI can display and download them.
 
