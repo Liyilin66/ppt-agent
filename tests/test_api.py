@@ -21,6 +21,7 @@ from ppt_agent.ppt_master_output import (
     PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
     register_ppt_master_output_artifacts,
 )
+from ppt_agent.ppt_master_runner import PPT_MASTER_RUNNER_RESULT_ARTIFACT
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -455,18 +456,23 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "继续/重试长 PPT",
         "PPT Master 渲染包",
         "PPT Master 执行桥",
+        "PPT Master 本地导出",
         "PPT Master 生成结果",
         "PPT Master Source Markdown",
         "PPT Master Run Prompt",
         "PPT Master Package Manifest",
         "PPT Master Package README",
         "PPT Master Execution Plan",
+        "PPT Master Runner Result",
         "PPT Master Generated PPTX",
         "PPT Master Generation Notes",
         "PPT Master Output Manifest",
         "准备 PPT Master 执行计划",
+        "运行 PPT Master 本地导出",
         "execution status",
         "expected pptx",
+        "runner status",
+        "需要外部 AI 生成 project",
         "原因",
         "建议",
         "package_mode",
@@ -886,6 +892,7 @@ def test_job_status_can_be_queried(tmp_path: Path, monkeypatch) -> None:
     assert body["ppt_master_package"] is None
     assert body["ppt_master_execution"] is None
     assert body["ppt_master_output"] is None
+    assert body["ppt_master_runner"] is None
 
 
 def test_latest_long_deck_job_can_be_queried(tmp_path: Path, monkeypatch) -> None:
@@ -933,6 +940,8 @@ def test_old_long_deck_job_without_ppt_master_package_still_returns_status(tmp_p
     assert "has not been prepared" in body["ppt_master_execution"]["message"]
     assert body["ppt_master_output"]["detected"] is False
     assert body["ppt_master_output"]["message"] == "No PPT Master output has been registered for this job."
+    assert body["ppt_master_runner"]["status"] == "not_run"
+    assert "has not been run" in body["ppt_master_runner"]["message"]
 
 
 def test_long_deck_job_status_reports_registered_ppt_master_output(tmp_path: Path) -> None:
@@ -1084,6 +1093,47 @@ def test_prepare_ppt_master_execution_endpoint_rejects_short_deck_job(tmp_path: 
     job = store.create_job(job_type="short_deck")
 
     response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+
+    assert response.status_code == 400
+    assert "Only long deck jobs" in response.json()["detail"]
+
+
+def test_run_ppt_master_local_export_endpoint_reports_external_generation_needed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = _mock_expected_ppt_master_root(tmp_path)
+    monkeypatch.setenv("PPT_MASTER_DIR", str(root))
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+    _build_mock_ppt_master_package(tmp_path / "jobs" / job.job_id)
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/run-ppt-master-local-export")
+    status_response = client.get(f"/api/jobs/{job.job_id}")
+    artifacts = client.get(f"/api/jobs/{job.job_id}/artifacts").json()["artifacts"]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "requires_external_ai_generation"
+    assert body["requires_external_ai_generation"] is True
+    assert body["result_artifact_id"]
+    assert "visual project" in body["message"]
+    status_body = status_response.json()
+    assert status_body["ppt_master_runner"]["status"] == "requires_external_ai_generation"
+    assert status_body["ppt_master_runner"]["result_artifact_id"]
+    assert PPT_MASTER_RUNNER_RESULT_ARTIFACT in {artifact["name"] for artifact in artifacts}
+
+
+def test_run_ppt_master_local_export_endpoint_rejects_short_deck_job(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="short_deck")
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/run-ppt-master-local-export")
 
     assert response.status_code == 400
     assert "Only long deck jobs" in response.json()["detail"]

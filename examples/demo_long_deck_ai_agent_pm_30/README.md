@@ -219,6 +219,34 @@ uv run python scripts/register_ppt_master_output.py \
 
 ppt-agent still does not automatically run ppt-master, call a model, install ppt-master requirements, or open PowerPoint in this stage.
 
+## PPT Master Local Runner v0
+
+Local Runner v0 is a narrower bridge for deterministic export only.
+It can run the scriptable ppt-master post-processing/export stage when a job already has a ppt-master visual project with SVG slides.
+
+It can run when:
+
+- `data/jobs/<job_id>/ppt_master_package/` exists.
+- `data/jobs/<job_id>/ppt_master_output/` contains a ppt-master project folder.
+- That project has SVG slides under `svg_output/` or `svg_final/`.
+
+It cannot run the full ppt-master visual generation stage.
+If the job only has `source.md` and `run_prompt.md`, but no visual project/SVG slides yet, it returns `requires_external_ai_generation`.
+In that case, first use the local AI IDE / ppt-master skill with `run_prompt.md` to generate the visual project.
+
+Run from the CLI:
+
+```bash
+uv run python scripts/run_ppt_master_local_export.py \
+  --job-id <job_id> \
+  --job-dir data/jobs/<job_id> \
+  --ppt-master-dir /Users/jay/Documents/ppt-master
+```
+
+The Web UI also has a `PPT Master 本地导出` button.
+It does not call a model, does not generate SVG pages, does not install ppt-master requirements, and does not open PowerPoint.
+It only runs local deterministic export scripts when export inputs already exist, then registers `generated_by_ppt_master.pptx` and `ppt_master_runner_result.json`.
+
 ### PPT Master Recovery Package
 
 If the hard quality gate fails, ppt-agent does not generate the old renderer PPTX.

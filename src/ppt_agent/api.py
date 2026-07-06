@@ -37,6 +37,14 @@ from ppt_agent.ppt_master_output import (
     detect_ppt_master_output,
     register_ppt_master_output_artifacts,
 )
+from ppt_agent.ppt_master_runner import (
+    PPT_MASTER_RUNNER_RESULT_ARTIFACT,
+    PPT_MASTER_RUNNER_RESULT_FILENAME,
+    PptMasterRunnerResult,
+    read_ppt_master_runner_result,
+    register_ppt_master_runner_result_artifact,
+    run_ppt_master_local_export,
+)
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 
 
@@ -364,6 +372,31 @@ INDEX_HTML = """<!doctype html>
         <p class="hint">执行桥只生成 plan 和注册已有输出；当前阶段不会自动运行 ppt-master。</p>
       </section>
 
+      <section id="pptMasterRunnerSection" hidden>
+        <h2>PPT Master 本地导出</h2>
+        <p id="pptMasterRunnerMessage"></p>
+        <dl class="metadata-grid">
+          <dt>runner status</dt>
+          <dd id="pptMasterRunnerStatus">未运行</dd>
+          <dt>需要外部 AI 生成 project</dt>
+          <dd id="pptMasterRunnerRequiresExternal">未知</dd>
+          <dt>project_dir</dt>
+          <dd id="pptMasterRunnerProjectDir">未检测到</dd>
+          <dt>output_dir</dt>
+          <dd id="pptMasterRunnerOutputDir">未检测到</dd>
+          <dt>pptx_path</dt>
+          <dd id="pptMasterRunnerPptxPath">未检测到</dd>
+          <dt>slide_count</dt>
+          <dd id="pptMasterRunnerSlideCount">未知</dd>
+          <dt>registered</dt>
+          <dd id="pptMasterRunnerRegistered">false</dd>
+          <dt>runner result</dt>
+          <dd id="pptMasterRunnerResultState">未生成</dd>
+        </dl>
+        <button id="runPptMasterLocalExportButton" type="button" disabled>运行 PPT Master 本地导出</button>
+        <p class="hint">不会调用模型，只运行本地可脚本化导出步骤；如果还没有 visual project，会提示先用本地 AI IDE / ppt-master skill 生成。</p>
+      </section>
+
       <section id="pptMasterOutputSection" hidden>
         <h2>PPT Master 生成结果</h2>
         <p id="pptMasterOutputMessage"></p>
@@ -418,6 +451,17 @@ INDEX_HTML = """<!doctype html>
       const pptMasterExecutionPlanState = document.getElementById("pptMasterExecutionPlanState");
       const pptMasterExecutionSteps = document.getElementById("pptMasterExecutionSteps");
       const preparePptMasterExecutionButton = document.getElementById("preparePptMasterExecutionButton");
+      const pptMasterRunnerSection = document.getElementById("pptMasterRunnerSection");
+      const pptMasterRunnerMessage = document.getElementById("pptMasterRunnerMessage");
+      const pptMasterRunnerStatus = document.getElementById("pptMasterRunnerStatus");
+      const pptMasterRunnerRequiresExternal = document.getElementById("pptMasterRunnerRequiresExternal");
+      const pptMasterRunnerProjectDir = document.getElementById("pptMasterRunnerProjectDir");
+      const pptMasterRunnerOutputDir = document.getElementById("pptMasterRunnerOutputDir");
+      const pptMasterRunnerPptxPath = document.getElementById("pptMasterRunnerPptxPath");
+      const pptMasterRunnerSlideCount = document.getElementById("pptMasterRunnerSlideCount");
+      const pptMasterRunnerRegistered = document.getElementById("pptMasterRunnerRegistered");
+      const pptMasterRunnerResultState = document.getElementById("pptMasterRunnerResultState");
+      const runPptMasterLocalExportButton = document.getElementById("runPptMasterLocalExportButton");
       const pptMasterOutputSection = document.getElementById("pptMasterOutputSection");
       const pptMasterOutputMessage = document.getElementById("pptMasterOutputMessage");
       const pptMasterOutputDetected = document.getElementById("pptMasterOutputDetected");
@@ -434,6 +478,7 @@ INDEX_HTML = """<!doctype html>
         "ppt_master_package_manifest",
         "ppt_master_package_README",
         "ppt_master_execution_plan",
+        "ppt_master_runner_result",
         "ppt_master_generated_pptx",
         "ppt_master_generation_notes",
         "ppt_master_output_manifest"
@@ -444,6 +489,7 @@ INDEX_HTML = """<!doctype html>
         ppt_master_package_manifest: "PPT Master Package Manifest",
         ppt_master_package_README: "PPT Master Package README",
         ppt_master_execution_plan: "PPT Master Execution Plan",
+        ppt_master_runner_result: "PPT Master Runner Result",
         ppt_master_generated_pptx: "PPT Master Generated PPTX",
         ppt_master_generation_notes: "PPT Master Generation Notes",
         ppt_master_output_manifest: "PPT Master Output Manifest"
@@ -505,6 +551,20 @@ INDEX_HTML = """<!doctype html>
         preparePptMasterExecutionButton.disabled = true;
       }
 
+      function clearPptMasterRunner() {
+        pptMasterRunnerSection.hidden = true;
+        pptMasterRunnerMessage.textContent = "";
+        pptMasterRunnerStatus.textContent = "未运行";
+        pptMasterRunnerRequiresExternal.textContent = "未知";
+        pptMasterRunnerProjectDir.textContent = "未检测到";
+        pptMasterRunnerOutputDir.textContent = "未检测到";
+        pptMasterRunnerPptxPath.textContent = "未检测到";
+        pptMasterRunnerSlideCount.textContent = "未知";
+        pptMasterRunnerRegistered.textContent = "false";
+        pptMasterRunnerResultState.textContent = "未生成";
+        runPptMasterLocalExportButton.disabled = true;
+      }
+
       function updatePptMasterPackage(job) {
         if (!isLongDeckJob(job) || !job.ppt_master_package) {
           clearPptMasterPackage();
@@ -556,6 +616,25 @@ INDEX_HTML = """<!doctype html>
         const steps = execution.suggested_steps || [];
         pptMasterExecutionSteps.textContent = steps.length ? steps.join("\\n") : "无";
         preparePptMasterExecutionButton.disabled = !activeJobId;
+      }
+
+      function updatePptMasterRunner(job) {
+        if (!isLongDeckJob(job) || !job.ppt_master_runner) {
+          clearPptMasterRunner();
+          return;
+        }
+        const runner = job.ppt_master_runner;
+        pptMasterRunnerSection.hidden = false;
+        pptMasterRunnerMessage.textContent = runner.message || "";
+        pptMasterRunnerStatus.textContent = runner.status || "未运行";
+        pptMasterRunnerRequiresExternal.textContent = runner.requires_external_ai_generation ? "true" : "false";
+        pptMasterRunnerProjectDir.textContent = runner.project_dir || "未检测到";
+        pptMasterRunnerOutputDir.textContent = runner.output_dir || "未检测到";
+        pptMasterRunnerPptxPath.textContent = runner.pptx_path || "未检测到";
+        pptMasterRunnerSlideCount.textContent = runner.slide_count == null ? "未知" : String(runner.slide_count);
+        pptMasterRunnerRegistered.textContent = runner.registered ? "true" : "false";
+        pptMasterRunnerResultState.textContent = runner.result_artifact_id ? "已生成" : "未生成";
+        runPptMasterLocalExportButton.disabled = !activeJobId;
       }
 
       function updatePptMasterOutput(job) {
@@ -788,6 +867,7 @@ INDEX_HTML = """<!doctype html>
         setProgress(job);
         updatePptMasterPackage(job);
         updatePptMasterExecution(job);
+        updatePptMasterRunner(job);
         updatePptMasterOutput(job);
         if (job.error_message) {
           errorMessage.textContent = job.error_message;
@@ -820,6 +900,7 @@ INDEX_HTML = """<!doctype html>
         clearArtifacts();
         clearPptMasterPackage();
         clearPptMasterExecution();
+        clearPptMasterRunner();
         clearPptMasterOutput();
 
         try {
@@ -859,6 +940,7 @@ INDEX_HTML = """<!doctype html>
             setProgress(job);
             updatePptMasterPackage(job);
             updatePptMasterExecution(job);
+            updatePptMasterRunner(job);
             updatePptMasterOutput(job);
             if (job.error_message) {
               errorMessage.textContent = job.error_message;
@@ -882,6 +964,7 @@ INDEX_HTML = """<!doctype html>
           setProgress(latest);
           updatePptMasterPackage(latest);
           updatePptMasterExecution(latest);
+          updatePptMasterRunner(latest);
           updatePptMasterOutput(latest);
           if (latest.error_message) {
             errorMessage.textContent = latest.error_message;
@@ -911,6 +994,7 @@ INDEX_HTML = """<!doctype html>
           setProgress(job);
           updatePptMasterPackage(job);
           updatePptMasterExecution(job);
+          updatePptMasterRunner(job);
           updatePptMasterOutput(job);
           setStatus(job.status, job.accepted, job.error_message || "");
         } catch (error) {
@@ -928,12 +1012,33 @@ INDEX_HTML = """<!doctype html>
           const job = await requestJson(`/api/jobs/${activeJobId}`);
           updatePptMasterPackage(job);
           updatePptMasterExecution(job);
+          updatePptMasterRunner(job);
           updatePptMasterOutput(job);
           await loadArtifacts(activeJobId);
         } catch (error) {
           errorMessage.textContent = error.message;
         } finally {
           preparePptMasterExecutionButton.disabled = false;
+        }
+      });
+
+      runPptMasterLocalExportButton.addEventListener("click", async () => {
+        if (!activeJobId) {
+          return;
+        }
+        runPptMasterLocalExportButton.disabled = true;
+        try {
+          await requestJson(`/api/long-deck-jobs/${activeJobId}/run-ppt-master-local-export`, {method: "POST"});
+          const job = await requestJson(`/api/jobs/${activeJobId}`);
+          updatePptMasterPackage(job);
+          updatePptMasterExecution(job);
+          updatePptMasterRunner(job);
+          updatePptMasterOutput(job);
+          await loadArtifacts(activeJobId);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+        } finally {
+          runPptMasterLocalExportButton.disabled = false;
         }
       });
 
@@ -1037,10 +1142,25 @@ class PptMasterExecutionResponse(StrictModel):
     message: str
 
 
+class PptMasterRunnerResponse(StrictModel):
+    status: str
+    result_artifact_id: str | None = None
+    project_dir: str | None = None
+    output_dir: str | None = None
+    pptx_path: str | None = None
+    slide_count: int | None = Field(default=None, ge=0)
+    registered: bool = False
+    requires_external_ai_generation: bool = False
+    message: str
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class JobResponse(JobRecord):
     ppt_master_package: PptMasterPackageResponse | None = None
     ppt_master_execution: PptMasterExecutionResponse | None = None
     ppt_master_output: PptMasterOutputResponse | None = None
+    ppt_master_runner: PptMasterRunnerResponse | None = None
 
 
 class ArtifactResponse(StrictModel):
@@ -1092,6 +1212,10 @@ def _read_ppt_master_execution_plan(path: Path) -> PptMasterExecutionPlan | None
         return PptMasterExecutionPlan.model_validate_json(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _read_ppt_master_runner_result(path: Path) -> PptMasterRunnerResult | None:
+    return read_ppt_master_runner_result(path)
 
 
 def _ensure_artifact(
@@ -1252,6 +1376,10 @@ def _ppt_master_execution_plan_path_for_job(jobs_root: Path, job_id: str) -> Pat
     return jobs_root / job_id / PPT_MASTER_EXECUTION_PLAN_FILENAME
 
 
+def _ppt_master_runner_result_path_for_job(jobs_root: Path, job_id: str) -> Path:
+    return jobs_root / job_id / PPT_MASTER_RUNNER_RESULT_FILENAME
+
+
 def _ppt_master_execution_response(
     store: JobStore,
     jobs_root: Path,
@@ -1313,6 +1441,68 @@ def _ppt_master_execution_message(status: str) -> str:
     if status == "missing_package":
         return "当前 job 缺少完整 ppt_master_package，因此不能准备执行桥。"
     return "PPT Master execution plan has not been prepared for this job."
+
+
+def _runner_response_from_result(
+    result: PptMasterRunnerResult,
+    *,
+    result_artifact_id: str | None = None,
+) -> PptMasterRunnerResponse:
+    return PptMasterRunnerResponse(
+        status=result.status,
+        result_artifact_id=result_artifact_id,
+        project_dir=str(result.project_dir) if result.project_dir is not None else None,
+        output_dir=str(result.output_dir),
+        pptx_path=str(result.pptx_path) if result.pptx_path is not None else None,
+        slide_count=result.slide_count,
+        registered=result.registered,
+        requires_external_ai_generation=result.status == "requires_external_ai_generation",
+        message=result.message,
+        warnings=result.warnings,
+        errors=result.errors,
+    )
+
+
+def _ppt_master_runner_response(
+    store: JobStore,
+    jobs_root: Path,
+    job: JobRecord,
+) -> PptMasterRunnerResponse | None:
+    if job.job_type != "long_deck":
+        return None
+
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    result_artifact = artifacts_by_name.get(PPT_MASTER_RUNNER_RESULT_ARTIFACT)
+    result_path = _ppt_master_runner_result_path_for_job(jobs_root, job.job_id)
+    result = None
+    if result_artifact is not None:
+        result = _read_ppt_master_runner_result(result_artifact.path)
+    elif result_path.is_file():
+        result = _read_ppt_master_runner_result(result_path)
+        if result is not None:
+            result_artifact = register_ppt_master_runner_result_artifact(
+                store,
+                job_id=job.job_id,
+                job_dir=jobs_root / job.job_id,
+            )
+
+    if result is not None:
+        return _runner_response_from_result(
+            result,
+            result_artifact_id=result_artifact.artifact_id if result_artifact is not None else None,
+        )
+
+    return PptMasterRunnerResponse(
+        status="not_run",
+        result_artifact_id=None,
+        project_dir=None,
+        output_dir=str(_ppt_master_output_dir_for_job(jobs_root, job.job_id)),
+        pptx_path=None,
+        slide_count=None,
+        registered=False,
+        requires_external_ai_generation=False,
+        message="PPT Master local export has not been run for this job.",
+    )
 
 
 def _ensure_registered_ppt_master_output(
@@ -1388,9 +1578,11 @@ def _job_response(store: JobStore, jobs_root: Path, job: JobRecord) -> JobRespon
     package = _ppt_master_package_response(store, job)
     execution = _ppt_master_execution_response(store, jobs_root, job)
     output = _ppt_master_output_response(store, jobs_root, job)
+    runner = _ppt_master_runner_response(store, jobs_root, job)
     data["ppt_master_package"] = package.model_dump(mode="python") if package is not None else None
     data["ppt_master_execution"] = execution.model_dump(mode="python") if execution is not None else None
     data["ppt_master_output"] = output.model_dump(mode="python") if output is not None else None
+    data["ppt_master_runner"] = runner.model_dump(mode="python") if runner is not None else None
     return JobResponse.model_validate(data)
 
 
@@ -1498,6 +1690,7 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
         Path("ppt_master_package/README.md"): PPT_MASTER_README_ARTIFACT,
         Path("ppt_master_package/manifest.json"): PPT_MASTER_MANIFEST_ARTIFACT,
         Path(PPT_MASTER_EXECUTION_PLAN_FILENAME): PPT_MASTER_EXECUTION_PLAN_ARTIFACT,
+        Path(PPT_MASTER_RUNNER_RESULT_FILENAME): PPT_MASTER_RUNNER_RESULT_ARTIFACT,
         Path("ppt_master_output/generated_by_ppt_master.pptx"): PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
         Path("ppt_master_output/generation_notes.md"): PPT_MASTER_OUTPUT_NOTES_ARTIFACT,
         Path(f"ppt_master_output/{PPT_MASTER_OUTPUT_MANIFEST_FILENAME}"): PPT_MASTER_OUTPUT_MANIFEST_ARTIFACT,
@@ -1987,6 +2180,37 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             suggested_steps=plan.suggested_steps,
             message=_ppt_master_execution_message(plan.status),
         )
+
+    @app.post(
+        "/api/long-deck-jobs/{job_id}/run-ppt-master-local-export",
+        response_model=PptMasterRunnerResponse,
+    )
+    def run_long_deck_ppt_master_local_export(job_id: str) -> PptMasterRunnerResponse:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type != "long_deck":
+            raise HTTPException(status_code=400, detail="Only long deck jobs can run PPT Master local export.")
+
+        job_dir = app.state.jobs_root / job_id
+        try:
+            result = run_ppt_master_local_export(
+                job_id,
+                job_dir,
+                store=app.state.job_store,
+            )
+            result_artifact = register_ppt_master_runner_result_artifact(
+                app.state.job_store,
+                job_id=job_id,
+                job_dir=job_dir,
+            )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not run PPT Master local export: {sanitize_error_message(exc)}",
+            ) from exc
+
+        return _runner_response_from_result(result, result_artifact_id=result_artifact.artifact_id)
 
     @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
     def cancel_job(job_id: str) -> JobResponse:
