@@ -37,6 +37,16 @@ from ppt_agent.ppt_master_output import (
     detect_ppt_master_output,
     register_ppt_master_output_artifacts,
 )
+from ppt_agent.ppt_master_project import (
+    PPT_MASTER_PROJECT_INSTRUCTIONS_ARTIFACT,
+    PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT,
+    PPT_MASTER_VISUAL_PROJECT_MANIFEST_FILENAME,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    PptMasterVisualProject,
+    bootstrap_ppt_master_visual_project,
+    read_ppt_master_visual_project_manifest,
+    register_ppt_master_visual_project_artifacts,
+)
 from ppt_agent.ppt_master_runner import (
     PPT_MASTER_RUNNER_RESULT_ARTIFACT,
     PPT_MASTER_RUNNER_RESULT_FILENAME,
@@ -372,6 +382,33 @@ INDEX_HTML = """<!doctype html>
         <p class="hint">执行桥只生成 plan 和注册已有输出；当前阶段不会自动运行 ppt-master。</p>
       </section>
 
+      <section id="pptMasterVisualProjectSection" hidden>
+        <h2>PPT Master Visual Project</h2>
+        <p id="pptMasterVisualProjectMessage"></p>
+        <dl class="metadata-grid">
+          <dt>bootstrap status</dt>
+          <dd id="pptMasterVisualProjectStatus">未准备</dd>
+          <dt>project_dir</dt>
+          <dd id="pptMasterVisualProjectDir">未检测到</dd>
+          <dt>PROJECT_INSTRUCTIONS.md</dt>
+          <dd id="pptMasterVisualProjectInstructionsState">未生成</dd>
+          <dt>source.md</dt>
+          <dd id="pptMasterVisualProjectSourcePath">未检测到</dd>
+          <dt>run_prompt.md</dt>
+          <dd id="pptMasterVisualProjectPromptPath">未检测到</dd>
+          <dt>svg_output</dt>
+          <dd id="pptMasterVisualProjectSvgOutput">未检测到</dd>
+          <dt>svg_final</dt>
+          <dd id="pptMasterVisualProjectSvgFinal">未检测到</dd>
+          <dt>expected pptx</dt>
+          <dd id="pptMasterVisualProjectExpectedPptx">未检测到</dd>
+          <dt>下一步</dt>
+          <dd id="pptMasterVisualProjectSteps">无</dd>
+        </dl>
+        <button id="bootstrapPptMasterProjectButton" type="button" disabled>准备 PPT Master Visual Project</button>
+        <p class="hint">只创建本地 project scaffold，不调用模型、不生成 SVG、不运行完整 ppt-master workflow。</p>
+      </section>
+
       <section id="pptMasterRunnerSection" hidden>
         <h2>PPT Master 本地导出</h2>
         <p id="pptMasterRunnerMessage"></p>
@@ -451,6 +488,18 @@ INDEX_HTML = """<!doctype html>
       const pptMasterExecutionPlanState = document.getElementById("pptMasterExecutionPlanState");
       const pptMasterExecutionSteps = document.getElementById("pptMasterExecutionSteps");
       const preparePptMasterExecutionButton = document.getElementById("preparePptMasterExecutionButton");
+      const pptMasterVisualProjectSection = document.getElementById("pptMasterVisualProjectSection");
+      const pptMasterVisualProjectMessage = document.getElementById("pptMasterVisualProjectMessage");
+      const pptMasterVisualProjectStatus = document.getElementById("pptMasterVisualProjectStatus");
+      const pptMasterVisualProjectDir = document.getElementById("pptMasterVisualProjectDir");
+      const pptMasterVisualProjectInstructionsState = document.getElementById("pptMasterVisualProjectInstructionsState");
+      const pptMasterVisualProjectSourcePath = document.getElementById("pptMasterVisualProjectSourcePath");
+      const pptMasterVisualProjectPromptPath = document.getElementById("pptMasterVisualProjectPromptPath");
+      const pptMasterVisualProjectSvgOutput = document.getElementById("pptMasterVisualProjectSvgOutput");
+      const pptMasterVisualProjectSvgFinal = document.getElementById("pptMasterVisualProjectSvgFinal");
+      const pptMasterVisualProjectExpectedPptx = document.getElementById("pptMasterVisualProjectExpectedPptx");
+      const pptMasterVisualProjectSteps = document.getElementById("pptMasterVisualProjectSteps");
+      const bootstrapPptMasterProjectButton = document.getElementById("bootstrapPptMasterProjectButton");
       const pptMasterRunnerSection = document.getElementById("pptMasterRunnerSection");
       const pptMasterRunnerMessage = document.getElementById("pptMasterRunnerMessage");
       const pptMasterRunnerStatus = document.getElementById("pptMasterRunnerStatus");
@@ -478,6 +527,8 @@ INDEX_HTML = """<!doctype html>
         "ppt_master_package_manifest",
         "ppt_master_package_README",
         "ppt_master_execution_plan",
+        "ppt_master_visual_project_manifest",
+        "ppt_master_project_instructions",
         "ppt_master_runner_result",
         "ppt_master_generated_pptx",
         "ppt_master_generation_notes",
@@ -489,6 +540,8 @@ INDEX_HTML = """<!doctype html>
         ppt_master_package_manifest: "PPT Master Package Manifest",
         ppt_master_package_README: "PPT Master Package README",
         ppt_master_execution_plan: "PPT Master Execution Plan",
+        ppt_master_visual_project_manifest: "PPT Master Visual Project Manifest",
+        ppt_master_project_instructions: "PPT Master Project Instructions",
         ppt_master_runner_result: "PPT Master Runner Result",
         ppt_master_generated_pptx: "PPT Master Generated PPTX",
         ppt_master_generation_notes: "PPT Master Generation Notes",
@@ -549,6 +602,21 @@ INDEX_HTML = """<!doctype html>
         pptMasterExecutionPlanState.textContent = "未生成";
         pptMasterExecutionSteps.textContent = "无";
         preparePptMasterExecutionButton.disabled = true;
+      }
+
+      function clearPptMasterVisualProject() {
+        pptMasterVisualProjectSection.hidden = true;
+        pptMasterVisualProjectMessage.textContent = "";
+        pptMasterVisualProjectStatus.textContent = "未准备";
+        pptMasterVisualProjectDir.textContent = "未检测到";
+        pptMasterVisualProjectInstructionsState.textContent = "未生成";
+        pptMasterVisualProjectSourcePath.textContent = "未检测到";
+        pptMasterVisualProjectPromptPath.textContent = "未检测到";
+        pptMasterVisualProjectSvgOutput.textContent = "未检测到";
+        pptMasterVisualProjectSvgFinal.textContent = "未检测到";
+        pptMasterVisualProjectExpectedPptx.textContent = "未检测到";
+        pptMasterVisualProjectSteps.textContent = "无";
+        bootstrapPptMasterProjectButton.disabled = true;
       }
 
       function clearPptMasterRunner() {
@@ -616,6 +684,27 @@ INDEX_HTML = """<!doctype html>
         const steps = execution.suggested_steps || [];
         pptMasterExecutionSteps.textContent = steps.length ? steps.join("\\n") : "无";
         preparePptMasterExecutionButton.disabled = !activeJobId;
+      }
+
+      function updatePptMasterVisualProject(job) {
+        if (!isLongDeckJob(job) || !job.ppt_master_visual_project) {
+          clearPptMasterVisualProject();
+          return;
+        }
+        const project = job.ppt_master_visual_project;
+        pptMasterVisualProjectSection.hidden = false;
+        pptMasterVisualProjectMessage.textContent = project.message || "";
+        pptMasterVisualProjectStatus.textContent = project.status || "未准备";
+        pptMasterVisualProjectDir.textContent = project.project_dir || "未检测到";
+        pptMasterVisualProjectInstructionsState.textContent = project.instructions_artifact_id ? "已生成" : "未生成";
+        pptMasterVisualProjectSourcePath.textContent = project.project_source_path || "未检测到";
+        pptMasterVisualProjectPromptPath.textContent = project.project_prompt_path || "未检测到";
+        pptMasterVisualProjectSvgOutput.textContent = project.expected_svg_output_dir || "未检测到";
+        pptMasterVisualProjectSvgFinal.textContent = project.expected_svg_final_dir || "未检测到";
+        pptMasterVisualProjectExpectedPptx.textContent = project.expected_pptx_path || "未检测到";
+        const steps = project.next_steps || [];
+        pptMasterVisualProjectSteps.textContent = steps.length ? steps.join("\\n") : "无";
+        bootstrapPptMasterProjectButton.disabled = !activeJobId;
       }
 
       function updatePptMasterRunner(job) {
@@ -867,6 +956,7 @@ INDEX_HTML = """<!doctype html>
         setProgress(job);
         updatePptMasterPackage(job);
         updatePptMasterExecution(job);
+        updatePptMasterVisualProject(job);
         updatePptMasterRunner(job);
         updatePptMasterOutput(job);
         if (job.error_message) {
@@ -900,6 +990,7 @@ INDEX_HTML = """<!doctype html>
         clearArtifacts();
         clearPptMasterPackage();
         clearPptMasterExecution();
+        clearPptMasterVisualProject();
         clearPptMasterRunner();
         clearPptMasterOutput();
 
@@ -940,6 +1031,7 @@ INDEX_HTML = """<!doctype html>
             setProgress(job);
             updatePptMasterPackage(job);
             updatePptMasterExecution(job);
+            updatePptMasterVisualProject(job);
             updatePptMasterRunner(job);
             updatePptMasterOutput(job);
             if (job.error_message) {
@@ -964,6 +1056,7 @@ INDEX_HTML = """<!doctype html>
           setProgress(latest);
           updatePptMasterPackage(latest);
           updatePptMasterExecution(latest);
+          updatePptMasterVisualProject(latest);
           updatePptMasterRunner(latest);
           updatePptMasterOutput(latest);
           if (latest.error_message) {
@@ -994,6 +1087,7 @@ INDEX_HTML = """<!doctype html>
           setProgress(job);
           updatePptMasterPackage(job);
           updatePptMasterExecution(job);
+          updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
           setStatus(job.status, job.accepted, job.error_message || "");
@@ -1012,6 +1106,7 @@ INDEX_HTML = """<!doctype html>
           const job = await requestJson(`/api/jobs/${activeJobId}`);
           updatePptMasterPackage(job);
           updatePptMasterExecution(job);
+          updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
           await loadArtifacts(activeJobId);
@@ -1019,6 +1114,27 @@ INDEX_HTML = """<!doctype html>
           errorMessage.textContent = error.message;
         } finally {
           preparePptMasterExecutionButton.disabled = false;
+        }
+      });
+
+      bootstrapPptMasterProjectButton.addEventListener("click", async () => {
+        if (!activeJobId) {
+          return;
+        }
+        bootstrapPptMasterProjectButton.disabled = true;
+        try {
+          await requestJson(`/api/long-deck-jobs/${activeJobId}/bootstrap-ppt-master-project`, {method: "POST"});
+          const job = await requestJson(`/api/jobs/${activeJobId}`);
+          updatePptMasterPackage(job);
+          updatePptMasterExecution(job);
+          updatePptMasterVisualProject(job);
+          updatePptMasterRunner(job);
+          updatePptMasterOutput(job);
+          await loadArtifacts(activeJobId);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+        } finally {
+          bootstrapPptMasterProjectButton.disabled = false;
         }
       });
 
@@ -1032,6 +1148,7 @@ INDEX_HTML = """<!doctype html>
           const job = await requestJson(`/api/jobs/${activeJobId}`);
           updatePptMasterPackage(job);
           updatePptMasterExecution(job);
+          updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
           await loadArtifacts(activeJobId);
@@ -1136,10 +1253,26 @@ class PptMasterOutputResponse(StrictModel):
 class PptMasterExecutionResponse(StrictModel):
     status: str
     plan_artifact_id: str | None = None
+    project_dir: str | None = None
     output_dir: str | None = None
     expected_pptx_path: str | None = None
     suggested_steps: list[str] = Field(default_factory=list)
     message: str
+
+
+class PptMasterVisualProjectResponse(StrictModel):
+    status: str
+    manifest_artifact_id: str | None = None
+    instructions_artifact_id: str | None = None
+    project_dir: str | None = None
+    project_source_path: str | None = None
+    project_prompt_path: str | None = None
+    expected_svg_output_dir: str | None = None
+    expected_svg_final_dir: str | None = None
+    expected_pptx_path: str | None = None
+    next_steps: list[str] = Field(default_factory=list)
+    message: str
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PptMasterRunnerResponse(StrictModel):
@@ -1159,6 +1292,7 @@ class PptMasterRunnerResponse(StrictModel):
 class JobResponse(JobRecord):
     ppt_master_package: PptMasterPackageResponse | None = None
     ppt_master_execution: PptMasterExecutionResponse | None = None
+    ppt_master_visual_project: PptMasterVisualProjectResponse | None = None
     ppt_master_output: PptMasterOutputResponse | None = None
     ppt_master_runner: PptMasterRunnerResponse | None = None
 
@@ -1216,6 +1350,10 @@ def _read_ppt_master_execution_plan(path: Path) -> PptMasterExecutionPlan | None
 
 def _read_ppt_master_runner_result(path: Path) -> PptMasterRunnerResult | None:
     return read_ppt_master_runner_result(path)
+
+
+def _read_ppt_master_visual_project(path: Path) -> PptMasterVisualProject | None:
+    return read_ppt_master_visual_project_manifest(path)
 
 
 def _ensure_artifact(
@@ -1380,6 +1518,10 @@ def _ppt_master_runner_result_path_for_job(jobs_root: Path, job_id: str) -> Path
     return jobs_root / job_id / PPT_MASTER_RUNNER_RESULT_FILENAME
 
 
+def _ppt_master_visual_project_manifest_path_for_job(jobs_root: Path, job_id: str) -> Path:
+    return jobs_root / job_id / PPT_MASTER_VISUAL_PROJECT_MANIFEST_FILENAME
+
+
 def _ppt_master_execution_response(
     store: JobStore,
     jobs_root: Path,
@@ -1409,6 +1551,7 @@ def _ppt_master_execution_response(
         return PptMasterExecutionResponse(
             status=plan.status,
             plan_artifact_id=plan_artifact.artifact_id if plan_artifact is not None else None,
+            project_dir=str(plan.project_dir) if plan.project_dir is not None else None,
             output_dir=str(plan.output_dir),
             expected_pptx_path=str(plan.expected_pptx_path),
             suggested_steps=plan.suggested_steps,
@@ -1419,6 +1562,7 @@ def _ppt_master_execution_response(
     return PptMasterExecutionResponse(
         status="not_prepared",
         plan_artifact_id=None,
+        project_dir=None,
         output_dir=str(output_dir),
         expected_pptx_path=str(output_dir / "generated_by_ppt_master.pptx"),
         suggested_steps=[
@@ -1441,6 +1585,93 @@ def _ppt_master_execution_message(status: str) -> str:
     if status == "missing_package":
         return "当前 job 缺少完整 ppt_master_package，因此不能准备执行桥。"
     return "PPT Master execution plan has not been prepared for this job."
+
+
+def _ppt_master_visual_project_message(status: str) -> str:
+    if status == "created":
+        return "PPT Master visual project scaffold 已创建。下一步是在本地 AI IDE / ppt-master skill 中生成 SVG。"
+    if status == "already_exists":
+        return "PPT Master visual project scaffold 已存在。可以继续在该目录补全 SVG。"
+    if status == "missing_package":
+        return "当前 job 缺少 ppt_master_package/source.md 或 run_prompt.md，不能创建 visual project。"
+    if status == "ppt_master_unavailable":
+        return "本地 ppt-master 不可用。请检查 PPT_MASTER_DIR 或 --ppt-master-dir。"
+    if status == "failed":
+        return "PPT Master visual project bootstrap 失败，请查看 warnings。"
+    return "PPT Master visual project scaffold has not been bootstrapped for this job."
+
+
+def _visual_project_response_from_manifest(
+    project: PptMasterVisualProject,
+    *,
+    manifest_artifact_id: str | None = None,
+    instructions_artifact_id: str | None = None,
+) -> PptMasterVisualProjectResponse:
+    return PptMasterVisualProjectResponse(
+        status=project.status,
+        manifest_artifact_id=manifest_artifact_id,
+        instructions_artifact_id=instructions_artifact_id,
+        project_dir=str(project.project_dir),
+        project_source_path=str(project.project_source_path),
+        project_prompt_path=str(project.project_prompt_path),
+        expected_svg_output_dir=str(project.expected_svg_output_dir),
+        expected_svg_final_dir=str(project.expected_svg_final_dir),
+        expected_pptx_path=str(project.expected_pptx_path),
+        next_steps=project.next_steps,
+        message=_ppt_master_visual_project_message(project.status),
+        warnings=project.warnings,
+    )
+
+
+def _ppt_master_visual_project_response(
+    store: JobStore,
+    jobs_root: Path,
+    job: JobRecord,
+) -> PptMasterVisualProjectResponse | None:
+    if job.job_type != "long_deck":
+        return None
+
+    artifacts_by_name = {artifact.name: artifact for artifact in store.list_artifacts(job.job_id)}
+    manifest_artifact = artifacts_by_name.get(PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT)
+    instructions_artifact = artifacts_by_name.get(PPT_MASTER_PROJECT_INSTRUCTIONS_ARTIFACT)
+    manifest_path = _ppt_master_visual_project_manifest_path_for_job(jobs_root, job.job_id)
+    project = None
+    if manifest_artifact is not None:
+        project = _read_ppt_master_visual_project(manifest_artifact.path)
+    elif manifest_path.is_file():
+        project = _read_ppt_master_visual_project(manifest_path)
+        if project is not None:
+            registration = register_ppt_master_visual_project_artifacts(
+                store,
+                job_id=job.job_id,
+                job_dir=jobs_root / job.job_id,
+            )
+            manifest_artifact = registration.manifest_artifact
+            instructions_artifact = registration.instructions_artifact
+
+    if project is not None:
+        return _visual_project_response_from_manifest(
+            project,
+            manifest_artifact_id=manifest_artifact.artifact_id if manifest_artifact is not None else None,
+            instructions_artifact_id=instructions_artifact.artifact_id if instructions_artifact is not None else None,
+        )
+
+    output_dir = _ppt_master_output_dir_for_job(jobs_root, job.job_id)
+    return PptMasterVisualProjectResponse(
+        status="not_bootstrapped",
+        manifest_artifact_id=None,
+        instructions_artifact_id=None,
+        project_dir=str(output_dir / "ppt_master_visual_project"),
+        project_source_path=None,
+        project_prompt_path=None,
+        expected_svg_output_dir=str(output_dir / "ppt_master_visual_project" / "svg_output"),
+        expected_svg_final_dir=str(output_dir / "ppt_master_visual_project" / "svg_final"),
+        expected_pptx_path=str(output_dir / "generated_by_ppt_master.pptx"),
+        next_steps=[
+            f"Call POST /api/long-deck-jobs/{job.job_id}/bootstrap-ppt-master-project to create the scaffold."
+        ],
+        message=_ppt_master_visual_project_message("not_bootstrapped"),
+    )
 
 
 def _runner_response_from_result(
@@ -1577,10 +1808,14 @@ def _job_response(store: JobStore, jobs_root: Path, job: JobRecord) -> JobRespon
     data = job.model_dump(mode="python")
     package = _ppt_master_package_response(store, job)
     execution = _ppt_master_execution_response(store, jobs_root, job)
+    visual_project = _ppt_master_visual_project_response(store, jobs_root, job)
     output = _ppt_master_output_response(store, jobs_root, job)
     runner = _ppt_master_runner_response(store, jobs_root, job)
     data["ppt_master_package"] = package.model_dump(mode="python") if package is not None else None
     data["ppt_master_execution"] = execution.model_dump(mode="python") if execution is not None else None
+    data["ppt_master_visual_project"] = (
+        visual_project.model_dump(mode="python") if visual_project is not None else None
+    )
     data["ppt_master_output"] = output.model_dump(mode="python") if output is not None else None
     data["ppt_master_runner"] = runner.model_dump(mode="python") if runner is not None else None
     return JobResponse.model_validate(data)
@@ -1685,6 +1920,10 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
 
     if relative_path == Path("ppt_master_package/source.md"):
         return None
+    if relative_path == Path(PPT_MASTER_VISUAL_PROJECT_MANIFEST_FILENAME):
+        return PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT
+    if artifact_path.name == PROJECT_INSTRUCTIONS_FILENAME:
+        return PPT_MASTER_PROJECT_INSTRUCTIONS_ARTIFACT
     ppt_master_package_names = {
         Path("ppt_master_package/run_prompt.md"): PPT_MASTER_RUN_PROMPT_ARTIFACT,
         Path("ppt_master_package/README.md"): PPT_MASTER_README_ARTIFACT,
@@ -2175,10 +2414,46 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         return PptMasterExecutionResponse(
             status=plan.status,
             plan_artifact_id=plan_artifact.artifact_id,
+            project_dir=str(plan.project_dir) if plan.project_dir is not None else None,
             output_dir=str(plan.output_dir),
             expected_pptx_path=str(plan.expected_pptx_path),
             suggested_steps=plan.suggested_steps,
             message=_ppt_master_execution_message(plan.status),
+        )
+
+    @app.post(
+        "/api/long-deck-jobs/{job_id}/bootstrap-ppt-master-project",
+        response_model=PptMasterVisualProjectResponse,
+    )
+    def bootstrap_long_deck_ppt_master_visual_project(job_id: str) -> PptMasterVisualProjectResponse:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type != "long_deck":
+            raise HTTPException(status_code=400, detail="Only long deck jobs can bootstrap PPT Master projects.")
+
+        job_dir = app.state.jobs_root / job_id
+        try:
+            project = bootstrap_ppt_master_visual_project(job_id, job_dir)
+            registration = register_ppt_master_visual_project_artifacts(
+                app.state.job_store,
+                job_id=job_id,
+                job_dir=job_dir,
+            )
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not bootstrap PPT Master visual project: {sanitize_error_message(exc)}",
+            ) from exc
+
+        return _visual_project_response_from_manifest(
+            project,
+            manifest_artifact_id=registration.manifest_artifact.artifact_id,
+            instructions_artifact_id=(
+                registration.instructions_artifact.artifact_id
+                if registration.instructions_artifact is not None
+                else None
+            ),
         )
 
     @app.post(

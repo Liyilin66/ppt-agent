@@ -21,6 +21,10 @@ from ppt_agent.ppt_master_output import (
     PPT_MASTER_OUTPUT_PPTX_ARTIFACT,
     register_ppt_master_output_artifacts,
 )
+from ppt_agent.ppt_master_project import (
+    PPT_MASTER_PROJECT_INSTRUCTIONS_ARTIFACT,
+    PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT,
+)
 from ppt_agent.ppt_master_runner import PPT_MASTER_RUNNER_RESULT_ARTIFACT
 
 
@@ -456,6 +460,7 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "继续/重试长 PPT",
         "PPT Master 渲染包",
         "PPT Master 执行桥",
+        "PPT Master Visual Project",
         "PPT Master 本地导出",
         "PPT Master 生成结果",
         "PPT Master Source Markdown",
@@ -463,13 +468,17 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
         "PPT Master Package Manifest",
         "PPT Master Package README",
         "PPT Master Execution Plan",
+        "PPT Master Visual Project Manifest",
+        "PPT Master Project Instructions",
         "PPT Master Runner Result",
         "PPT Master Generated PPTX",
         "PPT Master Generation Notes",
         "PPT Master Output Manifest",
         "准备 PPT Master 执行计划",
+        "准备 PPT Master Visual Project",
         "运行 PPT Master 本地导出",
         "execution status",
+        "bootstrap status",
         "expected pptx",
         "runner status",
         "需要外部 AI 生成 project",
@@ -938,6 +947,8 @@ def test_old_long_deck_job_without_ppt_master_package_still_returns_status(tmp_p
     assert "not been generated" in body["ppt_master_package"]["message"]
     assert body["ppt_master_execution"]["status"] == "not_prepared"
     assert "has not been prepared" in body["ppt_master_execution"]["message"]
+    assert body["ppt_master_visual_project"]["status"] == "not_bootstrapped"
+    assert "has not been bootstrapped" in body["ppt_master_visual_project"]["message"]
     assert body["ppt_master_output"]["detected"] is False
     assert body["ppt_master_output"]["message"] == "No PPT Master output has been registered for this job."
     assert body["ppt_master_runner"]["status"] == "not_run"
@@ -1093,6 +1104,57 @@ def test_prepare_ppt_master_execution_endpoint_rejects_short_deck_job(tmp_path: 
     job = store.create_job(job_type="short_deck")
 
     response = client.post(f"/api/long-deck-jobs/{job.job_id}/prepare-ppt-master-execution")
+
+    assert response.status_code == 400
+    assert "Only long deck jobs" in response.json()["detail"]
+
+
+def test_bootstrap_ppt_master_project_endpoint_creates_scaffold_and_registers_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = _mock_expected_ppt_master_root(tmp_path)
+    monkeypatch.setenv("PPT_MASTER_DIR", str(root))
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="long_deck")
+    store.update_job(job.job_id, status="failed_quality_gate", current_stage="failed_quality_gate")
+    job_dir = tmp_path / "jobs" / job.job_id
+    _build_mock_ppt_master_package(job_dir)
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/bootstrap-ppt-master-project")
+    status_response = client.get(f"/api/jobs/{job.job_id}")
+    artifacts = client.get(f"/api/jobs/{job.job_id}/artifacts").json()["artifacts"]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "created"
+    assert body["manifest_artifact_id"]
+    assert body["instructions_artifact_id"]
+    assert body["project_dir"].endswith("ppt_master_visual_project")
+    assert body["project_source_path"].endswith("inputs/source.md")
+    assert body["project_prompt_path"].endswith("inputs/run_prompt.md")
+    assert body["expected_svg_output_dir"].endswith("svg_output")
+    assert body["expected_svg_final_dir"].endswith("svg_final")
+    assert body["expected_pptx_path"].endswith("generated_by_ppt_master.pptx")
+    assert any("PROJECT_INSTRUCTIONS.md" in step for step in body["next_steps"])
+    status_body = status_response.json()
+    assert status_body["ppt_master_visual_project"]["status"] == "created"
+    assert status_body["ppt_master_visual_project"]["instructions_artifact_id"]
+    assert {artifact["name"] for artifact in artifacts} >= {
+        PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT,
+        PPT_MASTER_PROJECT_INSTRUCTIONS_ARTIFACT,
+    }
+
+
+def test_bootstrap_ppt_master_project_endpoint_rejects_short_deck_job(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    app = api.create_app(data_dir=tmp_path, store=store)
+    client = TestClient(app)
+    job = store.create_job(job_type="short_deck")
+
+    response = client.post(f"/api/long-deck-jobs/{job.job_id}/bootstrap-ppt-master-project")
 
     assert response.status_code == 400
     assert "Only long deck jobs" in response.json()["detail"]

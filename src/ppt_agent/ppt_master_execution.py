@@ -19,6 +19,7 @@ from ppt_agent.ppt_master_output import (
     PPT_MASTER_OUTPUT_NOTES_FILENAME,
     PPT_MASTER_OUTPUT_PPTX_FILENAME,
 )
+from ppt_agent.ppt_master_project import find_bootstrapped_visual_project
 
 
 PPT_MASTER_EXECUTION_PLAN_ARTIFACT = "ppt_master_execution_plan"
@@ -39,6 +40,7 @@ class PptMasterExecutionPlan(StrictModel):
     source_path: Path
     run_prompt_path: Path
     output_dir: Path
+    project_dir: Path | None = None
     expected_pptx_path: Path
     expected_notes_path: Path
     skill_path: Path | None = None
@@ -67,6 +69,7 @@ def prepare_ppt_master_execution(
     output_dir = resolved_job_dir / "ppt_master_output"
     expected_pptx_path = output_dir / PPT_MASTER_OUTPUT_PPTX_FILENAME
     expected_notes_path = output_dir / PPT_MASTER_OUTPUT_NOTES_FILENAME
+    project_dir = find_bootstrapped_visual_project(resolved_job_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     installation = detect_ppt_master_installation(ppt_master_root)
@@ -91,6 +94,7 @@ def prepare_ppt_master_execution(
         source_path=source_path,
         run_prompt_path=run_prompt_path,
         output_dir=output_dir,
+        project_dir=project_dir,
         expected_pptx_path=expected_pptx_path,
         expected_notes_path=expected_notes_path,
         skill_path=installation.skill_path,
@@ -102,6 +106,7 @@ def prepare_ppt_master_execution(
             run_prompt_path=run_prompt_path,
             source_path=source_path,
             output_dir=output_dir,
+            project_dir=project_dir,
         ),
         created_at=datetime.now(UTC).isoformat(),
     )
@@ -126,6 +131,7 @@ def _suggested_steps(
     run_prompt_path: Path,
     source_path: Path,
     output_dir: Path,
+    project_dir: Path | None,
 ) -> list[str]:
     root_text = str(installation.root_path) if installation.root_path is not None else "$PPT_MASTER_DIR"
     skill_text = (
@@ -133,7 +139,7 @@ def _suggested_steps(
         if installation.skill_path is not None
         else "$PPT_MASTER_DIR/skills/ppt-master/SKILL.md"
     )
-    return [
+    steps = [
         f"Open the local ppt-master repository: cd {root_text}",
         f"Read the ppt-master workflow contract first: {skill_text}",
         f"Use this run prompt: {run_prompt_path}",
@@ -144,3 +150,7 @@ def _suggested_steps(
             f"uv run python scripts/register_ppt_master_output.py --job-id {job_id} --output-dir {output_dir}"
         ),
     ]
+    if project_dir is not None:
+        steps.insert(0, f"Open the prepared visual project scaffold: cd {project_dir}")
+        steps.insert(1, f"Follow its PROJECT_INSTRUCTIONS.md: {project_dir / 'PROJECT_INSTRUCTIONS.md'}")
+    return steps

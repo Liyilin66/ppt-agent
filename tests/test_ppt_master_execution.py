@@ -10,6 +10,7 @@ from ppt_agent.ppt_master_execution import (
     PPT_MASTER_EXECUTION_PLAN_FILENAME,
     prepare_ppt_master_execution,
 )
+from ppt_agent.ppt_master_project import bootstrap_ppt_master_visual_project
 
 
 def _repo_root() -> Path:
@@ -75,6 +76,19 @@ def test_prepare_execution_waits_for_external_run_when_package_and_ppt_master_ex
     assert plan.expected_pptx_path.name == "generated_by_ppt_master.pptx"
     assert (job_dir / PPT_MASTER_EXECUTION_PLAN_FILENAME).exists()
     assert any("register_ppt_master_output.py" in step for step in plan.suggested_steps)
+
+
+def test_prepare_execution_includes_bootstrapped_visual_project(tmp_path: Path) -> None:
+    root = _mock_ppt_master_root(tmp_path)
+    job_dir = tmp_path / "data" / "jobs" / "job-123"
+    _build_package(job_dir)
+    project = bootstrap_ppt_master_visual_project("job-123", job_dir, ppt_master_root=root)
+
+    plan = prepare_ppt_master_execution("job-123", job_dir, ppt_master_root=root)
+
+    assert plan.status == "waiting_for_external_ppt_master_run"
+    assert plan.project_dir == project.project_dir
+    assert any("PROJECT_INSTRUCTIONS.md" in step for step in plan.suggested_steps)
 
 
 def test_prepare_execution_detects_existing_output(tmp_path: Path) -> None:

@@ -54,6 +54,10 @@ def _load_local_export_module():
     return _load_script_module("run_ppt_master_local_export.py")
 
 
+def _load_bootstrap_project_module():
+    return _load_script_module("bootstrap_ppt_master_project.py")
+
+
 def test_long_deck_demo_input_exists_and_requests_30_slides() -> None:
     module = _load_runner_module()
     request = module.load_long_deck_run_request()
@@ -133,6 +137,10 @@ def test_long_deck_demo_readme_does_not_claim_100_page_pptx() -> None:
     assert "ppt master local runner v0" in text
     assert "run_ppt_master_local_export.py" in text
     assert "ppt master 本地导出" in text
+    assert "ppt master visual project bootstrap v0" in text
+    assert "bootstrap_ppt_master_project.py" in text
+    assert "PROJECT_INSTRUCTIONS.md".lower() in text
+    assert "ppt master visual project" in text
     assert "does not call a model" in text
 
 
@@ -186,6 +194,14 @@ def test_ppt_master_execution_script_default_paths() -> None:
 
 def test_ppt_master_local_export_script_default_paths() -> None:
     module = _load_local_export_module()
+
+    assert module.DEFAULT_JOB_ID == "02619bd8da5e49449f3b940a0f84771c"
+    assert module.DEFAULT_JOB_DIR == _repo_root() / "data" / "jobs" / module.DEFAULT_JOB_ID
+    assert module.DEFAULT_DB_PATH == _repo_root() / "data" / "jobs.sqlite3"
+
+
+def test_ppt_master_bootstrap_project_script_default_paths() -> None:
+    module = _load_bootstrap_project_module()
 
     assert module.DEFAULT_JOB_ID == "02619bd8da5e49449f3b940a0f84771c"
     assert module.DEFAULT_JOB_DIR == _repo_root() / "data" / "jobs" / module.DEFAULT_JOB_ID

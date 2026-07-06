@@ -219,6 +219,62 @@ uv run python scripts/register_ppt_master_output.py \
 
 ppt-agent still does not automatically run ppt-master, call a model, install ppt-master requirements, or open PowerPoint in this stage.
 
+## PPT Master Visual Project Bootstrap v0
+
+Visual Project Bootstrap v0 creates the job-local scaffold for the missing middle step:
+
+```text
+source.md + run_prompt.md
+-> ppt-master visual project scaffold
+-> external AI IDE / ppt-master skill generates SVG slides
+-> Local Runner exports PPTX
+```
+
+It can run after a `PPT Master 渲染包` exists. It does not generate SVG, call a model, run the full ppt-master workflow, install dependencies, copy ppt-master source code, or open PowerPoint.
+
+Run from the CLI:
+
+```bash
+uv run python scripts/bootstrap_ppt_master_project.py \
+  --job-id <job_id> \
+  --job-dir data/jobs/<job_id> \
+  --ppt-master-dir /Users/jay/Documents/ppt-master
+```
+
+The scaffold is written under:
+
+```text
+data/jobs/<job_id>/ppt_master_output/ppt_master_visual_project/
+```
+
+It contains:
+
+- `inputs/source.md`
+- `inputs/run_prompt.md`
+- `PROJECT_INSTRUCTIONS.md`
+- `project_manifest.json`
+- `svg_output/`
+- `svg_final/`
+- `exports/`
+- `logs/`
+
+The job root also gets:
+
+```text
+data/jobs/<job_id>/ppt_master_visual_project_manifest.json
+```
+
+In the Web UI, click `准备 PPT Master Visual Project` and then open the `PPT Master Visual Project` section. Download `PPT Master Project Instructions` and use it in the local AI IDE / ppt-master skill to generate SVG slides into the scaffold.
+
+After SVG slides exist, run the Local Runner:
+
+```bash
+uv run python scripts/run_ppt_master_local_export.py \
+  --job-id <job_id> \
+  --job-dir data/jobs/<job_id> \
+  --ppt-master-dir /Users/jay/Documents/ppt-master
+```
+
 ## PPT Master Local Runner v0
 
 Local Runner v0 is a narrower bridge for deterministic export only.

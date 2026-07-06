@@ -26,6 +26,7 @@ from ppt_agent.ppt_master_output import (
     PPT_MASTER_OUTPUT_PPTX_FILENAME,
     register_ppt_master_output_artifacts,
 )
+from ppt_agent.ppt_master_project import find_bootstrapped_visual_project
 
 
 PPT_MASTER_RUNNER_RESULT_ARTIFACT = "ppt_master_runner_result"
@@ -114,7 +115,7 @@ def run_ppt_master_local_export(
             ),
         )
 
-    resolved_project_dir = _select_project_dir(output_dir, project_dir)
+    resolved_project_dir = _select_project_dir(output_dir, project_dir, resolved_job_dir)
     if resolved_project_dir is None:
         return _write_result(
             result_path,
@@ -378,10 +379,14 @@ def _package_warnings(package_dir: Path) -> list[str]:
     return warnings
 
 
-def _select_project_dir(output_dir: Path, project_dir: Path | None) -> Path | None:
+def _select_project_dir(output_dir: Path, project_dir: Path | None, job_dir: Path | None = None) -> Path | None:
     if project_dir is not None:
         resolved = Path(project_dir).expanduser().resolve(strict=False)
         return resolved if resolved.is_dir() else None
+    if job_dir is not None:
+        bootstrapped_project = find_bootstrapped_visual_project(job_dir)
+        if bootstrapped_project is not None:
+            return bootstrapped_project
     candidates: list[Path] = []
     if not output_dir.is_dir():
         return None
