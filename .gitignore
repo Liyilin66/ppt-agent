@@ -15,6 +15,7 @@ env/
 .env.*
 *.egg-info/
 data/
+examples/output/
 examples/demo_ai_agent_pm/output/
 examples/demo_long_deck_ai_agent_pm_30/output/
 

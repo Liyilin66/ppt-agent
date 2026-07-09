@@ -279,6 +279,10 @@ def build_parser() -> argparse.ArgumentParser:
     patch.add_argument("--result-output", default=None, help="Optional path for full patch result JSON.")
     patch.set_defaults(func=_cmd_patch)
 
+    from ppt_agent.v2.cli import register_v2_commands
+
+    register_v2_commands(subparsers)
+
     return parser
 
 
