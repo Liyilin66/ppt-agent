@@ -74,6 +74,72 @@ class ProviderConfig(StrictModel):
         return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
 
 
+# Approximate USD prices per million tokens, matched by substring against the
+# model name. These fallback estimates keep --budget-usd from silently metering
+# $0.00 when a provider does not expose pricing. They are not billing rates;
+# users should pass explicit prices when accuracy matters.
+DEFAULT_MODEL_PRICES_USD_PER_MTOK: tuple[tuple[str, float, float], ...] = (
+    ("claude-fable", 10.0, 50.0),
+    ("claude-mythos", 10.0, 50.0),
+    ("claude-opus", 5.0, 25.0),
+    ("claude-sonnet", 3.0, 15.0),
+    ("claude-haiku", 1.0, 5.0),
+    ("gpt-4o-mini", 0.6, 2.4),
+    ("gpt-4o", 3.0, 12.0),
+    ("gpt-4.1-mini", 0.8, 3.2),
+    ("gpt-4.1", 3.0, 12.0),
+    ("o3", 5.0, 20.0),
+    ("o1", 15.0, 60.0),
+    ("deepseek", 0.6, 2.5),
+    ("qwen", 0.8, 3.0),
+    ("glm", 0.8, 3.0),
+    ("kimi", 1.0, 4.0),
+)
+GENERIC_DEFAULT_PRICE_USD_PER_MTOK: tuple[float, float] = (5.0, 20.0)
+
+
+def lookup_default_pricing(model: str) -> tuple[float, float]:
+    """Guardrail price estimate for a model name (input, output per MTok)."""
+
+    lowered = model.lower()
+    for pattern, input_cost, output_cost in DEFAULT_MODEL_PRICES_USD_PER_MTOK:
+        if pattern in lowered:
+            return input_cost, output_cost
+    return GENERIC_DEFAULT_PRICE_USD_PER_MTOK
+
+
+def ensure_pricing(config: ProviderConfig) -> tuple[ProviderConfig, bool]:
+    """Fill in any missing per-token prices with non-zero estimates.
+
+    Returns the (possibly updated) config and whether defaults were applied.
+    Without this, a budget guardrail would silently meter $0.00 forever.
+    """
+
+    if (
+        config.input_cost_per_mtok_usd is not None
+        and config.output_cost_per_mtok_usd is not None
+    ):
+        return config, False
+    default_input_cost, default_output_cost = lookup_default_pricing(config.model)
+    return (
+        config.model_copy(
+            update={
+                "input_cost_per_mtok_usd": (
+                    config.input_cost_per_mtok_usd
+                    if config.input_cost_per_mtok_usd is not None
+                    else default_input_cost
+                ),
+                "output_cost_per_mtok_usd": (
+                    config.output_cost_per_mtok_usd
+                    if config.output_cost_per_mtok_usd is not None
+                    else default_output_cost
+                ),
+            }
+        ),
+        True,
+    )
+
+
 def provider_config_from_env() -> ProviderConfig:
     """Build a ProviderConfig from PPT_AGENT_* / OPENAI_* / ANTHROPIC_* env vars."""
 

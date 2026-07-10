@@ -47,6 +47,16 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         action="store_true",
         help="Reuse checkpoints in the output directory instead of regenerating.",
     )
+    parser.add_argument(
+        "--qa-gate",
+        choices=("strict", "lenient"),
+        default="strict",
+        help=(
+            "strict (default): pages still failing QA after repair are replaced "
+            "by clean archetype pages. lenient: keep them and mark the run "
+            "completed_with_qa_errors."
+        ),
+    )
     if not offline:
         parser.add_argument(
             "--provider",
@@ -65,7 +75,10 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
             "--budget-usd",
             type=float,
             default=15.0,
-            help="Cost guardrail; needs --input-cost/--output-cost to meter real cost.",
+            help=(
+                "Estimated cost guardrail. Pass --input-cost/--output-cost for "
+                "billing-aligned metering; missing rates use non-zero estimates."
+            ),
         )
         parser.add_argument(
             "--input-cost", type=float, default=None, help="USD per million input tokens."
@@ -94,6 +107,7 @@ def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
         output_dir=args.output_dir,
         deck_name=args.deck_name,
         resume=args.resume,
+        qa_gate=args.qa_gate,
         concurrency=getattr(args, "concurrency", 8),
         budget_usd=getattr(args, "budget_usd", None),
         repair_rounds=getattr(args, "repair_rounds", 1),
@@ -102,7 +116,11 @@ def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
 
 def _print_result(result: BuildResult) -> None:
     print(f"\nstatus: {result.status}")
-    print(f"pptx: {result.pptx_path}")
+    print(
+        f"pptx: {result.pptx_path}"
+        if result.pptx_path
+        else "pptx: not generated (quality gate failed)"
+    )
     print(
         f"pages: {result.page_count} "
         f"(model {result.model_pages}, repaired {result.repaired_pages}, "
@@ -127,21 +145,30 @@ def _cmd_build(args: argparse.Namespace) -> int:
     except ProviderError as exc:
         print(f"provider configuration error: {exc}")
         return 1
-    from ppt_agent.v2.providers import UsageMeter
+    from ppt_agent.v2.providers import UsageMeter, ensure_pricing
 
+    if args.budget_usd is not None:
+        config, used_defaults = ensure_pricing(config)
+        if used_defaults:
+            print(
+                f"budget guardrail: missing token rate(s); using an estimated "
+                f"${config.input_cost_per_mtok_usd}/"
+                f"${config.output_cost_per_mtok_usd} per MTok for '{config.model}'. "
+                "Pass real rates for accurate metering."
+            )
     client = build_client(config, usage=UsageMeter(budget_usd=args.budget_usd))
     search = default_search_provider() if args.search else None
     if args.search and search is None:
         print("--search requested but TAVILY_API_KEY is not set; continuing without search.")
     result = build_deck(_build_request(args, offline=False), client, search_provider=search)
     _print_result(result)
-    return 0
+    return 2 if result.status == "quality_gate_failed" else 0
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
     result = build_deck(_build_request(args, offline=True), MockLLMClient())
     _print_result(result)
-    return 0
+    return 2 if result.status == "quality_gate_failed" else 0
 
 
 def _cmd_preview(args: argparse.Namespace) -> int:

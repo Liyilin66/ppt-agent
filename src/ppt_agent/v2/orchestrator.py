@@ -81,6 +81,14 @@ class BuildRequest(StrictModel):
     concurrency: int = Field(default=8, ge=1, le=32)
     budget_usd: float | None = Field(default=15.0, gt=0)
     repair_rounds: int = Field(default=1, ge=0, le=2)
+    qa_gate: Literal["strict", "lenient"] = Field(
+        default="strict",
+        description=(
+            "strict: a page still failing QA after repair is replaced by an "
+            "archetype page (no broken page ever ships). lenient: keep the "
+            "model's page and mark the run completed_with_qa_errors."
+        ),
+    )
 
 
 class PageOutcome(StrictModel):
@@ -93,8 +101,13 @@ class PageOutcome(StrictModel):
 
 
 class BuildResult(StrictModel):
-    status: Literal["succeeded", "succeeded_with_fallbacks"]
-    pptx_path: str
+    status: Literal[
+        "succeeded",
+        "succeeded_with_fallbacks",
+        "completed_with_qa_errors",
+        "quality_gate_failed",
+    ]
+    pptx_path: str | None
     deck_design_path: str
     qa_report_path: str
     run_report_path: str
@@ -307,6 +320,7 @@ async def _design_content_page(
     *,
     semaphore: asyncio.Semaphore,
     repair_rounds: int,
+    qa_gate: str,
     progress: Progress,
 ) -> tuple[PageDesign, PageQAResult, PageOutcome]:
     checkpoint_name = f"pages/page_{slot.page_number:03d}.json"
@@ -398,12 +412,34 @@ async def _design_content_page(
                     f"[repair] page {slot.page_number} repair skipped: {str(exc)[:160]}"
                 )
 
+        # QA gate: in strict mode a page that still fails after repair is
+        # replaced by an archetype page, so no broken page ever ships.
+        note: str | None = None
+        if qa_result.errors and status != "fallback" and qa_gate == "strict":
+            note = (
+                f"replaced by QA gate: {len(qa_result.errors)} unresolved error(s) — "
+                + "; ".join(issue.code for issue in qa_result.errors)
+            )
+            progress(
+                f"[qa-gate] page {slot.page_number} replaced by archetype "
+                f"({len(qa_result.errors)} unresolved errors)"
+            )
+            status = "fallback"
+            page = design_fallback_page(
+                page_brief,
+                page_number=slot.page_number,
+                section_title=slot.section_title,
+                language=brief.language,
+            )
+            page, qa_result = review_page(page, theme)
+
     outcome = PageOutcome(
         page_number=slot.page_number,
         status=status,
         model_attempts=attempts,
         error_issues=len(qa_result.errors),
         warning_issues=len(qa_result.issues) - len(qa_result.errors),
+        note=note,
     )
     checkpoints.save(
         checkpoint_name,
@@ -554,6 +590,7 @@ async def build_deck_async(
             slot,
             semaphore=semaphore,
             repair_rounds=request.repair_rounds,
+            qa_gate=request.qa_gate,
             progress=progress,
         )
         async with lock:
@@ -567,17 +604,32 @@ async def build_deck_async(
     )
     finish()
 
-    finish = timed("assemble_render")
+    finish = timed("assemble_qa")
     anchors = _build_anchor_pages(skeleton, brief, theme)
-    pages_by_number: dict[int, PageDesign] = dict(anchors)
+    pages_by_number: dict[int, PageDesign] = {}
     qa_results: list[PageQAResult] = []
     outcomes: list[PageOutcome] = []
+    # Anchor pages go through the same QA as model pages so the report truly
+    # covers every page of the deck.
+    for page_number, anchor in sorted(anchors.items()):
+        reviewed, anchor_qa = review_page(anchor, theme)
+        pages_by_number[page_number] = reviewed
+        qa_results.append(anchor_qa)
+        outcomes.append(
+            PageOutcome(
+                page_number=page_number,
+                status="anchor",
+                error_issues=len(anchor_qa.errors),
+                warning_issues=len(anchor_qa.issues) - len(anchor_qa.errors),
+            )
+        )
     for page, qa_result, outcome in design_results:
         pages_by_number[page.page_number] = page
         qa_results.append(qa_result)
         outcomes.append(outcome)
-    for page_number, anchor in anchors.items():
-        outcomes.append(PageOutcome(page_number=page_number, status="anchor"))
+
+    qa_results.sort(key=lambda result: result.page_number)
+    outcomes.sort(key=lambda item: item.page_number)
 
     deck = DeckDesign(
         deck_title=skeleton.deck_title,
@@ -586,7 +638,6 @@ async def build_deck_async(
         theme=theme,
         pages=[pages_by_number[number] for number in sorted(pages_by_number)],
     )
-    pptx_path = render_deck(deck, output_dir / f"{request.deck_name}.pptx")
     finish()
 
     qa_summary = summarize(
@@ -599,14 +650,36 @@ async def build_deck_async(
     qa_report_path = output_dir / f"{request.deck_name}_qa_report.json"
     qa_report_path.write_text(qa_summary.model_dump_json(indent=2), encoding="utf-8")
 
-    outcomes.sort(key=lambda item: item.page_number)
     fallback_count = sum(1 for item in outcomes if item.status == "fallback")
+    error_page_count = sum(1 for result in qa_results if result.errors)
+    quality_gate_passed = error_page_count == 0
+    pptx_path: Path | None = None
+    if quality_gate_passed or request.qa_gate == "lenient":
+        finish = timed("render")
+        pptx_path = render_deck(deck, output_dir / f"{request.deck_name}.pptx")
+        finish()
+
+    if not quality_gate_passed and request.qa_gate == "strict":
+        final_status = "quality_gate_failed"
+    elif not quality_gate_passed:
+        final_status = "completed_with_qa_errors"
+    elif fallback_count:
+        final_status = "succeeded_with_fallbacks"
+    else:
+        final_status = "succeeded"
+
     run_report = {
         "request": request.model_dump(mode="json"),
         "usage": client.usage.snapshot(),
         "stage_seconds": stage_seconds,
         "outcomes": [item.model_dump(mode="json") for item in outcomes],
         "intake_warnings": intake.warnings,
+        "quality_gate": {
+            "mode": request.qa_gate,
+            "passed": quality_gate_passed,
+            "pages_with_errors": error_page_count,
+            "pptx_generated": pptx_path is not None,
+        },
     }
     run_report_path = output_dir / f"{request.deck_name}_run_report.json"
     run_report_path.write_text(
@@ -614,8 +687,8 @@ async def build_deck_async(
     )
 
     return BuildResult(
-        status="succeeded_with_fallbacks" if fallback_count else "succeeded",
-        pptx_path=str(pptx_path),
+        status=final_status,
+        pptx_path=str(pptx_path) if pptx_path is not None else None,
         deck_design_path=str(deck_design_path),
         qa_report_path=str(qa_report_path),
         run_report_path=str(run_report_path),

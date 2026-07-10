@@ -96,8 +96,10 @@ flowchart TD
     D --> E["DeckSkeleton 页级骨架<br/>(封面/目录/章节页/结尾 确定性配额)"]
     E --> F["PageBrief 页面简报<br/>(按章节并行)"]
     F --> G["PageDesign 自由布局 JSON<br/>(每页一个请求, 并发池, 断点续跑)"]
-    G --> H["规则 QA + 确定性修复<br/>+ 1 轮 LLM repair"]
-    H --> I["确定性渲染器<br/>原生文本框/图形/图表/表格"]
+    G --> H["全页规则 QA + 确定性修复<br/>+ 1 轮 LLM repair"]
+    H --> Q{"Strict QA gate"}
+    Q -->|"通过"| I["确定性渲染器<br/>原生文本框/图形/图表/表格"]
+    Q -->|"仍有硬错误"| R["只保留 design / QA / run report<br/>不生成 PPTX"]
     I --> J["Editable PPTX + design/QA/run artifacts"]
     G -. "失败/超预算" .-> K["版式原型兜底页"]
     K --> H
@@ -111,8 +113,8 @@ flowchart TD
 - **结构页零 token**——封面、目录、章节分隔页、结尾页由代码确定性生成，永远整齐，并作为整份 deck 的视觉锚点。
 - **每页一个小请求**——100 页 = 100 个独立小请求，天然绕开代理 120 秒读超时；`--concurrency` 控制并发（默认 8），失败页自动重试并最终降级为版式原型页。
 - **断点续跑**——所有阶段与每一页都写 checkpoint，`--resume` 从中断处继续，不重复计费。
-- **预算护栏**——`--budget-usd` 配合 `--input-cost/--output-cost` 实时估算成本，超限后剩余页自动切换为零成本兜底页。
-- **QA 门禁**——字体度量估算溢出、WCAG 对比度自动纠色、文本框重叠检测、安全区回移；剩余硬伤最多 1 轮 LLM 修复。
+- **预算护栏**——`--budget-usd` 基于 token 用量估算成本；建议显式传入 `--input-cost/--output-cost`，缺失费率时使用非零估算值，避免预算永远显示 `$0.00`。这不是供应商账单。
+- **QA 门禁**——封面、目录、章节页、内容页和结尾页全部进入 QA。默认 `--qa-gate strict`：未修复内容页先替换为可用兜底页，全页复检仍有硬错误时不生成 PPTX；`lenient` 仅用于调试。
 
 离线体验（无需任何 API key，确定性 mock 设计器）：
 
@@ -134,6 +136,7 @@ uv run ppt-agent v2 build \
   --provider openai --model gpt-4o \
   --base-url https://your-proxy.example/v1 \
   --concurrency 8 --budget-usd 15 \
+  --input-cost 3 --output-cost 12 \
   --output-dir out/rag_deck
 
 # Anthropic
@@ -162,7 +165,7 @@ v2 产物：
 
 | 文件 | 用途 |
 | --- | --- |
-| `<name>.pptx` | 最终可编辑 PowerPoint（原生文本框 / 图形 / 图表 / 表格 + 演讲备注）。 |
+| `<name>.pptx` | QA gate 通过后生成的可编辑 PowerPoint（原生文本框 / 图形 / 图表 / 表格 + 演讲备注）。Strict gate 失败时不生成。 |
 | `<name>_design.json` | 完整 DeckDesign IR（主题 token + 每页布局），可用 `v2 preview` 可视化。 |
 | `<name>_qa_report.json` | 每页 QA 结果、自动修复记录、修复页 / 兜底页列表。 |
 | `<name>_run_report.json` | 每页生成状态、token 用量与成本估算、各阶段耗时。 |

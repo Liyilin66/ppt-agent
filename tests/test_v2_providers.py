@@ -15,7 +15,9 @@ from ppt_agent.v2.providers import (
     ProviderConfig,
     ProviderError,
     UsageMeter,
+    ensure_pricing,
     extract_json_payload,
+    lookup_default_pricing,
     provider_config_from_env,
 )
 
@@ -165,3 +167,33 @@ class TestProviderConfigFromEnv:
         config = ProviderConfig(protocol="openai", model="m")
         with pytest.raises(ProviderError, match="PPT_AGENT_API_KEY"):
             config.resolved_api_key()
+
+
+class TestPricingDefaults:
+    def test_unknown_model_uses_non_zero_estimates(self) -> None:
+        input_cost, output_cost = lookup_default_pricing("custom-private-model")
+        assert input_cost > 0
+        assert output_cost > 0
+
+    def test_missing_rates_are_filled_without_overwriting_user_rate(self) -> None:
+        config = ProviderConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            input_cost_per_mtok_usd=0.25,
+        )
+        priced, used_defaults = ensure_pricing(config)
+        assert used_defaults is True
+        assert priced.input_cost_per_mtok_usd == 0.25
+        assert priced.output_cost_per_mtok_usd is not None
+        assert priced.output_cost_per_mtok_usd > 0
+
+    def test_complete_user_rates_are_preserved(self) -> None:
+        config = ProviderConfig(
+            protocol="openai",
+            model="custom",
+            input_cost_per_mtok_usd=1.25,
+            output_cost_per_mtok_usd=4.5,
+        )
+        priced, used_defaults = ensure_pricing(config)
+        assert used_defaults is False
+        assert priced == config
