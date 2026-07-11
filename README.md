@@ -418,9 +418,6 @@ git diff --check
 
 测试不会调用真实模型，不会打开 PowerPoint，也不会执行完整 PPT Master AI workflow。
 
-## Portfolio / 简历表述
-
-> 设计并实现本地优先的 AI Presentation Agent：通过严格的 PageDesign / Deck IR、逐页并发 LLM 生成、checkpoint 断点续跑、全页 QA 与 hard quality gate，将单次可编辑 PowerPoint 生成能力扩展到 100 页；同时构建 FastAPI job/artifact 系统和 PPT Master 本地 handoff/export bridge，使生成过程可观察、可恢复、可验证。
 
 ## License
 
