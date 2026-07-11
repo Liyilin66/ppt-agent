@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import Field
 
 from ppt_agent.generation import DeckGenerationRequest
@@ -56,6 +56,22 @@ from ppt_agent.ppt_master_runner import (
     run_ppt_master_local_export,
 )
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
+from ppt_agent.v2.orchestrator import (
+    BuildRequest as V2BuildRequest,
+    BuildResult as V2BuildResult,
+    build_deck as build_v2_deck,
+)
+from ppt_agent.v2.design import ThemeSpec as V2ThemeSpec
+from ppt_agent.v2.ir import DeckDesign as V2DeckDesign
+from ppt_agent.v2.ir import PageDesign as V2PageDesign
+from ppt_agent.v2.preview import page_to_embedded_html as v2_page_to_embedded_html
+from ppt_agent.v2.providers import (
+    ProviderError as V2ProviderError,
+    UsageMeter as V2UsageMeter,
+    build_client as build_v2_client,
+    ensure_pricing as ensure_v2_pricing,
+    provider_config_from_env as v2_provider_config_from_env,
+)
 
 
 DEFAULT_DATA_DIR = Path("data")
@@ -84,7 +100,20 @@ def _env_int(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 DEFAULT_LONG_DECK_JOB_TIMEOUT_SECONDS = 3600
+DEFAULT_V2_CONCURRENCY = 8
+DEFAULT_V2_BUDGET_USD = 15.0
 
 
 def _long_deck_job_timeout_seconds() -> int:
@@ -100,243 +129,1047 @@ INDEX_HTML = """<!doctype html>
     <style>
       :root {
         color-scheme: light;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #172033;
-        background: #f5f7fb;
+        font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+        color: #182230;
+        background: #eef2f5;
+        --ink: #182230;
+        --muted: #637083;
+        --line: #dce3e8;
+        --surface: #ffffff;
+        --surface-soft: #f5f8f9;
+        --mint: #e7f5f2;
+        --teal: #087f78;
+        --teal-dark: #05645f;
+        --cobalt: #315cc8;
+        --coral: #dc684e;
+        --yellow: #e6aa22;
+        --success: #15805d;
+        --danger: #ad3f36;
+      }
+
+      * {
+        box-sizing: border-box;
+        letter-spacing: 0;
+      }
+
+      html {
+        scroll-behavior: smooth;
       }
 
       body {
         margin: 0;
+        min-width: 320px;
+        background: #eef2f5;
       }
 
-      main {
-        max-width: 860px;
-        margin: 0 auto;
-        padding: 40px 24px;
+      button, input, select, textarea, summary {
+        font: inherit;
       }
 
-      h1 {
-        margin: 0 0 8px;
-        font-size: 32px;
+      button, .button-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 9px 14px;
+        background: var(--teal);
+        color: #ffffff;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
       }
 
-      p {
-        margin: 0 0 24px;
-        color: #506078;
+      button:hover, .button-link:hover {
+        background: var(--teal-dark);
       }
 
-      form, section {
+      button:focus-visible, .button-link:focus-visible, input:focus-visible, select:focus-visible,
+      textarea:focus-visible, summary:focus-visible {
+        outline: 3px solid rgba(49, 92, 200, 0.22);
+        outline-offset: 2px;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.52;
+      }
+
+      .secondary-button {
+        border-color: #cbd5dd;
         background: #ffffff;
-        border: 1px solid #d9e0ec;
-        border-radius: 8px;
-        padding: 20px;
-        margin-top: 18px;
+        color: var(--ink);
       }
 
-      .embedded-form {
+      .secondary-button:hover {
+        background: #f3f6f8;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-columns: 236px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .side-nav {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        padding: 20px 14px;
+        border-right: 1px solid var(--line);
+        background: #fbfcfd;
+        overflow-y: auto;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 8px 22px;
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 7px;
+        background: var(--teal);
+        color: #ffffff;
+        font-weight: 900;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav-item {
+        justify-content: flex-start;
+        width: 100%;
+        min-height: 42px;
+        border-color: transparent;
         background: transparent;
-        border: 0;
-        padding: 0;
+        color: #445165;
+        font-weight: 650;
+      }
+
+      .nav-item:hover, .nav-item.is-active {
+        background: var(--mint);
+        color: var(--teal-dark);
+      }
+
+      .nav-spacer {
+        flex: 1;
+      }
+
+      .profile-row {
+        padding: 14px 10px 4px;
+        border-top: 1px solid var(--line);
+      }
+
+      .profile-row strong, .profile-row span {
+        display: block;
+      }
+
+      .profile-row span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .app-main {
+        min-width: 0;
+        background: var(--surface);
+      }
+
+      .project-header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 20px;
+        padding: 18px 28px 0;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .project-title-row {
+        min-width: 0;
+      }
+
+      .eyebrow {
+        margin: 0 0 5px;
+        color: var(--teal-dark);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      h1, h2, h3, p {
         margin-top: 0;
       }
 
-      .grid {
+      h1 {
+        margin-bottom: 4px;
+        font-size: 24px;
+        line-height: 1.3;
+      }
+
+      h2 {
+        margin-bottom: 6px;
+        font-size: 18px;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .project-tabs {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 28px;
+      }
+
+      .project-tab {
+        min-height: 38px;
+        padding: 0 2px 10px;
+        border: 0;
+        border-bottom: 3px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .project-tab:hover, .project-tab.is-active {
+        border-bottom-color: var(--teal);
+        background: transparent;
+        color: var(--ink);
+      }
+
+      .workspace-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: minmax(0, 1fr) 284px;
+        gap: 20px;
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 22px 24px 48px;
+      }
+
+      .source-panel, .right-rail {
+        min-width: 0;
+      }
+
+      .source-panel {
+        align-self: start;
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-soft);
+      }
+
+      .source-summary {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .source-summary strong {
+        color: var(--teal-dark);
+        font-size: 22px;
+      }
+
+      .source-list {
+        display: grid;
+        gap: 0;
+        margin-top: 8px;
+      }
+
+      .source-row {
+        padding: 11px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .source-row:last-child {
+        border-bottom: 0;
+      }
+
+      .source-row strong, .source-row span {
+        display: block;
+      }
+
+      .source-row strong {
+        font-size: 14px;
+      }
+
+      .source-row span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .center-column {
+        display: grid;
+        gap: 18px;
+        min-width: 0;
+      }
+
+      .center-column > .product-section {
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .product-section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        scroll-margin-top: 190px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
         gap: 16px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section-head p {
+        margin-bottom: 0;
+      }
+
+      .stage-track {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        padding: 16px 18px;
+        background: #fbfcfd;
+      }
+
+      .stage-step {
+        position: relative;
+        min-width: 0;
+        padding: 24px 8px 0;
+        border-top: 2px solid #cbd5dd;
+        text-align: center;
+      }
+
+      .stage-step::before {
+        position: absolute;
+        top: -9px;
+        left: calc(50% - 8px);
+        width: 16px;
+        height: 16px;
+        border: 3px solid #ffffff;
+        border-radius: 50%;
+        background: #aab6c2;
+        box-shadow: 0 0 0 1px #aab6c2;
+        content: "";
+      }
+
+      .stage-step.is-complete {
+        border-top-color: var(--teal);
+      }
+
+      .stage-step.is-complete::before, .stage-step.is-active::before {
+        background: var(--teal);
+        box-shadow: 0 0 0 1px var(--teal);
+      }
+
+      .stage-step.is-active {
+        border-top-color: var(--teal);
+        color: var(--teal-dark);
+      }
+
+      .stage-step strong, .stage-step span {
+        display: block;
+      }
+
+      .stage-step strong {
+        overflow-wrap: anywhere;
+        font-size: 13px;
+      }
+
+      .stage-step span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .metric-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 0 18px 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+
+      .metric {
+        min-width: 0;
+        padding: 11px 13px;
+        border-right: 1px solid var(--line);
+      }
+
+      .metric:last-child {
+        border-right: 0;
+      }
+
+      .metric > span, .metric > strong {
+        display: block;
+      }
+
+      .metric > span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric > strong {
+        margin-top: 5px;
+        overflow-wrap: anywhere;
+        font-size: 18px;
+      }
+
+      .metric strong span {
+        display: inline;
+        color: inherit;
+        font-size: inherit;
+      }
+
+      .task-message {
+        margin: 0 18px 10px;
+        padding: 9px 12px;
+        border-left: 4px solid var(--yellow);
+        background: #fff8e7;
+        color: #775415;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-message:empty {
+        display: none;
+      }
+
+      .task-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0 18px 8px;
+      }
+
+      .task-footer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        margin: 0 18px 8px;
+      }
+
+      .task-footer .task-message,
+      .task-footer .task-actions {
+        margin: 0;
+      }
+
+      .task-meta {
+        margin: 0 18px 13px;
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preview-body {
+        padding: 18px 20px 20px;
+      }
+
+      .slide-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .slide-frame {
+        position: relative;
+        overflow: hidden;
+        aspect-ratio: 16 / 9;
+        border: 1px solid #cbd5dd;
+        border-radius: 7px;
+        background: #eff3f5;
+      }
+
+      .slide-frame iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #eff3f5;
+      }
+
+      .slide-number {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 5px;
+        background: rgba(24, 34, 48, 0.82);
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .preview-empty {
+        display: grid;
+        place-items: center;
+        min-height: 190px;
+        border: 1px dashed #b8c4cd;
+        border-radius: 7px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .chapter-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 22px;
+      }
+
+      .chapter-strip {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .chapter-item {
+        min-width: 0;
+        padding: 10px 9px;
+        border: 1px solid var(--line);
+        border-top: 5px solid var(--chapter-color, var(--teal));
+        border-radius: 6px;
+        background: #ffffff;
+      }
+
+      .chapter-item strong, .chapter-item span {
+        display: block;
+      }
+
+      .chapter-item strong {
+        min-height: 38px;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+      }
+
+      .chapter-item span {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .create-panel {
+        padding: 20px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
       }
 
       label {
         display: grid;
         gap: 6px;
-        font-weight: 600;
+        min-width: 0;
+        color: #334154;
+        font-size: 13px;
+        font-weight: 700;
       }
 
-      input, textarea {
-        box-sizing: border-box;
+      input, select, textarea {
         width: 100%;
-        border: 1px solid #b9c4d4;
+        min-width: 0;
+        border: 1px solid #bdc9d2;
         border-radius: 6px;
-        padding: 10px 12px;
-        font: inherit;
+        padding: 10px 11px;
+        background: #ffffff;
+        color: var(--ink);
       }
 
       textarea {
-        min-height: 104px;
+        min-height: 110px;
         resize: vertical;
+        line-height: 1.55;
       }
 
       .full {
-        margin-top: 16px;
+        grid-column: 1 / -1;
       }
 
-      button {
-        margin-top: 18px;
-        border: 0;
-        border-radius: 6px;
-        background: #2457c5;
-        color: #ffffff;
-        padding: 11px 16px;
-        font: inherit;
-        font-weight: 700;
+      .advanced-panel, .technical-panel {
+        margin-top: 14px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fbfcfd;
+      }
+
+      summary {
+        padding: 13px 15px;
+        color: #3f4c5e;
+        font-weight: 750;
         cursor: pointer;
       }
 
-      button:disabled {
-        cursor: wait;
-        opacity: 0.65;
+      details[open] > summary {
+        border-bottom: 1px solid var(--line);
       }
 
-      #jobStatus {
-        font-weight: 700;
+      .details-body {
+        padding: 15px;
       }
 
-      #currentStage {
-        font-weight: 700;
+      .form-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 16px;
       }
 
-      #longRunningNotice {
-        color: #8a5a00;
-        font-weight: 600;
+      .form-actions p {
+        margin-bottom: 0;
+        font-size: 12px;
       }
 
-      #errorMessage {
-        color: #9d2f2f;
-        white-space: pre-wrap;
+      .right-rail {
+        display: grid;
+        align-content: start;
+        align-self: start;
+        gap: 16px;
+      }
+
+      .task-meta {
+        overflow-wrap: anywhere;
+      }
+
+      .rail-panel {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .delivery-file {
+        margin: 12px 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface-soft);
+      }
+
+      .delivery-file strong, .delivery-file span {
+        display: block;
+        overflow-wrap: anywhere;
+      }
+
+      .delivery-file span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .download-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .health-score {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 8px 0 12px;
+      }
+
+      .health-score strong {
+        color: var(--teal-dark);
+        font-size: 42px;
+      }
+
+      .health-score span {
+        color: var(--success);
+        font-weight: 800;
+      }
+
+      .health-list {
+        display: grid;
+        gap: 9px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .health-list li {
+        padding-left: 13px;
+        border-left: 3px solid var(--teal);
+        color: #3f4c5e;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .health-list li.is-warning {
+        border-left-color: var(--coral);
+      }
+
+      .quality-list {
+        display: grid;
+        gap: 10px;
+        margin: 12px 0 0;
+      }
+
+      .quality-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding-bottom: 9px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+
+      .technical-wrap {
+        padding: 18px 20px 20px;
       }
 
       #artifacts {
         display: grid;
-        gap: 10px;
-        padding-left: 0;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 14px;
+        margin: 0;
+        padding: 0;
         list-style: none;
       }
 
+      #artifacts li {
+        min-width: 0;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
       #artifacts a {
-        color: #2457c5;
+        color: var(--cobalt);
+        font-size: 13px;
         font-weight: 700;
+        overflow-wrap: anywhere;
       }
 
       .artifact-group-label {
-        margin-top: 6px;
-        color: #172033;
-        font-weight: 800;
+        grid-column: 1 / -1;
+        margin-top: 8px;
+        border-bottom-color: #bac7d1 !important;
+        color: var(--ink);
+        font-weight: 850;
       }
 
       .metadata-grid {
         display: grid;
-        grid-template-columns: minmax(150px, 0.35fr) 1fr;
+        grid-template-columns: minmax(130px, 0.3fr) minmax(0, 1fr);
         gap: 8px 14px;
-        margin: 0 0 18px;
+        margin: 0 0 16px;
       }
 
       .metadata-grid dt {
-        color: #506078;
+        color: var(--muted);
         font-weight: 700;
       }
 
       .metadata-grid dd {
+        min-width: 0;
         margin: 0;
         overflow-wrap: anywhere;
+        white-space: pre-wrap;
       }
 
       .hint {
         margin-bottom: 0;
+        font-size: 12px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 1220px) {
+        .workspace-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .right-rail {
+          grid-column: auto;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 920px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .side-nav {
+          position: static;
+          min-height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .nav-list {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .profile-row, .nav-spacer {
+          display: none;
+        }
+
+        .side-nav .source-panel {
+          display: none;
+        }
+
+        .project-header {
+          position: static;
+        }
+
+        .product-section {
+          scroll-margin-top: 16px;
+        }
+
+        .workspace-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .right-rail {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .project-header {
+          grid-template-columns: 1fr;
+          padding: 16px 16px 0;
+        }
+
+        .header-actions {
+          flex-wrap: wrap;
+        }
+
+        .project-tabs {
+          gap: 18px;
+          overflow-x: auto;
+        }
+
+        .workspace-grid {
+          padding: 14px 12px 32px;
+        }
+
+        .stage-track, .metric-strip, .slide-grid, .form-grid,
+        .chapter-strip, #artifacts {
+          grid-template-columns: 1fr;
+        }
+
+        .stage-step {
+          padding: 10px 0 10px 28px;
+          border-top: 0;
+          border-left: 2px solid #cbd5dd;
+          text-align: left;
+        }
+
+        .stage-step::before {
+          top: 12px;
+          left: -9px;
+        }
+
+        .metric {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .metric:last-child {
+          border-bottom: 0;
+        }
+
+        .nav-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .form-actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .task-footer {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <main>
-      <h1>ppt-agent PPT 生成器</h1>
-      <p>创建本地内测版 PPT 生成任务，并下载生成文件。</p>
-
-      <form id="jobForm">
-        <div class="grid">
-          <label>
-            演示主题
-            <input id="topic" name="topic" required placeholder="AI 教育应用">
-          </label>
-          <label>
-            目标观众
-            <input id="audience" name="audience" required placeholder="大学生">
-          </label>
-          <label>
-            页数
-            <input id="slides" name="slides" type="number" min="1" max="10" value="8" required>
-          </label>
-          <label>
-            最低 QA 分数
-            <input id="min_qa_score" name="min_qa_score" type="number" min="0" max="100" value="80" required>
-          </label>
-          <label>
-            最大尝试次数
-            <input id="max_attempts" name="max_attempts" type="number" min="1" value="2" required>
-          </label>
-          <label>
-            Patch 文件路径
-            <input id="patch_path" name="patch_path" placeholder="可选：examples/sample_patch.json">
-          </label>
-        </div>
-        <label class="full">
-          详细要求
-          <textarea id="user_requirements" name="user_requirements" placeholder="例如：我要做一份给大学课堂展示的中文 PPT，风格简洁现代，重点讲 AI 如何帮助学习，但要提醒学术诚信风险。"></textarea>
-        </label>
-        <button id="generateButton" type="submit">生成 PPT</button>
-      </form>
-
-      <section>
-        <h2>长 PPT实验模式</h2>
-        <p>当前支持 30 页，使用 mini-batch generation，默认 batch_size=2。会生成 editable PPTX，但耗时较长。这是 experimental，不影响普通 8/10 页生成器。</p>
-        <form id="longDeckForm" class="embedded-form">
-          <div class="grid">
-            <label>
-              主题
-              <input id="long_topic" name="topic" required value="AI 产品经理如何设计 Agent 产品">
-            </label>
-            <label>
-              目标观众
-              <input id="long_audience" name="audience" required value="准备进入 AI 产品岗位的 IT 硕士学生">
-            </label>
-            <label>
-              页数
-              <input id="long_slide_count" name="slide_count" type="number" min="30" max="30" value="30" required>
-            </label>
-            <label>
-              batch_size
-              <input id="long_batch_size" name="batch_size" type="number" min="1" max="10" value="2" required>
-            </label>
-            <label>
-              最大 batch 尝试次数
-              <input id="long_max_batch_attempts" name="max_batch_attempts" type="number" min="1" max="3" value="1" required>
-            </label>
+    <div class="app-shell">
+      <aside class="side-nav" aria-label="主导航">
+        <div class="brand"><span class="brand-mark">P</span><span>ppt-agent</span></div>
+        <nav class="nav-list">
+          <button class="nav-item is-active" type="button" data-scroll-target="projectWorkspace">项目工作台</button>
+          <button class="nav-item" type="button" data-scroll-target="createPanel">创建演示</button>
+          <button class="nav-item" type="button" data-scroll-target="previewPanel">页面预览</button>
+          <button class="nav-item" type="button" data-scroll-target="technicalPanel">技术详情</button>
+        </nav>
+        <aside class="source-panel" aria-labelledby="sourcePanelTitle">
+          <div class="source-summary">
+            <div><p class="eyebrow">Source coverage</p><h2 id="sourcePanelTitle">资料覆盖度</h2></div>
+            <strong id="sourceCoverageScore">0%</strong>
           </div>
-          <label class="full">
-            长 PPT详细要求
-            <textarea id="long_user_requirements" name="user_requirements" required>中文技术产品分享，面向准备进入 AI 产品岗位的 IT 硕士学生。重点讲 AI Agent 产品经理需要理解的技术边界、用户需求分析、工作流设计、评估指标和落地风险。风格像技术产品分享，不像营销材料。每页要有明确观点，避免空泛口号。长 PPT 要按章节推进，不要每 10 页重复开场。背景色极淡蓝绿色。PPT 最终需要可编辑。</textarea>
-          </label>
-          <button id="generateLongDeckButton" type="submit">生成 30 页长 PPT</button>
-        </form>
-      </section>
+          <div class="source-list">
+            <div class="source-row"><strong>需求简报</strong><span id="sourceRequestState">等待任务</span></div>
+            <div class="source-row"><strong>章节规划</strong><span id="sourcePlanState">等待任务</span></div>
+            <div class="source-row"><strong>页面内容</strong><span id="sourceDeckState">等待任务</span></div>
+            <div class="source-row"><strong>质量证据</strong><span id="sourceQaState">等待任务</span></div>
+            <div class="source-row"><strong>可编辑成片</strong><span id="sourceOutputState">等待任务</span></div>
+          </div>
+          <p class="hint">覆盖度来自当前 job 的真实 artifacts，不代表外部资料可信度评分。</p>
+        </aside>
+        <div class="nav-spacer"></div>
+        <div class="profile-row"><strong>Local workspace</strong><span>内容、质量与交付统一管理</span></div>
+      </aside>
 
-      <section>
-        <h2>任务状态</h2>
-        <p>任务 ID：<span id="jobId">暂无</span></p>
-        <p>状态：<span id="jobStatus">未开始</span></p>
-        <p>当前阶段：<span id="currentStage">暂无</span></p>
-        <p>当前 batch：<span id="currentBatch">暂无</span> / <span id="totalBatches">0</span></p>
-        <p>Batch 结果：已完成 <span id="completedBatches">0</span>，失败 <span id="failedBatches">0</span></p>
-        <p>运行时间：<span id="elapsedSeconds">0</span> 秒</p>
-        <p id="longRunningNotice"></p>
-        <p id="errorMessage"></p>
-        <button id="cancelJobButton" type="button" disabled>取消长 PPT任务</button>
-        <button id="resumeJobButton" type="button" disabled>继续/重试长 PPT</button>
-      </section>
+      <main class="app-main">
+        <header class="project-header">
+          <div class="project-title-row">
+            <p class="eyebrow">Presentation workspace</p>
+            <h1 id="projectTitle">AI 产品经理如何设计 Agent 产品</h1>
+            <p>从资料、叙事到可编辑成片，一次看清当前进度和下一步。</p>
+          </div>
+          <div class="header-actions">
+            <button class="secondary-button" type="button" data-scroll-target="createPanel">新建任务</button>
+            <a id="primaryDownloadTop" class="button-link" href="#technicalPanel">查看交付</a>
+          </div>
+          <nav class="project-tabs" aria-label="项目阶段">
+            <button class="project-tab" type="button" data-scroll-target="createPanel">大纲</button>
+            <button class="project-tab is-active" type="button" data-scroll-target="projectWorkspace">生成</button>
+            <button class="project-tab" type="button" data-scroll-target="previewPanel">预览</button>
+            <button class="project-tab" type="button" data-scroll-target="technicalPanel">交付</button>
+          </nav>
+        </header>
 
-      <section>
-        <h2>生成文件</h2>
-        <ul id="artifacts"></ul>
-      </section>
+        <div class="workspace-grid">
+          <div class="center-column">
+            <section id="projectWorkspace" class="product-section">
+              <div class="section-head">
+                <div><p class="eyebrow">Live task</p><h2>生成进度</h2><p>每一步都对应可检查的中间产物。</p></div>
+                <span id="jobStatus">未开始</span>
+              </div>
+              <div id="stageTrack" class="stage-track" aria-label="生成阶段">
+                <div class="stage-step" data-stage="planning"><strong>1. 内容规划</strong><span>大纲与结构</span></div>
+                <div class="stage-step" data-stage="generating"><strong>2. 页面生成</strong><span id="stageGenerationDetail">0 / 30 页</span></div>
+                <div class="stage-step" data-stage="quality"><strong>3. 全页质检</strong><span id="stageQualityDetail">等待生成</span></div>
+                <div class="stage-step" data-stage="export"><strong>4. 可编辑导出</strong><span id="stageExportDetail">等待质检</span></div>
+                <div class="stage-step" data-stage="done"><strong>5. 完成</strong><span id="stageDoneDetail">等待交付</span></div>
+              </div>
+              <div class="metric-strip">
+                <div class="metric"><span>任务进度</span><strong><span id="completedBatches">0</span> / <span id="totalBatches">0</span></strong></div>
+                <div class="metric"><span>质量结果</span><strong id="qualitySummary">未评估</strong></div>
+                <div class="metric"><span>生成结果</span><strong id="outputSummary">未生成</strong></div>
+                <div class="metric"><span>预计难度</span><strong id="effortSummary">标准</strong></div>
+              </div>
+              <p id="longRunningNotice" class="task-message"></p>
+              <div class="task-footer">
+                <p id="errorMessage" class="task-message"></p>
+                <div class="task-actions">
+                  <button id="cancelJobButton" class="secondary-button" type="button" disabled>取消任务</button>
+                  <button id="resumeJobButton" type="button" disabled>继续/重试演示</button>
+                </div>
+              </div>
+              <p class="task-meta">任务 ID：<span id="jobId">暂无</span> · 当前阶段：<span id="currentStage">暂无</span> · 进度单元 <span id="currentBatch">暂无</span> / <span id="totalBatchesMeta">0</span> · 失败 <span id="failedBatches">0</span> · 运行 <span id="elapsedSeconds">0</span> 秒</p>
+            </section>
 
+            <section id="previewPanel" class="product-section">
+              <div class="section-head">
+                <div><p class="eyebrow">Storyboard</p><h2>演示预览</h2><p id="previewSummary">生成后从真实 SVG visual project 读取代表页面。</p></div>
+                <a id="primaryDownloadLink" class="button-link" href="#technicalPanel">查看全部文件</a>
+              </div>
+              <div class="preview-body">
+                <div id="slideGrid" class="slide-grid">
+                  <div class="slide-frame"><span class="slide-number" id="previewSlideNumber1">1</span><iframe id="previewSlide1" title="第 1 页预览" sandbox="allow-scripts" loading="lazy" hidden></iframe></div>
+                  <div class="slide-frame"><span class="slide-number" id="previewSlideNumber2">2</span><iframe id="previewSlide2" title="中间页面预览" sandbox="allow-scripts" loading="lazy" hidden></iframe></div>
+                  <div class="slide-frame"><span class="slide-number" id="previewSlideNumber3">3</span><iframe id="previewSlide3" title="末页预览" sandbox="allow-scripts" loading="lazy" hidden></iframe></div>
+                </div>
+                <div id="previewEmpty" class="preview-empty">页面生成后会在这里逐步出现，无需等待整份 PPT 完成。</div>
+                <div class="chapter-head"><div><p class="eyebrow">Editable outline</p><h3>章节页数分配</h3></div><span id="chapterTotal">当前 30 页</span></div>
+                <div id="chapterStrip" class="chapter-strip"></div>
+              </div>
+            </section>
+
+            <section id="createPanel" class="product-section">
+              <div class="section-head"><div><p class="eyebrow">Create</p><h2>创建演示</h2><p>输入 1–100 页，系统会自动选择生成策略、并发方式和质量检查。</p></div></div>
+              <div class="create-panel">
+                <form id="longDeckForm" class="embedded-form">
+                  <div class="form-grid">
+                    <label>主题<input id="long_topic" name="topic" required placeholder="例如：从 0 到 1 设计未来智慧校园"></label>
+                    <label>目标观众<input id="long_audience" name="audience" required placeholder="例如：大学生与年轻产品经理"></label>
+                    <label>页数<input id="long_slide_count" name="slide_count" type="number" min="1" max="100" step="1" value="30" required></label>
+                    <label class="full">PPT 详细要求<textarea id="long_user_requirements" name="user_requirements" required placeholder="写清内容重点、表达风格、章节要求与视觉偏好；系统会保存在当前浏览器。"></textarea></label>
+                  </div>
+                  <div class="form-actions"><p id="generationStrategyHint">系统会根据页数自动选择生成模式并检查内容质量。</p><button id="generateLongDeckButton" type="submit">生成 30 页 PPT</button></div>
+                </form>
+              </div>
+            </section>
+
+            <section id="technicalPanel" class="product-section">
+              <div class="section-head"><div><p class="eyebrow">Artifacts</p><h2>交付与技术详情</h2><p>成片、质量证据、源文件和 PPT Master 链路按用途整理。</p></div></div>
+              <div class="technical-wrap">
+                <details class="technical-panel">
+                  <summary>查看全部生成文件</summary>
+                  <div class="details-body"><h3>生成文件</h3><ul id="artifacts"></ul></div>
+                </details>
+                <details class="technical-panel">
+                  <summary>PPT Master 技术链路</summary>
+                  <div class="details-body">
       <section id="pptMasterPackageSection" hidden>
         <h2>PPT Master 渲染包</h2>
         <p id="pptMasterPackageMessage"></p>
@@ -451,13 +1284,52 @@ INDEX_HTML = """<!doctype html>
         </dl>
         <p class="hint">如果这里还没有结果，请先用本地 PPT Master package 生成 PPTX，再运行注册脚本。</p>
       </section>
-    </main>
+                  </div>
+                </details>
+              </div>
+            </section>
+          </div>
+
+          <aside class="right-rail">
+            <section class="rail-panel">
+              <p class="eyebrow">Editable delivery</p><h2>可编辑成片</h2>
+              <div class="delivery-file"><strong id="deliveryFileName">等待生成 PPTX</strong><span id="deliveryStatus">生成后可直接下载</span></div>
+              <div class="quality-list">
+                <div class="quality-row"><span>页数</span><strong id="deliverySlideCount">未知</strong></div>
+                <div class="quality-row"><span>编辑性</span><strong id="deliveryEditable">原生对象优先</strong></div>
+              </div>
+              <div class="download-stack"><a id="deliveryDownload" class="button-link" href="#technicalPanel">查看交付文件</a></div>
+            </section>
+
+            <section class="rail-panel">
+              <p class="eyebrow">Narrative health</p><h2>叙事健康度</h2>
+              <div class="health-score"><strong id="narrativeHealthScore">--</strong><span id="narrativeHealthLabel">等待评估</span></div>
+              <ul class="health-list">
+                <li id="healthStructure">章节结构尚未生成</li>
+                <li id="healthQuality">质量门禁尚未运行</li>
+                <li id="healthDelivery">可编辑成片尚未注册</li>
+              </ul>
+            </section>
+
+            <section class="rail-panel">
+              <p class="eyebrow">Quality & cost</p><h2>质量与成本</h2>
+              <div class="quality-list">
+                <div class="quality-row"><span>质量门禁</span><strong id="railQualityStatus">未评估</strong></div>
+                <div class="quality-row"><span>失败 batches</span><strong id="railFailedBatches">0</strong></div>
+                <div class="quality-row"><span>运行时间</span><strong><span id="railElapsedSeconds">0</span> 秒</strong></div>
+                <div class="quality-row"><span>预算状态</span><strong>当前 Web 未计费</strong></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
 
     <script>
-      const form = document.getElementById("jobForm");
       const longDeckForm = document.getElementById("longDeckForm");
-      const button = document.getElementById("generateButton");
       const longDeckButton = document.getElementById("generateLongDeckButton");
+      const longSlideCount = document.getElementById("long_slide_count");
+      const generationStrategyHint = document.getElementById("generationStrategyHint");
       const jobId = document.getElementById("jobId");
       const jobStatus = document.getElementById("jobStatus");
       const currentStage = document.getElementById("currentStage");
@@ -520,7 +1392,50 @@ INDEX_HTML = """<!doctype html>
       const pptMasterOutputHasNotes = document.getElementById("pptMasterOutputHasNotes");
       const cancelJobButton = document.getElementById("cancelJobButton");
       const resumeJobButton = document.getElementById("resumeJobButton");
+      const projectTitle = document.getElementById("projectTitle");
+      const totalBatchesMeta = document.getElementById("totalBatchesMeta");
+      const stageGenerationDetail = document.getElementById("stageGenerationDetail");
+      const stageQualityDetail = document.getElementById("stageQualityDetail");
+      const stageExportDetail = document.getElementById("stageExportDetail");
+      const stageDoneDetail = document.getElementById("stageDoneDetail");
+      const qualitySummary = document.getElementById("qualitySummary");
+      const outputSummary = document.getElementById("outputSummary");
+      const effortSummary = document.getElementById("effortSummary");
+      const previewSummary = document.getElementById("previewSummary");
+      const previewEmpty = document.getElementById("previewEmpty");
+      const previewSlides = [
+        document.getElementById("previewSlide1"),
+        document.getElementById("previewSlide2"),
+        document.getElementById("previewSlide3")
+      ];
+      const previewSlideNumber1 = document.getElementById("previewSlideNumber1");
+      const previewSlideNumber2 = document.getElementById("previewSlideNumber2");
+      const previewSlideNumber3 = document.getElementById("previewSlideNumber3");
+      const chapterStrip = document.getElementById("chapterStrip");
+      const chapterTotal = document.getElementById("chapterTotal");
+      const sourceCoverageScore = document.getElementById("sourceCoverageScore");
+      const sourceRequestState = document.getElementById("sourceRequestState");
+      const sourcePlanState = document.getElementById("sourcePlanState");
+      const sourceDeckState = document.getElementById("sourceDeckState");
+      const sourceQaState = document.getElementById("sourceQaState");
+      const sourceOutputState = document.getElementById("sourceOutputState");
+      const primaryDownloadTop = document.getElementById("primaryDownloadTop");
+      const primaryDownloadLink = document.getElementById("primaryDownloadLink");
+      const deliveryDownload = document.getElementById("deliveryDownload");
+      const deliveryFileName = document.getElementById("deliveryFileName");
+      const deliveryStatus = document.getElementById("deliveryStatus");
+      const deliverySlideCount = document.getElementById("deliverySlideCount");
+      const narrativeHealthScore = document.getElementById("narrativeHealthScore");
+      const narrativeHealthLabel = document.getElementById("narrativeHealthLabel");
+      const healthStructure = document.getElementById("healthStructure");
+      const healthQuality = document.getElementById("healthQuality");
+      const healthDelivery = document.getElementById("healthDelivery");
+      const railQualityStatus = document.getElementById("railQualityStatus");
+      const railFailedBatches = document.getElementById("railFailedBatches");
+      const railElapsedSeconds = document.getElementById("railElapsedSeconds");
       const lastLongDeckJobStorageKey = "ppt_agent_last_long_deck_job_id";
+      const chapterDraftStorageKey = "ppt_agent_chapter_draft";
+      const longDeckDraftStorageKey = "ppt_agent_long_deck_form_draft";
       const pptMasterArtifactNames = new Set([
         "ppt_master_source",
         "ppt_master_run_prompt",
@@ -535,6 +1450,18 @@ INDEX_HTML = """<!doctype html>
         "ppt_master_output_manifest"
       ]);
       const artifactDisplayNames = {
+        generated_long_deck: "可编辑长演示 PPTX",
+        generated_long_deck_v2: "高质量可编辑长演示 PPTX",
+        generated_long_deck_v2_design: "长演示自由布局设计稿",
+        generated_long_deck_v2_qa_report: "长演示全页质量报告",
+        generated_long_deck_v2_run_report: "长演示运行与成本报告",
+        generated_long_deck_ir: "合并后的 Deck IR",
+        generated_long_deck_plan: "长演示章节规划",
+        generated_long_deck_qa: "全页 QA 报告",
+        generated_long_deck_quality_gate: "硬质量门禁报告",
+        long_deck_request: "长演示需求简报",
+        long_deck_run_report: "长演示运行报告",
+        long_deck_render_report: "长演示渲染报告",
         ppt_master_source: "PPT Master Source Markdown",
         ppt_master_run_prompt: "PPT Master Run Prompt",
         ppt_master_package_manifest: "PPT Master Package Manifest",
@@ -549,6 +1476,51 @@ INDEX_HTML = """<!doctype html>
       };
       let pollTimer = null;
       let activeJobId = null;
+      let currentPreviewKey = "";
+      let elapsedJobId = null;
+      let elapsedBaseSeconds = 0;
+      let elapsedSyncedAt = Date.now();
+      let elapsedRunning = false;
+
+      function currentElapsedSeconds() {
+        const localDelta = elapsedRunning ? Math.floor((Date.now() - elapsedSyncedAt) / 1000) : 0;
+        return elapsedBaseSeconds + Math.max(0, localDelta);
+      }
+
+      function renderElapsedClock() {
+        const value = currentElapsedSeconds();
+        elapsedSeconds.textContent = String(value);
+        railElapsedSeconds.textContent = String(value);
+      }
+
+      function resetElapsedClock() {
+        elapsedJobId = null;
+        elapsedBaseSeconds = 0;
+        elapsedSyncedAt = Date.now();
+        elapsedRunning = true;
+        renderElapsedClock();
+      }
+
+      function syncElapsedClock(job) {
+        const serverSeconds = Number(job.elapsed_seconds || 0);
+        const terminal = isTerminalStatus(job.status);
+        if (elapsedJobId !== job.job_id) {
+          elapsedJobId = job.job_id;
+          elapsedBaseSeconds = serverSeconds;
+          elapsedSyncedAt = Date.now();
+        } else if (terminal) {
+          elapsedBaseSeconds = serverSeconds;
+          elapsedSyncedAt = Date.now();
+        } else {
+          const localSeconds = currentElapsedSeconds();
+          if (serverSeconds > localSeconds) {
+            elapsedBaseSeconds = serverSeconds;
+            elapsedSyncedAt = Date.now();
+          }
+        }
+        elapsedRunning = !terminal;
+        renderElapsedClock();
+      }
 
       function isTerminalStatus(status) {
         return status === "succeeded"
@@ -567,6 +1539,190 @@ INDEX_HTML = """<!doctype html>
           return "false";
         }
         return "未知";
+      }
+
+      function setLinkTarget(link, href, text) {
+        link.href = href || "#technicalPanel";
+        if (text) {
+          link.textContent = text;
+        }
+      }
+
+      function renderChapterAllocation(slideCount = 30) {
+        const defaultChapters = ["角色定位", "需求洞察", "Agent 边界", "工作流设计", "评估体系", "交付与治理", "案例拆解", "成长路线"];
+        let chapterNames = defaultChapters;
+        try {
+          const stored = JSON.parse(localStorage.getItem(chapterDraftStorageKey) || "null");
+          if (Array.isArray(stored) && stored.length === defaultChapters.length) {
+            chapterNames = stored;
+          }
+        } catch (error) {
+          chapterNames = defaultChapters;
+        }
+        const colors = ["#087f78", "#315cc8", "#dc684e", "#e6aa22", "#15805d", "#6e5ba5", "#2d829c", "#b85b79"];
+        const base = Math.floor(slideCount / chapterNames.length);
+        let remainder = slideCount % chapterNames.length;
+        chapterStrip.replaceChildren();
+        chapterNames.forEach((name, index) => {
+          const pages = base + (remainder > 0 ? 1 : 0);
+          remainder -= remainder > 0 ? 1 : 0;
+          const item = document.createElement("div");
+          item.className = "chapter-item";
+          item.style.setProperty("--chapter-color", colors[index]);
+          const title = document.createElement("strong");
+          title.contentEditable = "true";
+          title.spellcheck = false;
+          title.textContent = name;
+          title.title = "点击编辑章节名；仅保存在当前浏览器";
+          const pageLabel = document.createElement("span");
+          pageLabel.textContent = `${pages} 页`;
+          title.addEventListener("blur", () => {
+            const values = Array.from(chapterStrip.querySelectorAll("strong")).map((node) => node.textContent.trim() || "未命名章节");
+            localStorage.setItem(chapterDraftStorageKey, JSON.stringify(values));
+          });
+          item.append(title, pageLabel);
+          chapterStrip.appendChild(item);
+        });
+        chapterTotal.textContent = `当前 ${slideCount} 页 · 章节名可本地编辑`;
+      }
+
+      function updateStageTrack(job) {
+        const stages = Array.from(document.querySelectorAll(".stage-step"));
+        let activeIndex = 0;
+        const stage = job.current_stage || "";
+        if (/generating_batch_|generating_v2_page_|v2_page_|merging_long_deck_ir|generate_deck/.test(stage)) activeIndex = 1;
+        if (/qa|quality_gate|failed_quality_gate/.test(stage) || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate") activeIndex = 2;
+        if (/rendering|save_artifacts/.test(stage)) activeIndex = 3;
+        if (job.ppt_master_output?.detected || job.status === "succeeded") activeIndex = 4;
+        stages.forEach((node, index) => {
+          node.classList.toggle("is-complete", index < activeIndex || (activeIndex === 4 && index === 4));
+          node.classList.toggle("is-active", index === activeIndex && activeIndex < 4);
+        });
+        const total = Number(job.total_batches || 0);
+        const completed = Number(job.completed_batches || 0);
+        const isV2 = job.job_type === "long_deck_v2" || stage.startsWith("v2_") || stage.startsWith("generating_v2_page_");
+        const targetSlides = job.ppt_master_output?.slide_count || (isV2 ? Number(job.total_batches || 100) : 30);
+        const generatedSlides = total ? Math.min(targetSlides, Math.round((completed / total) * targetSlides)) : 0;
+        stageGenerationDetail.textContent = `${generatedSlides} / ${targetSlides} 页`;
+        stageQualityDetail.textContent = /quality_gate/.test(job.status || "") ? "发现需恢复内容" : (job.accepted === true ? "质量门禁已通过" : "等待生成");
+        stageExportDetail.textContent = job.ppt_master_output?.detected ? "可编辑 PPTX 已注册" : "等待质检";
+        stageDoneDetail.textContent = job.ppt_master_output?.detected || job.status === "succeeded" ? "任务可交付" : "等待交付";
+      }
+
+      function updateNarrativeHealth(job) {
+        let score = 35;
+        const v2Delivered = job.job_type === "long_deck_v2" && job.status === "succeeded";
+        const delivered = Boolean(job.ppt_master_output?.detected || v2Delivered);
+        const merged = Number(job.completed_batches || 0) > 0 && Number(job.completed_batches || 0) === Number(job.total_batches || 0);
+        if (merged) score += 20;
+        if (job.ppt_master_package?.generated) score += 15;
+        if (job.accepted === true) score += 20;
+        if (delivered) score += 10;
+        score = Math.min(score, 100);
+        narrativeHealthScore.textContent = String(score);
+        narrativeHealthLabel.textContent = job.ppt_master_output?.detected ? "已恢复交付" : (v2Delivered ? "高质量成片已交付" : (job.accepted === true ? "结构健康" : "仍需验证"));
+        healthStructure.textContent = merged ? "完整 Deck IR 与章节推进已生成" : "章节结构仍在生成或尚未合并";
+        healthQuality.textContent = job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate" ? "旧 renderer 质量门禁未通过，已保留恢复路径" : (job.accepted === true ? "质量门禁已通过" : "质量门禁尚未通过");
+        healthQuality.classList.toggle("is-warning", job.accepted !== true);
+        healthDelivery.textContent = job.ppt_master_output?.detected ? "PPT Master 可编辑成片已注册" : (v2Delivered ? "可编辑长演示已生成" : "可编辑成片尚未注册");
+        healthDelivery.classList.toggle("is-warning", !delivered);
+      }
+
+      function updateProductDashboard(job) {
+        projectTitle.textContent = document.getElementById("long_topic").value.trim() || "PPT 项目工作台";
+        const isV2 = job.job_type === "long_deck_v2" || (job.current_stage || "").startsWith("v2_");
+        totalBatchesMeta.textContent = String(job.total_batches || 0);
+        railFailedBatches.textContent = String(job.failed_batches || 0);
+        renderElapsedClock();
+        effortSummary.textContent = Number(job.total_batches || 0) >= 10 ? "较高" : "标准";
+        const qualityFailed = job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate";
+        qualitySummary.textContent = qualityFailed ? "需恢复" : (job.accepted === true ? "通过" : "未评估");
+        railQualityStatus.textContent = qualitySummary.textContent;
+        outputSummary.textContent = job.ppt_master_output?.detected ? "已交付" : (job.status === "succeeded" ? "已生成" : "未生成");
+        const deliveredSlideCount = job.ppt_master_output?.slide_count ?? (isV2 && job.status === "succeeded" ? job.total_batches : null);
+        deliverySlideCount.textContent = deliveredSlideCount == null ? "未知" : `${deliveredSlideCount} 页`;
+        deliveryStatus.textContent = job.ppt_master_output?.detected || (isV2 && job.status === "succeeded") ? "已注册到当前 job，可直接下载" : "生成后可直接下载";
+        updateStageTrack(job);
+        updateNarrativeHealth(job);
+        renderChapterAllocation(job.ppt_master_output?.slide_count || (isV2 ? Number(job.total_batches || 100) : 30));
+      }
+
+      function jobErrorText(job) {
+        const qualityFailed = job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate";
+        if (qualityFailed && job.ppt_master_output?.detected) {
+          return "旧 renderer 质量门禁未通过；PPT Master 恢复成片已注册，可继续下载验收。";
+        }
+        return job.error_message || "";
+      }
+
+      async function updateSlidePreviews(id) {
+        let manifest;
+        try {
+          manifest = await requestJson(`/api/jobs/${id}/preview-slides`);
+        } catch (error) {
+          return;
+        }
+        const available = Array.from(new Set(manifest.available_slide_numbers || []))
+          .map(Number)
+          .filter((value) => Number.isInteger(value) && value > 0)
+          .sort((left, right) => left - right);
+        if (!available.length) {
+          currentPreviewKey = "";
+          previewEmpty.hidden = false;
+          previewSummary.textContent = "页面生成后会在这里逐步出现，无需等待整份 PPT 完成。";
+          previewSlides.forEach((frame) => {
+            frame.hidden = true;
+            frame.removeAttribute("src");
+          });
+          return;
+        }
+
+        const candidates = [available[0], available[Math.floor((available.length - 1) / 2)], available.at(-1)];
+        const selected = candidates.filter((value, index) => candidates.indexOf(value) === index);
+        const previewKey = `${id}:${manifest.update_token || "0"}:${selected.join(",")}`;
+        previewEmpty.hidden = true;
+        previewSummary.textContent = `已生成 ${available.length} 页，正在展示第 ${selected.join(" / ")} 页。`;
+        const numberLabels = [previewSlideNumber1, previewSlideNumber2, previewSlideNumber3];
+        previewSlides.forEach((frame, index) => {
+          const slideNumber = selected[index];
+          if (!slideNumber) {
+            frame.hidden = true;
+            frame.removeAttribute("src");
+            return;
+          }
+          numberLabels[index].textContent = String(slideNumber);
+          frame.hidden = false;
+          if (previewKey !== currentPreviewKey) {
+            frame.src = `/api/jobs/${id}/preview-slides/${slideNumber}?v=${manifest.update_token || Date.now()}`;
+          }
+        });
+        currentPreviewKey = previewKey;
+      }
+
+      function updateArtifactDrivenUi(artifactList) {
+        const names = new Set(artifactList.map((artifact) => artifact.name));
+        const checks = [
+          [sourceRequestState, names.has("long_deck_request")],
+          [sourcePlanState, names.has("generated_long_deck_plan")],
+          [sourceDeckState, names.has("generated_long_deck_ir") || names.has("generated_long_deck_v2_design")],
+          [sourceQaState, names.has("generated_long_deck_qa") || names.has("generated_long_deck_quality_gate") || names.has("generated_long_deck_v2_qa_report")],
+          [sourceOutputState, names.has("ppt_master_generated_pptx") || names.has("generated_long_deck") || names.has("generated_long_deck_v2") || names.has("generated_pptx")]
+        ];
+        let covered = 0;
+        checks.forEach(([node, present]) => {
+          node.textContent = present ? "已覆盖" : "未生成";
+          covered += present ? 1 : 0;
+        });
+        sourceCoverageScore.textContent = `${Math.round((covered / checks.length) * 100)}%`;
+        const primary = artifactList.find((artifact) => artifact.name === "ppt_master_generated_pptx")
+          || artifactList.find((artifact) => artifact.kind === "pptx");
+        if (primary) {
+          deliveryFileName.textContent = artifactLabel(primary);
+          [primaryDownloadTop, primaryDownloadLink, deliveryDownload].forEach((link) => setLinkTarget(link, primary.download_url, "下载可编辑 PPTX"));
+        } else {
+          deliveryFileName.textContent = "等待生成 PPTX";
+          [primaryDownloadTop, primaryDownloadLink, deliveryDownload].forEach((link) => setLinkTarget(link, "#technicalPanel", "查看交付文件"));
+        }
       }
 
       function clearPptMasterPackage() {
@@ -762,12 +1918,11 @@ INDEX_HTML = """<!doctype html>
       }
 
       function setBusy(isBusy) {
-        button.disabled = isBusy;
         longDeckButton.disabled = isBusy;
       }
 
       function isLongDeckJob(job) {
-        return job.job_type === "long_deck" || Boolean(job.total_batches);
+        return job.job_type === "long_deck" || job.job_type === "long_deck_v2" || Boolean(job.total_batches);
       }
 
       function updateActionButtons(job) {
@@ -842,6 +1997,25 @@ INDEX_HTML = """<!doctype html>
         if (longBatchMatch) {
           return `正在生成长 PPT：batch ${longBatchMatch[1]}/${longBatchMatch[2]}`;
         }
+        const v2PageMatch = /^generating_v2_page_(\d+)_of_(\d+)$/.exec(stage || "");
+        if (v2PageMatch) {
+          return `正在生成自由布局页面：${v2PageMatch[1]}/${v2PageMatch[2]}`;
+        }
+        const v2StageText = {
+          v2_intake: "正在整理演示需求",
+          v2_brief: "正在形成内容简报",
+          v2_theme: "正在设计视觉主题",
+          v2_outline: "正在规划长演示叙事结构",
+          v2_page_briefs: "正在细化逐页内容",
+          v2_page_designs: "正在并发生成自由布局页面",
+          v2_quality_gate: "正在执行全页质量检查",
+          v2_rendering_complete: "可编辑 PPTX 已导出",
+          v2_completed: "长演示已完成",
+          v2_quality_gate_failed: "全页质量检查未通过",
+          v2_cancelled: "长演示已取消",
+          v2_failed: "长演示生成失败"
+        };
+        if (v2StageText[stage]) return v2StageText[stage];
         return stageText[stage] || stage || "暂无";
       }
 
@@ -849,9 +2023,11 @@ INDEX_HTML = """<!doctype html>
         currentStage.textContent = stageLabel(job.current_stage);
         currentBatch.textContent = job.current_batch || "暂无";
         totalBatches.textContent = String(job.total_batches || 0);
+        totalBatchesMeta.textContent = String(job.total_batches || 0);
         completedBatches.textContent = String(job.completed_batches || 0);
         failedBatches.textContent = String(job.failed_batches || 0);
-        elapsedSeconds.textContent = String(job.elapsed_seconds || 0);
+        railFailedBatches.textContent = String(job.failed_batches || 0);
+        syncElapsedClock(job);
         const isTerminal = isTerminalStatus(job.status);
         if (job.cancel_requested && !isTerminal) {
           longRunningNotice.textContent = "取消请求已发送；当前 batch 完成后会停止。";
@@ -868,7 +2044,7 @@ INDEX_HTML = """<!doctype html>
       }
 
       function rememberActiveJob(job) {
-        if (job && job.job_type === "long_deck") {
+        if (job?.job_id) {
           localStorage.setItem(lastLongDeckJobStorageKey, job.job_id);
         }
       }
@@ -877,23 +2053,15 @@ INDEX_HTML = """<!doctype html>
         localStorage.removeItem(lastLongDeckJobStorageKey);
       }
 
-      function buildPayload() {
-        const patchPath = document.getElementById("patch_path").value.trim();
-        const userRequirements = document.getElementById("user_requirements").value.trim();
-        const payload = {
-          topic: document.getElementById("topic").value.trim(),
-          audience: document.getElementById("audience").value.trim(),
-          slides: Number(document.getElementById("slides").value),
-          min_qa_score: Number(document.getElementById("min_qa_score").value),
-          max_attempts: Number(document.getElementById("max_attempts").value)
+      function buildShortDeckPayload() {
+        return {
+          topic: document.getElementById("long_topic").value.trim(),
+          audience: document.getElementById("long_audience").value.trim(),
+          slides: Number(longSlideCount.value),
+          user_requirements: document.getElementById("long_user_requirements").value.trim(),
+          min_qa_score: 80,
+          max_attempts: 2
         };
-        if (patchPath) {
-          payload.patch_path = patchPath;
-        }
-        if (userRequirements) {
-          payload.user_requirements = userRequirements;
-        }
-        return payload;
       }
 
       function buildLongDeckPayload() {
@@ -903,10 +2071,48 @@ INDEX_HTML = """<!doctype html>
           slide_count: Number(document.getElementById("long_slide_count").value),
           language: "zh-CN",
           deck_type: "technical_product_share",
-          user_requirements: document.getElementById("long_user_requirements").value.trim(),
-          batch_size: Number(document.getElementById("long_batch_size").value),
-          max_batch_attempts: Number(document.getElementById("long_max_batch_attempts").value)
+          user_requirements: document.getElementById("long_user_requirements").value.trim()
         };
+      }
+
+      function saveLongDeckDraft() {
+        const draft = {
+          topic: document.getElementById("long_topic").value,
+          audience: document.getElementById("long_audience").value,
+          slide_count: Number(longSlideCount.value),
+          user_requirements: document.getElementById("long_user_requirements").value
+        };
+        localStorage.setItem(longDeckDraftStorageKey, JSON.stringify(draft));
+      }
+
+      function loadLongDeckDraft() {
+        try {
+          const draft = JSON.parse(localStorage.getItem(longDeckDraftStorageKey) || "null");
+          if (!draft || typeof draft !== "object") return;
+          if (typeof draft.topic === "string") document.getElementById("long_topic").value = draft.topic;
+          if (typeof draft.audience === "string") document.getElementById("long_audience").value = draft.audience;
+          if (typeof draft.user_requirements === "string") document.getElementById("long_user_requirements").value = draft.user_requirements;
+          const pageCount = Number(draft.slide_count);
+          if (Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= 100) {
+            longSlideCount.value = String(pageCount);
+          }
+        } catch (error) {
+          localStorage.removeItem(longDeckDraftStorageKey);
+        }
+      }
+
+      function updateGenerationChoice() {
+        const pageCount = Math.max(1, Math.min(100, Number(longSlideCount.value) || 30));
+        longDeckButton.textContent = `生成 ${pageCount} 页 PPT`;
+        if (pageCount <= 10) {
+          generationStrategyHint.textContent = `${pageCount} 页将使用快速生成模式；系统会自动规划、质检并导出可编辑 PPTX。`;
+        } else if (pageCount === 30) {
+          generationStrategyHint.textContent = "30 页将使用稳定批次模式；系统会自动保存进度、处理重试并检查内容质量。";
+        } else {
+          generationStrategyHint.textContent = `${pageCount} 页将使用高质量生成模式；系统会自动保存进度并检查每一页，预计耗时较长。`;
+        }
+        stageGenerationDetail.textContent = `0 / ${pageCount} 页`;
+        renderChapterAllocation(pageCount);
       }
 
       async function requestJson(url, options) {
@@ -921,32 +2127,35 @@ INDEX_HTML = """<!doctype html>
       async function loadArtifacts(id) {
         const body = await requestJson(`/api/jobs/${id}/artifacts`);
         clearArtifacts();
-        const pptMasterArtifacts = [];
-        for (const artifact of body.artifacts) {
-          if (pptMasterArtifactNames.has(artifact.name)) {
-            pptMasterArtifacts.push(artifact);
-          } else {
-            appendArtifactLink(artifact);
-          }
+        const groups = [
+          ["成片交付", (artifact) => artifact.kind === "pptx"],
+          ["质量证据", (artifact) => /qa|quality_gate|render_report|run_report/.test(artifact.name)],
+          ["内容与规划", (artifact) => /request|plan|deck_ir/.test(artifact.name) && !/^batch_/.test(artifact.name)],
+          ["PPT Master 渲染包", (artifact) => pptMasterArtifactNames.has(artifact.name)],
+          ["批次与调试文件", () => true]
+        ];
+        const remaining = [...body.artifacts];
+        for (const [label, matcher] of groups) {
+          const matched = remaining.filter(matcher);
+          if (!matched.length) continue;
+          appendArtifactGroupLabel(label);
+          matched.forEach(appendArtifactLink);
+          matched.forEach((artifact) => remaining.splice(remaining.indexOf(artifact), 1));
         }
-        if (pptMasterArtifacts.length) {
-          appendArtifactGroupLabel("PPT Master 渲染包");
-          for (const artifact of pptMasterArtifacts) {
-            appendArtifactLink(artifact);
-          }
-        }
+        updateArtifactDrivenUi(body.artifacts);
       }
 
       async function loadLatestLongDeckJob() {
-        const response = await fetch("/api/jobs/latest?job_type=long_deck");
-        if (!response.ok) {
-          return null;
+        const responses = await Promise.all([
+          fetch("/api/jobs/latest?job_type=long_deck"),
+          fetch("/api/jobs/latest?job_type=long_deck_v2")
+        ]);
+        const jobs = [];
+        for (const response of responses) {
+          if (response.ok) jobs.push(await response.json());
         }
-        const body = await response.json();
-        if (!body.job_id) {
-          return null;
-        }
-        return body;
+        jobs.sort((left, right) => String(right.created_at || "").localeCompare(String(left.created_at || "")));
+        return jobs[0] || null;
       }
 
       async function pollJob(id) {
@@ -959,12 +2168,14 @@ INDEX_HTML = """<!doctype html>
         updatePptMasterVisualProject(job);
         updatePptMasterRunner(job);
         updatePptMasterOutput(job);
+        updateProductDashboard(job);
+        await updateSlidePreviews(id);
         if (job.error_message) {
-          errorMessage.textContent = job.error_message;
+          errorMessage.textContent = jobErrorText(job);
         }
         if (isTerminalStatus(job.status)) {
           if (pollTimer) {
-            clearInterval(pollTimer);
+            clearTimeout(pollTimer);
           }
           pollTimer = null;
           setBusy(false);
@@ -977,14 +2188,29 @@ INDEX_HTML = """<!doctype html>
         return false;
       }
 
+      function schedulePoll(id, delay = 1000) {
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = setTimeout(async () => {
+          pollTimer = null;
+          try {
+            const finished = await pollJob(id);
+            if (!finished) schedulePoll(id, 1000);
+          } catch (error) {
+            errorMessage.textContent = `状态更新暂时中断：${error.message}。正在自动重试。`;
+            schedulePoll(id, 2000);
+          }
+        }, delay);
+      }
+
       async function submitJob(url, payload) {
         if (pollTimer) {
-          clearInterval(pollTimer);
+          clearTimeout(pollTimer);
+          pollTimer = null;
         }
         setBusy(true);
         setStatus("submitting");
         currentStage.textContent = "正在提交任务";
-        elapsedSeconds.textContent = "0";
+        resetElapsedClock();
         longRunningNotice.textContent = "";
         errorMessage.textContent = "";
         clearArtifacts();
@@ -993,6 +2219,13 @@ INDEX_HTML = """<!doctype html>
         clearPptMasterVisualProject();
         clearPptMasterRunner();
         clearPptMasterOutput();
+        updateArtifactDrivenUi([]);
+        previewEmpty.hidden = false;
+        currentPreviewKey = "";
+        previewSlides.forEach((frame) => {
+          frame.hidden = true;
+          frame.removeAttribute("src");
+        });
 
         try {
           const job = await requestJson(url, {
@@ -1006,12 +2239,7 @@ INDEX_HTML = """<!doctype html>
           setStatus(job.status, job.accepted, job.error_message || "");
           const finished = await pollJob(job.job_id);
           if (!finished) {
-            pollTimer = setInterval(() => pollJob(job.job_id).catch((error) => {
-              errorMessage.textContent = error.message;
-              setBusy(false);
-              clearInterval(pollTimer);
-              pollTimer = null;
-            }), 2000);
+            schedulePoll(job.job_id, 1000);
           }
         } catch (error) {
           errorMessage.textContent = error.message;
@@ -1034,10 +2262,16 @@ INDEX_HTML = """<!doctype html>
             updatePptMasterVisualProject(job);
             updatePptMasterRunner(job);
             updatePptMasterOutput(job);
+            updateProductDashboard(job);
             if (job.error_message) {
-              errorMessage.textContent = job.error_message;
+              errorMessage.textContent = jobErrorText(job);
             }
             await loadArtifacts(rememberedId);
+            await updateSlidePreviews(rememberedId);
+            if (!isTerminalStatus(job.status)) {
+              setBusy(true);
+              schedulePoll(rememberedId, 1000);
+            }
             return;
           } catch (error) {
             forgetActiveJob();
@@ -1059,23 +2293,30 @@ INDEX_HTML = """<!doctype html>
           updatePptMasterVisualProject(latest);
           updatePptMasterRunner(latest);
           updatePptMasterOutput(latest);
+          updateProductDashboard(latest);
           if (latest.error_message) {
-            errorMessage.textContent = latest.error_message;
+            errorMessage.textContent = jobErrorText(latest);
           }
           await loadArtifacts(latest.job_id);
+          await updateSlidePreviews(latest.job_id);
+          if (!isTerminalStatus(latest.status)) {
+            setBusy(true);
+            schedulePoll(latest.job_id, 1000);
+          }
         } catch (error) {
           errorMessage.textContent = error.message;
         }
       }
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        await submitJob("/api/jobs", buildPayload());
-      });
-
       longDeckForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        await submitJob("/api/long-deck-jobs", buildLongDeckPayload());
+        saveLongDeckDraft();
+        const pageCount = Number(longSlideCount.value);
+        if (pageCount <= 10) {
+          await submitJob("/api/jobs", buildShortDeckPayload());
+        } else {
+          await submitJob("/api/long-deck-jobs", buildLongDeckPayload());
+        }
       });
 
       cancelJobButton.addEventListener("click", async () => {
@@ -1109,6 +2350,8 @@ INDEX_HTML = """<!doctype html>
           updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
+          updateProductDashboard(job);
+          await updateSlidePreviews(activeJobId);
           await loadArtifacts(activeJobId);
         } catch (error) {
           errorMessage.textContent = error.message;
@@ -1130,6 +2373,8 @@ INDEX_HTML = """<!doctype html>
           updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
+          updateProductDashboard(job);
+          await updateSlidePreviews(activeJobId);
           await loadArtifacts(activeJobId);
         } catch (error) {
           errorMessage.textContent = error.message;
@@ -1151,6 +2396,8 @@ INDEX_HTML = """<!doctype html>
           updatePptMasterVisualProject(job);
           updatePptMasterRunner(job);
           updatePptMasterOutput(job);
+          updateProductDashboard(job);
+          await updateSlidePreviews(activeJobId);
           await loadArtifacts(activeJobId);
         } catch (error) {
           errorMessage.textContent = error.message;
@@ -1166,7 +2413,32 @@ INDEX_HTML = """<!doctype html>
         await submitJob(`/api/long-deck-jobs/${activeJobId}/resume`, {});
       });
 
+      document.querySelectorAll("[data-scroll-target]").forEach((control) => {
+        control.addEventListener("click", () => {
+          const target = document.getElementById(control.dataset.scrollTarget);
+          if (target) target.scrollIntoView({behavior: "smooth", block: "start"});
+          document.querySelectorAll(".project-tab").forEach((tab) => tab.classList.toggle("is-active", tab === control));
+          document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("is-active", item === control));
+        });
+      });
+
+      document.getElementById("long_topic").addEventListener("input", (event) => {
+        projectTitle.textContent = event.target.value.trim() || "PPT 项目工作台";
+        saveLongDeckDraft();
+      });
+
+      [document.getElementById("long_audience"), document.getElementById("long_user_requirements")]
+        .forEach((field) => field.addEventListener("input", saveLongDeckDraft));
+      longSlideCount.addEventListener("input", () => {
+        updateGenerationChoice();
+        saveLongDeckDraft();
+      });
+
       window.addEventListener("load", () => {
+        loadLongDeckDraft();
+        updateGenerationChoice();
+        projectTitle.textContent = document.getElementById("long_topic").value.trim() || "PPT 项目工作台";
+        setInterval(renderElapsedClock, 250);
         restoreLastLongDeckJob().catch((error) => {
           errorMessage.textContent = error.message;
         });
@@ -1194,7 +2466,7 @@ class CreateJobRequest(StrictModel):
 class CreateLongDeckJobRequest(StrictModel):
     topic: str = Field(..., min_length=1)
     audience: str = Field(..., min_length=1)
-    slide_count: Literal[30] = 30
+    slide_count: int = Field(default=30, ge=11, le=100)
     language: str = Field(default="zh-CN", min_length=1)
     deck_type: str = Field(default="technical_product_share", min_length=1)
     user_requirements: str = Field(..., min_length=1)
@@ -1317,6 +2589,14 @@ def _create_chat_model():
     return ChatOpenAI(**kwargs)
 
 
+def _create_v2_model_client():
+    config = v2_provider_config_from_env()
+    config.resolved_api_key()
+    config, _ = ensure_v2_pricing(config)
+    usage = V2UsageMeter(budget_usd=_env_float("PPT_AGENT_V2_BUDGET_USD", DEFAULT_V2_BUDGET_USD))
+    return build_v2_client(config, usage=usage)
+
+
 def _artifact_response(artifact: ArtifactRecord) -> ArtifactResponse:
     return ArtifactResponse(
         artifact_id=artifact.artifact_id,
@@ -1385,7 +2665,7 @@ def _optional_str(value: Any) -> str | None:
 
 def _timeout_seconds_for_stage(stage: str | None) -> int:
     if stage and (
-        stage.startswith("generating_batch_")
+        stage.startswith(("generating_batch_", "generating_v2_page_", "v2_"))
         or stage
         in {
             "preparing_long_deck_plan",
@@ -1829,6 +3109,94 @@ def _path_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _natural_slide_key(path: Path) -> tuple[int, str]:
+    match = re.search(r"(\d+)(?!.*\d)", path.stem)
+    return (int(match.group(1)) if match else 0, path.name)
+
+
+def _ppt_master_preview_slides(job_dir: Path) -> list[Path]:
+    output_root = job_dir / "ppt_master_output"
+    if not output_root.is_dir():
+        return []
+
+    candidates: list[tuple[float, list[Path]]] = []
+    for svg_dir in output_root.rglob("svg_final"):
+        resolved_dir = svg_dir.resolve(strict=False)
+        if not svg_dir.is_dir() or not _path_within(resolved_dir, job_dir):
+            continue
+        slides = sorted(
+            (
+                path.resolve()
+                for path in svg_dir.glob("*.svg")
+                if path.is_file() and _path_within(path.resolve(), job_dir)
+            ),
+            key=_natural_slide_key,
+        )
+        if slides:
+            candidates.append((svg_dir.stat().st_mtime, slides))
+
+    if not candidates:
+        return []
+    candidates.sort(key=lambda item: (len(item[1]), item[0]), reverse=True)
+    return candidates[0][1]
+
+
+def _v2_preview_available_slide_numbers(job_dir: Path) -> tuple[list[int], int]:
+    design_path = job_dir / "generated_long_deck_v2_design.json"
+    if design_path.is_file():
+        try:
+            deck = V2DeckDesign.model_validate_json(design_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [], 0
+        return [page.page_number for page in deck.pages], design_path.stat().st_mtime_ns
+
+    pages_dir = job_dir / "checkpoints" / "pages"
+    if not pages_dir.is_dir():
+        return [], 0
+    page_files = sorted(pages_dir.glob("page_*.json"), key=_natural_slide_key)
+    numbers: list[int] = []
+    update_token = 0
+    for path in page_files:
+        match = re.search(r"(\d+)(?!.*\d)", path.stem)
+        if match and path.is_file():
+            numbers.append(int(match.group(1)))
+            update_token = max(update_token, path.stat().st_mtime_ns)
+    return numbers, update_token
+
+
+def _v2_preview_page(job_dir: Path, slide_number: int) -> tuple[V2PageDesign, V2DeckDesign] | None:
+    design_path = job_dir / "generated_long_deck_v2_design.json"
+    if design_path.is_file():
+        try:
+            deck = V2DeckDesign.model_validate_json(design_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        page = next((item for item in deck.pages if item.page_number == slide_number), None)
+        return (page, deck) if page is not None else None
+
+    checkpoint_root = job_dir / "checkpoints"
+    page_path = checkpoint_root / "pages" / f"page_{slide_number:03d}.json"
+    theme_path = checkpoint_root / "theme.json"
+    skeleton_path = checkpoint_root / "skeleton.json"
+    if not page_path.is_file() or not theme_path.is_file() or not skeleton_path.is_file():
+        return None
+    try:
+        page_payload = json.loads(page_path.read_text(encoding="utf-8"))
+        skeleton_payload = json.loads(skeleton_path.read_text(encoding="utf-8"))
+        page = V2PageDesign.model_validate(page_payload.get("page", page_payload))
+        theme = V2ThemeSpec.model_validate_json(theme_path.read_text(encoding="utf-8"))
+        deck = V2DeckDesign.model_construct(
+            deck_title=skeleton_payload.get("deck_title") or "PPT 项目工作台",
+            subtitle=skeleton_payload.get("subtitle"),
+            language=skeleton_payload.get("language") or "zh-CN",
+            theme=theme,
+            pages=[page],
+        )
+    except (OSError, TypeError, ValueError):
+        return None
+    return page, deck
+
+
 def _model_name(model) -> str:
     return str(getattr(model, "model_name", None) or getattr(model, "model", None) or model.__class__.__name__)
 
@@ -1918,6 +3286,8 @@ def _artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None
     except ValueError:
         relative_path = artifact_path
 
+    if relative_path.parts and relative_path.parts[0] == "checkpoints":
+        return None
     if relative_path == Path("ppt_master_package/source.md"):
         return None
     if relative_path == Path(PPT_MASTER_VISUAL_PROJECT_MANIFEST_FILENAME):
@@ -2096,6 +3466,171 @@ def _run_job(
         error_message = sanitize_error_message(exc)
         logger.error("job_failed job_id=%s error=%s", job_id, error_message)
         store.update_job(job_id, status="failed", error_message=error_message, accepted=False)
+
+
+class _V2JobCancelled(RuntimeError):
+    pass
+
+
+def _v2_long_deck_prompt(payload: CreateLongDeckJobRequest) -> str:
+    return (
+        f"主题：{payload.topic}\n"
+        f"目标观众：{payload.audience}\n"
+        f"演示要求：{payload.user_requirements}"
+    )
+
+
+def _read_v2_qa_score(path: Path) -> int | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        total_pages = int(payload.get("total_pages") or 0)
+        pages_with_errors = int(payload.get("pages_with_errors") or 0)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if total_pages <= 0:
+        return None
+    return max(0, min(100, round((total_pages - pages_with_errors) / total_pages * 100)))
+
+
+def _run_v2_long_deck_job(
+    store: JobStore,
+    jobs_root: Path,
+    job_id: str,
+    client,
+    payload: CreateLongDeckJobRequest,
+    *,
+    output_dir_override: Path | None = None,
+    resume: bool = False,
+) -> None:
+    output_dir = output_dir_override or jobs_root / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    store.update_job(job_id, status="running", current_stage="v2_intake")
+    store.update_long_deck_progress(
+        job_id,
+        total_batches=payload.slide_count,
+        completed_batches=0,
+        failed_batches=0,
+    )
+
+    def progress_logger(message: str) -> None:
+        if store.is_cancel_requested(job_id):
+            raise _V2JobCancelled("v2 long deck generation was cancelled.")
+
+        current_stage: str | None = None
+        completed_pages: int | None = None
+        current_page: str | None = None
+        design_match = re.match(r"^\[design\] (\d+)/(\d+) content pages done$", message)
+        stage_match = re.match(r"^\[stage\] ([a-z_]+) finished", message)
+        if design_match:
+            completed_pages = min(int(design_match.group(1)), payload.slide_count)
+            current_stage = f"generating_v2_page_{completed_pages}_of_{payload.slide_count}"
+            current_page = f"page_{completed_pages:03d}"
+        elif message.startswith("[brief]"):
+            current_stage = "v2_brief"
+        elif message.startswith("[theme]"):
+            current_stage = "v2_theme"
+        elif message.startswith("[outline]"):
+            current_stage = "v2_outline"
+        elif stage_match:
+            stage = stage_match.group(1)
+            current_stage = {
+                "intake": "v2_brief",
+                "brief": "v2_theme",
+                "theme": "v2_outline",
+                "outline": "v2_page_briefs",
+                "page_briefs": "v2_page_designs",
+                "page_designs": "v2_quality_gate",
+                "assemble_qa": "v2_quality_gate",
+                "render": "v2_rendering_complete",
+            }.get(stage, f"v2_{stage}")
+
+        if current_stage is not None or completed_pages is not None:
+            store.update_long_deck_progress(
+                job_id,
+                current_stage=current_stage,
+                total_batches=payload.slide_count,
+                completed_batches=completed_pages,
+                current_batch=current_page,
+            )
+        logger.info(
+            "v2_long_deck_job_stage %s",
+            json.dumps(
+                {
+                    "job_id": job_id,
+                    "message": message,
+                    "current_stage": current_stage,
+                    "slide_count": payload.slide_count,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    try:
+        _write_long_deck_request_artifact(payload, output_dir)
+        result: V2BuildResult = build_v2_deck(
+            V2BuildRequest(
+                prompt=_v2_long_deck_prompt(payload),
+                page_count=payload.slide_count,
+                language=payload.language,
+                output_dir=str(output_dir),
+                deck_name="generated_long_deck_v2",
+                resume=resume,
+                concurrency=_env_int("PPT_AGENT_V2_CONCURRENCY", DEFAULT_V2_CONCURRENCY),
+                budget_usd=_env_float("PPT_AGENT_V2_BUDGET_USD", DEFAULT_V2_BUDGET_USD),
+                qa_gate="strict",
+            ),
+            client,
+            progress=progress_logger,
+        )
+        _register_job_artifacts(store, job_id, output_dir)
+        qa_score = _read_v2_qa_score(Path(result.qa_report_path))
+        store.update_long_deck_progress(
+            job_id,
+            total_batches=payload.slide_count,
+            completed_batches=result.page_count,
+            failed_batches=0,
+            current_batch=f"page_{result.page_count:03d}",
+        )
+        if result.status in {"quality_gate_failed", "completed_with_qa_errors"}:
+            store.update_job(
+                job_id,
+                status="failed_quality_gate",
+                error_message="The full-deck quality check failed, so no PPTX was released.",
+                accepted=False,
+                qa_score=qa_score,
+                current_stage="v2_quality_gate_failed",
+            )
+            return
+        store.update_job(
+            job_id,
+            status="succeeded",
+            error_message=None,
+            accepted=True,
+            qa_score=qa_score,
+            current_stage="v2_completed",
+        )
+    except _V2JobCancelled as exc:
+        if output_dir.exists():
+            _register_job_artifacts(store, job_id, output_dir)
+        store.update_job(
+            job_id,
+            status="cancelled",
+            error_message=str(exc),
+            accepted=False,
+            current_stage="v2_cancelled",
+        )
+    except Exception as exc:
+        error_message = sanitize_error_message(exc)
+        logger.error("v2_long_deck_job_failed job_id=%s error=%s", job_id, error_message)
+        if output_dir.exists():
+            _register_job_artifacts(store, job_id, output_dir)
+        store.update_job(
+            job_id,
+            status="failed",
+            error_message=error_message,
+            accepted=False,
+            current_stage="v2_failed",
+        )
 
 
 def _run_long_deck_job(
@@ -2329,6 +3864,34 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         payload: CreateLongDeckJobRequest,
         background_tasks: BackgroundTasks,
     ) -> CreateJobResponse:
+        if payload.slide_count != 30:
+            try:
+                client = _create_v2_model_client()
+            except (V2ProviderError, ValueError) as exc:
+                detail = sanitize_error_message(exc)
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Could not initialize the v2 model provider: {detail}",
+                ) from exc
+
+            job = app.state.job_store.create_job(job_type="long_deck_v2")
+            app.state.job_store.update_long_deck_progress(
+                job.job_id,
+                current_stage="v2_intake",
+                total_batches=payload.slide_count,
+                completed_batches=0,
+                failed_batches=0,
+            )
+            background_tasks.add_task(
+                _run_v2_long_deck_job,
+                app.state.job_store,
+                app.state.jobs_root,
+                job.job_id,
+                client,
+                payload,
+            )
+            return CreateJobResponse(job_id=job.job_id, status=job.status)
+
         if not os.getenv("OPENAI_API_KEY"):
             raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
 
@@ -2355,31 +3918,49 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         original_job = app.state.job_store.get_job(job_id)
         if original_job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
-        if original_job.job_type != "long_deck":
+        if original_job.job_type not in {"long_deck", "long_deck_v2"}:
             raise HTTPException(status_code=400, detail="Only long deck jobs can be resumed.")
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
 
         output_dir = app.state.jobs_root / job_id
         try:
             payload = _load_long_deck_request_artifact(output_dir)
-            model = _create_chat_model()
+            model = _create_v2_model_client() if payload.slide_count != 30 else _create_chat_model()
         except Exception as exc:
             detail = sanitize_error_message(exc)
             raise HTTPException(status_code=503, detail=f"Could not prepare long deck resume job: {detail}") from exc
 
-        resume_job = app.state.job_store.create_job(job_type="long_deck")
-        app.state.job_store.update_progress(resume_job.job_id, current_stage="preparing_long_deck_plan")
-        background_tasks.add_task(
-            _run_long_deck_job,
-            app.state.job_store,
-            app.state.jobs_root,
-            resume_job.job_id,
-            model,
-            payload,
-            output_dir_override=output_dir,
-            resume=True,
-        )
+        resume_job_type = "long_deck_v2" if payload.slide_count != 30 else "long_deck"
+        resume_job = app.state.job_store.create_job(job_type=resume_job_type)
+        if payload.slide_count != 30:
+            app.state.job_store.update_long_deck_progress(
+                resume_job.job_id,
+                current_stage="v2_intake",
+                total_batches=payload.slide_count,
+                completed_batches=0,
+                failed_batches=0,
+            )
+            background_tasks.add_task(
+                _run_v2_long_deck_job,
+                app.state.job_store,
+                app.state.jobs_root,
+                resume_job.job_id,
+                model,
+                payload,
+                output_dir_override=output_dir,
+                resume=True,
+            )
+        else:
+            app.state.job_store.update_progress(resume_job.job_id, current_stage="preparing_long_deck_plan")
+            background_tasks.add_task(
+                _run_long_deck_job,
+                app.state.job_store,
+                app.state.jobs_root,
+                resume_job.job_id,
+                model,
+                payload,
+                output_dir_override=output_dir,
+                resume=True,
+            )
         return CreateJobResponse(job_id=resume_job.job_id, status=resume_job.status)
 
     @app.post(
@@ -2492,7 +4073,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         job = app.state.job_store.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
-        if job.job_type != "long_deck":
+        if job.job_type not in {"long_deck", "long_deck_v2"}:
             raise HTTPException(status_code=400, detail="Only long deck jobs can be cancelled.")
         if job.status not in {"pending", "running"}:
             return _job_response(app.state.job_store, app.state.jobs_root, job)
@@ -2518,6 +4099,54 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             raise HTTPException(status_code=404, detail="Job not found.")
         job = _expire_stale_job(app.state.job_store, job)
         return _job_response(app.state.job_store, app.state.jobs_root, job)
+
+    @app.get("/api/jobs/{job_id}/preview-slides")
+    def list_job_slide_previews(job_id: str) -> dict[str, Any]:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        job_dir = app.state.jobs_root / job_id
+        if job.job_type == "long_deck_v2":
+            numbers, update_token = _v2_preview_available_slide_numbers(job_dir)
+            preview_kind = "v2_html" if numbers else "none"
+        elif job.job_type == "long_deck":
+            slides = _ppt_master_preview_slides(job_dir)
+            numbers = list(range(1, len(slides) + 1))
+            update_token = max((path.stat().st_mtime_ns for path in slides), default=0)
+            preview_kind = "ppt_master_svg" if numbers else "none"
+        else:
+            numbers = []
+            update_token = 0
+            preview_kind = "none"
+        return {
+            "available_slide_numbers": numbers,
+            "total_requested": job.total_batches or len(numbers),
+            "preview_kind": preview_kind,
+            "update_token": str(update_token),
+        }
+
+    @app.get("/api/jobs/{job_id}/preview-slides/{slide_number}")
+    def preview_job_slide(job_id: str, slide_number: int) -> Response:
+        job = app.state.job_store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type not in {"long_deck", "long_deck_v2"}:
+            raise HTTPException(status_code=404, detail="Slide preview is available only for long deck jobs.")
+        if slide_number < 1:
+            raise HTTPException(status_code=404, detail="Slide preview not found.")
+
+        job_dir = app.state.jobs_root / job_id
+        if job.job_type == "long_deck_v2":
+            preview = _v2_preview_page(job_dir, slide_number)
+            if preview is None:
+                raise HTTPException(status_code=404, detail="Slide preview not found.")
+            page, deck = preview
+            return HTMLResponse(v2_page_to_embedded_html(page, deck))
+
+        slides = _ppt_master_preview_slides(job_dir)
+        if slide_number > len(slides):
+            raise HTTPException(status_code=404, detail="Slide preview not found.")
+        return FileResponse(slides[slide_number - 1], media_type="image/svg+xml")
 
     @app.get("/api/jobs/{job_id}/artifacts", response_model=ArtifactListResponse)
     def list_artifacts(job_id: str) -> ArtifactListResponse:

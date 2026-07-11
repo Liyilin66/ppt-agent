@@ -16,7 +16,7 @@ from ppt_agent.models import StrictModel
 
 
 MIN_PAGES = 4
-MAX_PAGES = 200
+MAX_PAGES = 100
 
 
 class ContentBrief(StrictModel):

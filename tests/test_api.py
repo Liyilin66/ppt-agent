@@ -26,6 +26,8 @@ from ppt_agent.ppt_master_project import (
     PPT_MASTER_VISUAL_PROJECT_MANIFEST_ARTIFACT,
 )
 from ppt_agent.ppt_master_runner import PPT_MASTER_RUNNER_RESULT_ARTIFACT
+from ppt_agent.v2.design import BUILTIN_THEMES
+from ppt_agent.v2.ir import DeckDesign, Frame, PageDesign, TextItem
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
@@ -328,6 +330,80 @@ def _install_fake_long_deck_backend(
     monkeypatch.setattr(api, "render_long_deck_ir_to_pptx", fake_render_long_deck_ir_to_pptx)
 
 
+def _install_fake_v2_long_deck_backend(
+    monkeypatch,
+    captured: dict | None = None,
+    *,
+    status: str = "succeeded",
+) -> None:
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+
+    def fake_build_v2_deck(request, client, *, search_provider=None, progress=print):
+        if captured is not None:
+            captured["request"] = request
+            captured.setdefault("requests", []).append(request)
+            captured["client"] = client
+        output_dir = Path(request.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        design_path = output_dir / f"{request.deck_name}_design.json"
+        qa_path = output_dir / f"{request.deck_name}_qa_report.json"
+        run_report_path = output_dir / f"{request.deck_name}_run_report.json"
+        pptx_path = output_dir / f"{request.deck_name}.pptx"
+        design_path.write_text(
+            json.dumps({"deck_title": "Test", "pages": request.page_count}),
+            encoding="utf-8",
+        )
+        pages_with_errors = 1 if status == "quality_gate_failed" else 0
+        qa_path.write_text(
+            json.dumps(
+                {
+                    "total_pages": request.page_count,
+                    "pages_with_errors": pages_with_errors,
+                    "pages_with_warnings": 0,
+                    "auto_fix_count": 0,
+                    "repaired_pages": [],
+                    "fallback_pages": [],
+                    "results": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        run_report_path.write_text(
+            json.dumps({"status": status, "page_count": request.page_count}),
+            encoding="utf-8",
+        )
+        result_pptx_path = None
+        if status != "quality_gate_failed":
+            pptx_path.write_bytes(b"fake v2 pptx")
+            result_pptx_path = str(pptx_path)
+        progress("[stage] intake finished in 0.1s")
+        progress("[brief] 'Test' | language=zh-CN")
+        progress("[theme] technical (motif: grid)")
+        progress(f"[outline] 8 sections / {request.page_count} pages")
+        progress("[stage] page_briefs finished in 0.1s")
+        progress(f"[design] {max(1, request.page_count - 10)}/{max(1, request.page_count - 10)} content pages done")
+        progress("[stage] page_designs finished in 0.1s")
+        progress("[stage] assemble_qa finished in 0.1s")
+        if result_pptx_path is not None:
+            progress("[stage] render finished in 0.1s")
+        return api.V2BuildResult(
+            status=status,
+            pptx_path=result_pptx_path,
+            deck_design_path=str(design_path),
+            qa_report_path=str(qa_path),
+            run_report_path=str(run_report_path),
+            page_count=request.page_count,
+            model_pages=request.page_count,
+            repaired_pages=0,
+            fallback_pages=0,
+            usage={"estimated_cost_usd": 1.25},
+            stage_seconds={"render": 0.1},
+        )
+
+    monkeypatch.setattr(api, "build_v2_deck", fake_build_v2_deck)
+
+
 def _install_fake_long_deck_quality_gate_failure(monkeypatch, captured: dict | None = None) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(api, "_create_chat_model", lambda: object())
@@ -423,7 +499,8 @@ def test_index_page_returns_html_with_generate_button(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert ">生成 PPT</button>" in response.text
+    assert 'id="generateLongDeckButton"' in response.text
+    assert "生成 30 页 PPT" in response.text
 
 
 def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
@@ -431,33 +508,35 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     for text in [
-        "演示主题",
+        "创建演示",
+        "主题",
         "目标观众",
         "页数",
-        "详细要求",
-        "最低 QA 分数",
-        "最大尝试次数",
-        "Patch 文件路径",
-        "任务状态",
+        "PPT 详细要求",
+        "生成进度",
         "生成文件",
+        "资料覆盖度",
+        "叙事健康度",
+        "可编辑成片",
     ]:
         assert text in response.text
 
 
-def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> None:
+def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/")
 
     assert response.status_code == 200
     for text in [
-        "长 PPT实验模式",
-        "当前支持 30 页",
-        "mini-batch generation",
-        "默认 batch_size=2",
-        "耗时较长",
-        "experimental",
-        "生成 30 页长 PPT",
-        "取消长 PPT任务",
-        "继续/重试长 PPT",
+        "创建演示",
+        "输入 1–100 页",
+        "系统会自动选择生成策略、并发方式和质量检查",
+        "Presentation workspace",
+        "演示预览",
+        "章节页数分配",
+        "质量与成本",
+        "生成 30 页 PPT",
+        "取消任务",
+        "继续/重试演示",
         "PPT Master 渲染包",
         "PPT Master 执行桥",
         "PPT Master Visual Project",
@@ -492,22 +571,32 @@ def test_index_page_contains_long_deck_experimental_entry(tmp_path: Path) -> Non
     ]:
         assert text in response.text
     assert 'id="longDeckForm"' in response.text
-    assert 'id="long_slide_count" name="slide_count" type="number" min="30" max="30" value="30"' in response.text
+    assert 'id="long_slide_count" name="slide_count" type="number" min="1" max="100"' in response.text
+    assert "高级生成设置" not in response.text
+    assert 'id="long_batch_size"' not in response.text
+    assert 'id="long_max_batch_attempts"' not in response.text
+    assert '/api/jobs/${id}/preview-slides/${slideNumber}' in response.text
+    assert 'id="previewSlide1"' in response.text
+    assert "<iframe" in response.text
+    assert "ppt_agent_long_deck_form_draft" in response.text
+    assert "schedulePoll(id, 1000)" in response.text
+    assert "setInterval(renderElapsedClock, 250)" in response.text
+    assert 'value="AI 产品经理如何设计 Agent 产品"' not in response.text
+    assert "选择 30、50 或 100 页" not in response.text
+    assert "普通 1-10 页生成器" not in response.text
+    assert 'id="jobForm"' not in response.text
+    assert 'id="min_qa_score"' not in response.text
+    assert 'id="max_attempts"' not in response.text
+    assert 'id="patch_path"' not in response.text
+    assert 'submitJob("/api/jobs", buildShortDeckPayload())' in response.text
+    assert 'submitJob("/api/long-deck-jobs", buildLongDeckPayload())' in response.text
 
 
-def test_index_page_keeps_required_job_field_names(tmp_path: Path) -> None:
+def test_index_page_keeps_only_unified_presentation_fields(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/")
 
     assert response.status_code == 200
-    for field_name in [
-        "topic",
-        "audience",
-        "slides",
-        "min_qa_score",
-        "max_attempts",
-        "patch_path",
-        "user_requirements",
-    ]:
+    for field_name in ["topic", "audience", "slide_count", "user_requirements"]:
         assert f'name="{field_name}"' in response.text
 
 
@@ -541,9 +630,7 @@ def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> N
     response = _client(tmp_path).get("/")
 
     assert response.status_code == 200
-    assert 'id="patch_path" name="patch_path"' in response.text
-    assert 'name="patch_path" placeholder="可选：examples/sample_patch.json"' in response.text
-    assert 'name="patch_path" value=' not in response.text
+    assert 'id="patch_path"' not in response.text
     assert "sample_patch.js\"" not in response.text
     assert "sample_patch.js<" not in response.text
 
@@ -577,15 +664,95 @@ def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
     assert body["status"] == "pending"
 
 
-def test_create_long_deck_job_rejects_non_30_slide_count(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+def test_create_long_deck_job_rejects_slide_count_outside_supported_range(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    too_short = client.post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": 10},
+    )
+    too_long = client.post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": 101},
+    )
+
+    assert too_short.status_code == 422
+    assert too_long.status_code == 422
+
+
+def test_create_arbitrary_page_long_deck_uses_v2_pipeline(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
 
     response = _client(tmp_path).post(
         "/api/long-deck-jobs",
-        json={**_long_deck_payload(), "slide_count": 50},
+        json={**_long_deck_payload(), "slide_count": 75},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 202
+    assert captured["request"].page_count == 75
+
+
+def test_create_100_page_long_deck_uses_v2_pipeline_and_registers_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": 100},
+    )
+
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifacts = client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+    artifact_names = {artifact["name"] for artifact in artifacts}
+    assert body["status"] == "succeeded"
+    assert body["accepted"] is True
+    assert body["job_type"] == "long_deck_v2"
+    assert body["current_stage"] == "v2_completed"
+    assert body["total_batches"] == 100
+    assert body["completed_batches"] == 100
+    assert body["qa_score"] == 100
+    assert body["ppt_master_package"] is None
+    assert captured["request"].page_count == 100
+    assert captured["request"].concurrency == api.DEFAULT_V2_CONCURRENCY
+    assert captured["request"].qa_gate == "strict"
+    assert {
+        "long_deck_request",
+        "generated_long_deck_v2",
+        "generated_long_deck_v2_design",
+        "generated_long_deck_v2_qa_report",
+        "generated_long_deck_v2_run_report",
+    } <= artifact_names
+    assert not any(name.startswith("page_") for name in artifact_names)
+
+
+def test_v2_quality_gate_failure_does_not_register_pptx(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_v2_long_deck_backend(monkeypatch, status="quality_gate_failed")
+    client = _client(tmp_path)
+
+    job_id = client.post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": 50},
+    ).json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    artifact_names = {
+        artifact["name"]
+        for artifact in client.get(f"/api/jobs/{job_id}/artifacts").json()["artifacts"]
+    }
+
+    assert body["status"] == "failed_quality_gate"
+    assert body["accepted"] is False
+    assert body["current_stage"] == "v2_quality_gate_failed"
+    assert body["qa_score"] == 98
+    assert "generated_long_deck_v2" not in artifact_names
+    assert "generated_long_deck_v2_design" in artifact_names
+    assert "generated_long_deck_v2_qa_report" in artifact_names
 
 
 def test_create_long_deck_job_defaults_batch_size_to_two(tmp_path: Path, monkeypatch) -> None:
@@ -730,6 +897,29 @@ def test_long_deck_resume_endpoint_reuses_original_output_dir(tmp_path: Path, mo
         "ppt_master_package_README",
         "long_deck_run_report",
     }
+
+
+def test_v2_long_deck_resume_reuses_checkpoints_and_original_output_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    payload = {**_long_deck_payload(), "slide_count": 100}
+
+    original_job_id = client.post("/api/long-deck-jobs", json=payload).json()["job_id"]
+    response = client.post(f"/api/long-deck-jobs/{original_job_id}/resume")
+
+    assert response.status_code == 202
+    resume_job_id = response.json()["job_id"]
+    assert resume_job_id != original_job_id
+    assert captured["requests"][-1].resume is True
+    assert captured["requests"][-1].output_dir == str(tmp_path / "jobs" / original_job_id)
+    body = client.get(f"/api/jobs/{resume_job_id}").json()
+    assert body["status"] == "succeeded"
+    assert body["job_type"] == "long_deck_v2"
+    assert body["completed_batches"] == 100
 
 
 def test_long_deck_job_quality_gate_failure_keeps_ir_artifacts_and_skips_render(
@@ -1320,6 +1510,111 @@ def test_artifacts_can_be_listed(tmp_path: Path, monkeypatch) -> None:
         "generated_deck",
     }
     assert all(artifact["download_url"].startswith("/api/artifacts/") for artifact in artifacts)
+
+
+def test_long_deck_svg_previews_are_served_from_job_output(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    job = client.app.state.job_store.create_job(job_type="long_deck")
+    svg_dir = (
+        client.app.state.jobs_root
+        / job.job_id
+        / "ppt_master_output"
+        / "visual_project"
+        / "svg_final"
+    )
+    svg_dir.mkdir(parents=True)
+    for number in range(1, 4):
+        (svg_dir / f"slide_{number:02d}.svg").write_text(
+            f'<svg xmlns="http://www.w3.org/2000/svg"><text>Slide {number}</text></svg>',
+            encoding="utf-8",
+        )
+
+    response = client.get(f"/api/jobs/{job.job_id}/preview-slides/2")
+    manifest = client.get(f"/api/jobs/{job.job_id}/preview-slides")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert b"Slide 2" in response.content
+    assert manifest.json()["available_slide_numbers"] == [1, 2, 3]
+    assert manifest.json()["preview_kind"] == "ppt_master_svg"
+    assert client.get(f"/api/jobs/{job.job_id}/preview-slides/4").status_code == 404
+
+
+def test_v2_checkpoint_previews_are_available_before_deck_completion(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    job = client.app.state.job_store.create_job(job_type="long_deck_v2")
+    client.app.state.job_store.update_long_deck_progress(job.job_id, total_batches=100)
+    checkpoint_root = client.app.state.jobs_root / job.job_id / "checkpoints"
+    pages_dir = checkpoint_root / "pages"
+    pages_dir.mkdir(parents=True)
+    (checkpoint_root / "theme.json").write_text(
+        BUILTIN_THEMES["aurora"].model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    (checkpoint_root / "skeleton.json").write_text(
+        json.dumps({"deck_title": "渐进预览测试", "subtitle": "Checkpoint", "language": "zh-CN"}),
+        encoding="utf-8",
+    )
+    page = PageDesign(
+        page_number=5,
+        title="第五页已生成",
+        elements=[
+            TextItem(
+                id="title",
+                frame=Frame(x=80, y=90, w=800, h=100),
+                text="第五页已生成",
+                role="title",
+            )
+        ],
+    )
+    (pages_dir / "page_005.json").write_text(
+        json.dumps({"page": page.model_dump(mode="json"), "qa": {}, "outcome": "generated"}),
+        encoding="utf-8",
+    )
+
+    manifest = client.get(f"/api/jobs/{job.job_id}/preview-slides")
+    preview = client.get(f"/api/jobs/{job.job_id}/preview-slides/5")
+
+    assert manifest.status_code == 200
+    assert manifest.json()["available_slide_numbers"] == [5]
+    assert manifest.json()["total_requested"] == 100
+    assert manifest.json()["preview_kind"] == "v2_html"
+    assert preview.status_code == 200
+    assert preview.headers["content-type"].startswith("text/html")
+    assert "第五页已生成" in preview.text
+    assert client.get(f"/api/jobs/{job.job_id}/preview-slides/1").status_code == 404
+
+
+def test_v2_final_design_previews_include_all_pages(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    job = client.app.state.job_store.create_job(job_type="long_deck_v2")
+    job_dir = client.app.state.jobs_root / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    pages = [
+        PageDesign(
+            page_number=number,
+            title=f"第 {number} 页",
+            elements=[
+                TextItem(
+                    id=f"title-{number}",
+                    frame=Frame(x=80, y=90, w=800, h=100),
+                    text=f"第 {number} 页",
+                    role="title",
+                )
+            ],
+        )
+        for number in range(1, 4)
+    ]
+    deck = DeckDesign(deck_title="完整预览", theme=BUILTIN_THEMES["aurora"], pages=pages)
+    (job_dir / "generated_long_deck_v2_design.json").write_text(
+        deck.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    manifest = client.get(f"/api/jobs/{job.job_id}/preview-slides")
+
+    assert manifest.json()["available_slide_numbers"] == [1, 2, 3]
+    assert client.get(f"/api/jobs/{job.job_id}/preview-slides/3").status_code == 200
 
 
 def test_artifacts_include_patch_outputs_when_patch_succeeds(tmp_path: Path, monkeypatch) -> None:

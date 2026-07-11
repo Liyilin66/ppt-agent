@@ -185,7 +185,7 @@ def _cmd_preview(args: argparse.Namespace) -> int:
 
 def register_v2_commands(subparsers) -> None:
     v2 = subparsers.add_parser(
-        "v2", help="Long-deck free-layout pipeline (BYOK, up to 200 slides)."
+        "v2", help="Long-deck free-layout pipeline (BYOK, up to 100 slides)."
     )
     v2_sub = v2.add_subparsers(dest="v2_command", required=True)
 

@@ -4,7 +4,7 @@
 
 `ppt-agent` 是一个本地优先的 AI Presentation Agent：通过 `Deck IR`、QA gate、确定性 renderer 和结构化 Patch Edit，把用户需求生成可编辑 PPTX。
 
-**v2 长文档管线（推荐）**：`ppt-agent v2 build` 支持一次性生成最多 200 页的设计级可编辑 PPTX。LLM 逐页产出受设计系统约束的自由布局 JSON（PageDesign IR），由确定性渲染器转成原生 PowerPoint 元素；每页一个小请求、高并发生成、断点续跑，页面失败自动降级为版式原型页，永远不会出现"空洞页"。BYOK：任何 OpenAI 兼容或 Anthropic 端点均可，模型名 / base_url / key 全部由用户配置。详见下方 [v2 长文档管线](#v2-长文档管线100-页一次性生成)。
+**v2 长文档管线（推荐）**：`ppt-agent v2 build` 支持一次性生成最多 100 页的设计级可编辑 PPTX。LLM 逐页产出受设计系统约束的自由布局 JSON（PageDesign IR），由确定性渲染器转成原生 PowerPoint 元素；每页一个小请求、高并发生成、断点续跑，页面失败自动降级为版式原型页，永远不会出现"空洞页"。BYOK：任何 OpenAI 兼容或 Anthropic 端点均可，模型名 / base_url / key 全部由用户配置。详见下方 [v2 长文档管线](#v2-长文档管线100-页一次性生成)。
 
 它的核心思路不是让大模型直接写 `.pptx`，而是让大模型只生成严格的 `Deck` 结构化 JSON；后续的 schema validation、质量检查、补丁修改和 PowerPoint 渲染都由确定性的 Python 代码完成。
 
@@ -32,7 +32,7 @@
 - attempts / diagnostics artifact。
 - structured patch edit。
 - FastAPI local backend。
-- Minimal Web UI。
+- 统一 Web 产品工作台：一个创建入口支持 1-100 页，自动选择快速或长演示管线。
 - SQLite job metadata。
 - local artifacts。
 - 中文优先的生成流程：默认 `zh-CN`，只有用户明确要求英文时才生成英文内容。
@@ -48,7 +48,7 @@
 - `python-pptx` 可编辑 `.pptx` 渲染。
 - 产品 CLI：`generate`、`qa`、`render`、`patch`、`build`。
 - 本地 private beta FastAPI：创建任务、查询状态、查看当前阶段、列出和下载产物。
-- **v2 长文档管线**：`v2 build` / `v2 demo` / `v2 preview`，4-200 页一次性生成。
+- **v2 长文档管线**：`v2 build` / `v2 demo` / `v2 preview`，4-100 页一次性生成。
 - **v2 BYOK Provider 层**：OpenAI 兼容 + Anthropic 双协议，模型 / base_url / key 用户自配，重试退避 + 用量计费 + 预算护栏。
 - **v2 设计系统**：颜色 token + 字号 role + 主题母题（motif），5 个内置主题或 LLM 自动配色（对比度自动纠偏）。
 - **v2 自由布局 PageDesign IR**：文本 / 11 种图形 / 线条 / 50+ 图标 / 原生图表（柱/条/线/面积/饼/环）/ 表格，全部渲染为原生可编辑 PowerPoint 元素。
@@ -62,8 +62,8 @@
 - 不支持多租户。
 - 不支持 RAG（v2 的文档提炼是一次性摘要注入，不是检索增强）。
 - 不支持 image-to-PPT / image-to-editable-PPT。
-- v1 管线（`generate` / `build`）页数上限仍是 10；30-200 页请使用 v2 管线（`ppt-agent v2 build`）。
-- Web UI 尚未接入 v2 管线；v2 目前通过 CLI 使用。
+- v1 管线（`generate` / `build`）页数上限仍是 10；11-100 页请使用 v2 管线（`ppt-agent v2 build`）。
+- Web UI 已接入 v1 与 v2：1-10 页自动使用快速管线，11-100 页自动使用长演示管线。
 - 不支持用户在 Web UI 输入 API key；API key 只从服务端环境变量读取。
 - 不支持 React、Next.js、Streamlit 或完整前端框架。
 - 不支持复杂品牌模板系统（v2 提供设计 token 主题：5 个内置 + LLM 自动配色）。
@@ -86,7 +86,7 @@ flowchart TD
     H --> I["Structured Patch Edit"]
 ```
 
-v2（自由布局长文档管线，4-200 页）：
+v2（自由布局长文档管线，4-100 页）：
 
 ```mermaid
 flowchart TD

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
 from pptx import Presentation
 
 from ppt_agent.v2.ir import Frame, PageDesign, TextItem
@@ -68,6 +70,10 @@ class _UnresolvedQADesignClient(MockLLMClient):
 
 
 class TestBuildDeck:
+    def test_rejects_more_than_100_pages(self, tmp_path: Path) -> None:
+        with pytest.raises(ValidationError):
+            _request(tmp_path, page_count=101)
+
     def test_full_offline_build(self, tmp_path: Path) -> None:
         result = build_deck(_request(tmp_path), MockLLMClient(), progress=lambda _: None)
         assert result.status == "succeeded"

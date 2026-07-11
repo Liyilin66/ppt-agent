@@ -261,3 +261,23 @@ def page_to_standalone_html(page: PageDesign, deck: DeckDesign, output_path: str
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
     return output
+
+
+def page_to_embedded_html(page: PageDesign, deck: DeckDesign) -> str:
+    """Return a responsive HTML document suitable for an iframe preview."""
+
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#eef3f5;}"
+        ".preview-stage{position:absolute;left:0;top:0;width:1280px;height:720px;"
+        "transform-origin:top left;}</style></head><body>"
+        '<div class="preview-stage">'
+        + page_to_html(page, deck)
+        + "</div><script>const stage=document.querySelector('.preview-stage');"
+        "function fit(){const scale=Math.min(innerWidth/1280,innerHeight/720);"
+        "stage.style.transform=`scale(${scale})`;"
+        "stage.style.left=`${(innerWidth-1280*scale)/2}px`;"
+        "stage.style.top=`${(innerHeight-720*scale)/2}px`;};"
+        "addEventListener('resize',fit);fit();</script></body></html>"
+    )
