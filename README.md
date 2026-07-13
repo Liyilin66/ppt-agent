@@ -11,13 +11,14 @@
 | 能力 | 当前状态 |
 | --- | --- |
 | 1-100 页统一 Web 创建入口 | 已完成 |
+| 自适应需求访谈 Agent：单问题追问、快捷选项、自由回答、生成确认 | 已完成 |
 | 100 页真实 LLM 生成 | 已验证 |
 | 原生可编辑 PPTX | 已完成 |
 | v2 自由布局 PageDesign IR | 已完成 |
 | 并发生成与 checkpoint resume | 已完成 |
 | 全页 QA、自动修复、hard quality gate | 已完成 |
 | 生成中逐步出现页面预览 | 已完成 |
-| SQLite job、进度、取消、恢复、artifact 下载 | 已完成 |
+| SQLite 演示历史、job、进度、取消、恢复、artifact 下载 | 已完成 |
 | OpenAI-compatible / Anthropic BYOK | CLI 与服务端环境变量可用 |
 | PDF / DOCX / MD / TXT 提炼 | v2 CLI 可用，Web 尚未接上传 |
 | Tavily 联网搜索 | v2 CLI 可用，Web 尚未接搜索开关 |
@@ -52,7 +53,13 @@
 
 ## 统一 Web 工作台
 
-Web UI 只保留一个创建表单，页数支持任意 1-100：
+Web UI 使用对话式 Agent 作为创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供 2-4 个快捷选项，同时保留自由输入；信息充分后显示生成确认卡，再进入 1-100 页生成。结构化 Brief 仍作为内部生成契约和恢复依据，但不会强迫普通用户填写表单。
+
+![Conversational requirements interview](docs/design/ppt-agent-conversational-interview-question.png)
+
+清晰需求会直接进入生成确认；模糊需求会按实际缺口继续追问，不预设固定问题数量。用户可以继续用自然语言调整已经收敛的需求；1-10 页演示或用户明确要求“直接生成 / 不用再问”时可以自动开始，11-100 页默认保留一次确认。访谈状态和完整消息保存在 SQLite，并通过 `interview_id` 与最终 presentation job 关联。
+
+页数支持任意 1-100：
 
 ![Unified 1-100 page create form](docs/readme/web-unified-create.png)
 
@@ -70,9 +77,12 @@ Web 工作台还包括：
 - 临时请求失败后自动继续轮询。
 - 主题、观众、页数和详细要求本地草稿恢复。
 - v2 checkpoint 页面生成后立即进入 storyboard。
-- 真实 SVG / PageDesign HTML 代表页预览。
+- 真实 SVG / PageDesign HTML 视觉高光页预览，按图表、流程、对比、视觉层次和内容密度确定性评分。
 - QA、成本、章节分配与交付状态。
 - PPTX、IR、QA、run report 与 PPT Master artifacts 下载。
+- SQLite 演示历史：搜索主题/观众/任务 ID、按状态筛选、打开旧任务、直接下载最终 PPTX。
+
+每次创建演示时，系统会把主题、目标观众、页数和详细要求写入 `data/jobs.sqlite3` 的请求快照表。历史页将请求快照与 job 状态、QA 分数和最终 PPTX artifact 联结展示；旧任务会从已有 `long_deck_request.json` 或 `generated_deck_brief.json` 自动回填，不修改原始 artifact。
 
 ## 从 Prompt 到 PPTX
 
@@ -343,6 +353,10 @@ ppt-agent v2 preview   Render DeckDesign as browser HTML
 | POST /api/long-deck-jobs/{job_id}/resume | 从 checkpoint 恢复 |
 | POST /api/jobs/{job_id}/cancel | 请求取消 long-deck job |
 | GET /api/jobs/{job_id} | 状态、QA、PPT Master 状态 |
+| POST /api/presentation-interviews | 开始自适应需求访谈 |
+| POST /api/presentation-interviews/{id}/messages | 回答当前问题并继续收敛 Brief |
+| GET /api/presentation-interviews/{id} | 恢复 SQLite 中的访谈状态 |
+| GET /api/presentations | SQLite 演示历史、筛选和最终 PPTX 下载入口 |
 | GET /api/jobs/{job_id}/preview-slides | 可用预览页清单 |
 | GET /api/jobs/{job_id}/preview-slides/{n} | SVG 或 v2 HTML 单页预览 |
 | GET /api/jobs/{job_id}/artifacts | 任务 artifacts |
@@ -409,7 +423,7 @@ docs/design/                   # UI visual QA evidence
 当前验证基线：
 
 ~~~text
-443 passed
+459 passed
 uv sync
 uv lock --check
 uv run pytest

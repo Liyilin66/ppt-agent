@@ -8,15 +8,24 @@ import math
 import os
 import re
 import time
+import uuid
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import Field
 
 from ppt_agent.generation import DeckGenerationRequest
-from ppt_agent.job_store import ArtifactKind, ArtifactRecord, JobRecord, JobStore
+from ppt_agent.job_store import (
+    ArtifactKind,
+    ArtifactRecord,
+    JobRecord,
+    JobStatus,
+    JobStore,
+    PresentationHistoryRecord,
+)
 from ppt_agent.long_deck_orchestrator import LongDeckRunReport, LongDeckRunRequest, run_long_deck_batch_generation
 from ppt_agent.long_deck_render import LongDeckRenderReport, render_long_deck_ir_to_pptx
 from ppt_agent.models import StrictModel
@@ -56,6 +65,12 @@ from ppt_agent.ppt_master_runner import (
     run_ppt_master_local_export,
 )
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
+from ppt_agent.requirements_interview import (
+    InterviewMessage,
+    PresentationInterviewDecision,
+    PresentationInterviewState,
+    run_requirements_interview_turn,
+)
 from ppt_agent.v2.orchestrator import (
     BuildRequest as V2BuildRequest,
     BuildResult as V2BuildResult,
@@ -125,6 +140,7 @@ INDEX_HTML = """<!doctype html>
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
     <title>ppt-agent PPT 生成器</title>
     <style>
       :root {
@@ -698,7 +714,352 @@ INDEX_HTML = """<!doctype html>
       }
 
       .create-panel {
-        padding: 20px;
+        padding: 0;
+      }
+
+      .interview-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+      }
+
+      .conversation-pane {
+        display: grid;
+        grid-template-rows: minmax(180px, 1fr) auto auto;
+        min-width: 0;
+        border-right: 1px solid var(--line);
+      }
+
+      .conversation-stream {
+        display: grid;
+        align-content: start;
+        gap: 12px;
+        max-height: 420px;
+        min-height: 180px;
+        padding: 18px;
+        overflow-y: auto;
+      }
+
+      .conversation-message {
+        max-width: 84%;
+        padding: 10px 12px;
+        border-left: 3px solid var(--teal);
+        background: #f3f7f7;
+        color: #334154;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+
+      .conversation-message[data-role="user"] {
+        justify-self: end;
+        border-right: 3px solid var(--cobalt);
+        border-left: 0;
+        background: #eef3ff;
+      }
+
+      .conversation-message strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--ink);
+        font-size: 11px;
+      }
+
+      .interview-question-panel {
+        margin: 0 18px 14px;
+        border-radius: 8px;
+        padding: 16px;
+        background: #2c2f2e;
+        color: #f7f8f7;
+      }
+
+      .interview-question-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .interview-question-head h3 {
+        margin: 0;
+        color: #ffffff;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .interview-round {
+        flex: 0 0 auto;
+        color: #aeb5b2;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .interview-options {
+        display: grid;
+      }
+
+      .interview-option {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: 11px;
+        justify-content: stretch;
+        min-height: 54px;
+        border: 0;
+        border-top: 1px solid #494d4b;
+        border-radius: 0;
+        padding: 9px 0;
+        background: transparent;
+        color: #e8ebe9;
+        text-align: left;
+      }
+
+      .interview-option:first-child {
+        border-top: 0;
+      }
+
+      .interview-option:hover {
+        background: #3a3e3c;
+      }
+
+      .option-number {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        background: #454947;
+        color: #d7dcda;
+        font-weight: 800;
+      }
+
+      .option-copy strong, .option-copy span {
+        display: block;
+      }
+
+      .option-copy strong {
+        color: #ffffff;
+        font-size: 13px;
+      }
+
+      .option-copy span {
+        margin-top: 2px;
+        color: #aeb5b2;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .option-arrow {
+        align-self: center;
+        color: #aeb5b2;
+        font-size: 20px;
+      }
+
+      .interview-question-foot {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #494d4b;
+      }
+
+      .interview-question-foot button {
+        min-height: 34px;
+        border-color: #5a5f5c;
+        background: #454947;
+        color: #ffffff;
+        font-size: 12px;
+      }
+
+      .interview-composer {
+        padding: 14px 18px 18px;
+        border-top: 1px solid var(--line);
+        background: #fbfcfd;
+      }
+
+      .interview-composer textarea {
+        min-height: 88px;
+        border-color: #aebbc5;
+        background: #ffffff;
+      }
+
+      .interview-question-panel .interview-composer {
+        margin-top: 12px;
+        padding: 12px 0 0;
+        border-top: 1px solid #494d4b;
+        background: transparent;
+      }
+
+      .interview-question-panel .interview-composer textarea {
+        min-height: 68px;
+        border-color: #6d7470;
+      }
+
+      .interview-question-panel .composer-actions span {
+        color: #aeb5b2;
+      }
+
+      .conversation-message.is-pending {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .generation-confirmation {
+        margin: 0 18px 18px;
+        border: 1px solid #9bcfc7;
+        border-radius: 8px;
+        padding: 16px;
+        background: #effaf7;
+      }
+
+      .generation-confirmation h3 {
+        margin-bottom: 5px;
+        font-size: 17px;
+      }
+
+      .generation-confirmation > p {
+        margin-bottom: 12px;
+        font-size: 12px;
+      }
+
+      .confirmation-summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 1px solid #c6e4df;
+        border-bottom: 1px solid #c6e4df;
+      }
+
+      .confirmation-summary div {
+        min-width: 0;
+        padding: 10px 8px 10px 0;
+      }
+
+      .confirmation-summary span,
+      .confirmation-summary strong {
+        display: block;
+      }
+
+      .confirmation-summary span {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .confirmation-summary strong {
+        margin-top: 3px;
+        overflow-wrap: anywhere;
+        color: var(--ink);
+        font-size: 12px;
+      }
+
+      .confirmation-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 9px;
+      }
+
+      .composer-actions span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .brief-pane {
+        min-width: 0;
+        padding: 18px;
+        background: var(--surface-soft);
+      }
+
+      .brief-pane-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding-bottom: 13px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brief-pane-head h3 {
+        margin-bottom: 3px;
+      }
+
+      .brief-status {
+        border-radius: 4px;
+        padding: 4px 7px;
+        background: #e8edef;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .brief-status.is-ready {
+        background: #e2f3eb;
+        color: var(--success);
+      }
+
+      .brief-summary-grid {
+        display: grid;
+        gap: 0;
+        margin: 10px 0 14px;
+      }
+
+      .brief-summary-row {
+        padding: 9px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brief-summary-row span, .brief-summary-row strong {
+        display: block;
+      }
+
+      .brief-summary-row span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .brief-summary-row strong {
+        margin-top: 3px;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .brief-pane .embedded-form {
+        margin-top: 12px;
+      }
+
+      .brief-pane .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .brief-pane .full {
+        grid-column: auto;
+      }
+
+      .brief-pane textarea {
+        min-height: 180px;
+      }
+
+      .brief-pane .form-actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .brief-pane .form-actions button {
+        width: 100%;
+      }
+
+      .interview-section-actions {
+        display: flex;
+        gap: 8px;
       }
 
       .form-grid {
@@ -864,6 +1225,127 @@ INDEX_HTML = """<!doctype html>
         font-size: 13px;
       }
 
+      .history-toolbar {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) 190px auto;
+        gap: 10px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-soft);
+      }
+
+      .history-toolbar input, .history-toolbar select {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid #bdcad4;
+        border-radius: 6px;
+        padding: 8px 11px;
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      .history-summary {
+        margin: 0;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+
+      .history-list {
+        display: grid;
+      }
+
+      .history-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(110px, auto) minmax(180px, auto);
+        align-items: center;
+        gap: 18px;
+        min-width: 0;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .history-row:last-child {
+        border-bottom: 0;
+      }
+
+      .history-row:hover {
+        background: #f8fbfb;
+      }
+
+      .history-title {
+        margin: 0 0 5px;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.4;
+      }
+
+      .history-meta, .history-requirements {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .history-requirements {
+        display: -webkit-box;
+        margin-top: 4px;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+
+      .history-state {
+        display: grid;
+        justify-items: start;
+        gap: 5px;
+      }
+
+      .history-status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        border-radius: 4px;
+        padding: 4px 8px;
+        background: #edf1f4;
+        color: #4d5b6c;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .history-status[data-tone="success"] {
+        background: #e7f5ef;
+        color: var(--success);
+      }
+
+      .history-status[data-tone="warning"] {
+        background: #fff4dc;
+        color: #93640a;
+      }
+
+      .history-status[data-tone="danger"] {
+        background: #fbeae7;
+        color: var(--danger);
+      }
+
+      .history-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .history-actions button, .history-actions .button-link {
+        min-height: 36px;
+        padding: 7px 10px;
+        font-size: 12px;
+      }
+
+      .history-empty {
+        padding: 34px 20px;
+        color: var(--muted);
+        text-align: center;
+      }
+
       .technical-wrap {
         padding: 18px 20px 20px;
       }
@@ -947,6 +1429,7 @@ INDEX_HTML = """<!doctype html>
           grid-column: auto;
           grid-template-columns: repeat(3, minmax(0, 1fr));
         }
+
       }
 
       @media (max-width: 920px) {
@@ -983,6 +1466,15 @@ INDEX_HTML = """<!doctype html>
 
         .workspace-grid {
           grid-template-columns: 1fr;
+        }
+
+        .interview-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .conversation-pane {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
         }
 
         .right-rail {
@@ -1047,6 +1539,36 @@ INDEX_HTML = """<!doctype html>
         .task-footer {
           grid-template-columns: 1fr;
         }
+
+        .history-toolbar, .history-row {
+          grid-template-columns: 1fr;
+        }
+
+        .history-actions {
+          justify-content: stretch;
+        }
+
+        .history-actions > * {
+          flex: 1;
+        }
+
+        .section-head, .interview-question-head, .composer-actions, .confirmation-actions,
+        .interview-question-foot, .brief-pane-head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .interview-section-actions {
+          width: 100%;
+        }
+
+        .interview-section-actions button {
+          flex: 1;
+        }
+
+        .conversation-message {
+          max-width: 94%;
+        }
       }
     </style>
   </head>
@@ -1057,6 +1579,7 @@ INDEX_HTML = """<!doctype html>
         <nav class="nav-list">
           <button class="nav-item is-active" type="button" data-scroll-target="projectWorkspace">项目工作台</button>
           <button class="nav-item" type="button" data-scroll-target="createPanel">创建演示</button>
+          <button class="nav-item" type="button" data-scroll-target="historyPanel">演示历史</button>
           <button class="nav-item" type="button" data-scroll-target="previewPanel">页面预览</button>
           <button class="nav-item" type="button" data-scroll-target="technicalPanel">技术详情</button>
         </nav>
@@ -1146,18 +1669,103 @@ INDEX_HTML = """<!doctype html>
             </section>
 
             <section id="createPanel" class="product-section">
-              <div class="section-head"><div><p class="eyebrow">Create</p><h2>创建演示</h2><p>输入 1–100 页，系统会自动选择生成策略、并发方式和质量检查。</p></div></div>
-              <div class="create-panel">
-                <form id="longDeckForm" class="embedded-form">
-                  <div class="form-grid">
-                    <label>主题<input id="long_topic" name="topic" required placeholder="例如：从 0 到 1 设计未来智慧校园"></label>
-                    <label>目标观众<input id="long_audience" name="audience" required placeholder="例如：大学生与年轻产品经理"></label>
-                    <label>页数<input id="long_slide_count" name="slide_count" type="number" min="1" max="100" step="1" value="30" required></label>
-                    <label class="full">PPT 详细要求<textarea id="long_user_requirements" name="user_requirements" required placeholder="写清内容重点、表达风格、章节要求与视觉偏好；系统会保存在当前浏览器。"></textarea></label>
-                  </div>
-                  <div class="form-actions"><p id="generationStrategyHint">系统会根据页数自动选择生成模式并检查内容质量。</p><button id="generateLongDeckButton" type="submit">生成 30 页 PPT</button></div>
-                </form>
+              <div class="section-head">
+                <div><p class="eyebrow">Create with Agent</p><h2>和 Agent 一起定义演示</h2><p>像聊天一样说出想法。Agent 理解充分后会直接准备生成；需要时可以继续对话调整。</p></div>
+                <div class="interview-section-actions">
+                  <button id="manualBriefButton" class="secondary-button" type="button">手动调整</button>
+                  <button id="newInterviewButton" class="secondary-button" type="button">重新开始</button>
+                </div>
               </div>
+              <div class="create-panel">
+                <div class="interview-shell">
+                  <div class="conversation-pane">
+                    <div id="interviewMessages" class="conversation-stream" aria-live="polite">
+                      <div class="conversation-message" data-role="assistant"><strong>PPT Agent</strong>告诉我你想做什么演示。哪怕只有一个模糊想法也可以，我会一步一步帮你把内容、观众、页数和视觉方向问清楚。</div>
+                    </div>
+                    <section id="interviewQuestionPanel" class="interview-question-panel" hidden>
+                      <div class="interview-question-head">
+                        <h3 id="interviewQuestion">Agent 正在整理需求</h3>
+                        <span id="interviewRound" class="interview-round">自适应访谈</span>
+                      </div>
+                      <div id="interviewOptions" class="interview-options"></div>
+                      <div class="interview-question-foot">
+                        <button id="skipInterviewQuestionButton" type="button">不确定，暂时跳过</button>
+                      </div>
+                    </section>
+                    <section id="generationConfirmation" class="generation-confirmation" hidden>
+                      <p class="eyebrow">Ready to create</p>
+                      <h3>Agent 已经理解，可以开始生成</h3>
+                      <p>长演示会在正式生成前保留这次确认，避免页数、观众或视觉方向理解错误。</p>
+                      <div class="confirmation-summary">
+                        <div><span>主题</span><strong id="confirmationTopic">待确认</strong></div>
+                        <div><span>目标观众</span><strong id="confirmationAudience">待确认</strong></div>
+                        <div><span>页数</span><strong id="confirmationSlideCount">待确认</strong></div>
+                        <div><span>视觉方向</span><strong id="confirmationVisual">待确认</strong></div>
+                      </div>
+                      <div class="confirmation-actions">
+                        <button id="continueInterviewButton" class="secondary-button" type="button">继续调整</button>
+                        <button id="confirmGenerationButton" type="button">开始生成 PPT</button>
+                      </div>
+                    </section>
+                    <form id="interviewComposer" class="interview-composer">
+                      <label class="sr-only" for="interviewInput">告诉 Agent 你的演示需求</label>
+                      <textarea id="interviewInput" required placeholder="例如：我想做一份给大学生看的生态环境保护演示，但还不知道从哪里开始。"></textarea>
+                      <div class="composer-actions">
+                        <span id="interviewHint">描述越具体，Agent 需要追问的问题越少。</span>
+                        <button id="sendInterviewButton" type="submit">发送给 Agent</button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <aside class="brief-pane" aria-labelledby="briefPaneTitle">
+                    <div class="brief-pane-head">
+                      <div><p class="eyebrow">Agent understanding</p><h3 id="briefPaneTitle">Agent 理解</h3></div>
+                      <span id="briefStatus" class="brief-status">等待描述</span>
+                    </div>
+                    <div class="brief-summary-grid">
+                      <div class="brief-summary-row"><span>主题</span><strong id="briefTopic">待确认</strong></div>
+                      <div class="brief-summary-row"><span>目标观众</span><strong id="briefAudience">待确认</strong></div>
+                      <div class="brief-summary-row"><span>页数</span><strong id="briefSlideCount">待确认</strong></div>
+                      <div class="brief-summary-row"><span>用途与内容重点</span><strong id="briefFocus">待确认</strong></div>
+                      <div class="brief-summary-row"><span>视觉方向</span><strong id="briefVisual">待确认</strong></div>
+                    </div>
+                    <p id="briefReadinessHint" class="hint">这里会实时显示 Agent 当前理解，不需要你填写表单。</p>
+                    <form id="longDeckForm" class="embedded-form" hidden>
+                      <div class="form-grid">
+                        <label>主题<input id="long_topic" name="topic" required placeholder="例如：从 0 到 1 设计未来智慧校园"></label>
+                        <label>目标观众<input id="long_audience" name="audience" required placeholder="例如：大学生与年轻产品经理"></label>
+                        <label>页数<input id="long_slide_count" name="slide_count" type="number" min="1" max="100" step="1" value="30" required></label>
+                        <label class="full">PPT 详细要求<textarea id="long_user_requirements" name="user_requirements" required placeholder="写清内容重点、表达风格、章节要求与视觉偏好；系统会保存在当前浏览器。"></textarea></label>
+                      </div>
+                      <div class="form-actions"><p id="generationStrategyHint">系统会根据页数自动选择生成模式并检查内容质量。</p><button id="generateLongDeckButton" type="submit">确认并生成 30 页 PPT</button></div>
+                    </form>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <section id="historyPanel" class="product-section">
+              <div class="section-head">
+                <div><p class="eyebrow">Presentation history</p><h2>演示历史</h2><p>创建请求、生成状态和最终可编辑 PPTX 都保存在本地 SQLite 工作区。</p></div>
+              </div>
+              <div class="history-toolbar">
+                <label class="sr-only" for="historySearch">搜索历史演示</label>
+                <input id="historySearch" type="search" placeholder="搜索主题、观众或任务 ID">
+                <label class="sr-only" for="historyStatusFilter">按状态筛选</label>
+                <select id="historyStatusFilter">
+                  <option value="">全部状态</option>
+                  <option value="succeeded">已交付</option>
+                  <option value="running">生成中</option>
+                  <option value="pending">排队中</option>
+                  <option value="failed_quality_gate">质量门禁失败</option>
+                  <option value="failed">运行失败</option>
+                  <option value="cancelled">已取消</option>
+                </select>
+                <button id="refreshHistoryButton" class="secondary-button" type="button">刷新</button>
+              </div>
+              <p id="historySummary" class="history-summary">正在读取本地历史记录...</p>
+              <div id="historyList" class="history-list" aria-live="polite"></div>
+              <div id="historyEmpty" class="history-empty" hidden>还没有演示记录。创建第一份演示后会自动出现在这里。</div>
             </section>
 
             <section id="technicalPanel" class="product-section">
@@ -1433,9 +2041,42 @@ INDEX_HTML = """<!doctype html>
       const railQualityStatus = document.getElementById("railQualityStatus");
       const railFailedBatches = document.getElementById("railFailedBatches");
       const railElapsedSeconds = document.getElementById("railElapsedSeconds");
+      const historySearch = document.getElementById("historySearch");
+      const historyStatusFilter = document.getElementById("historyStatusFilter");
+      const refreshHistoryButton = document.getElementById("refreshHistoryButton");
+      const historySummary = document.getElementById("historySummary");
+      const historyList = document.getElementById("historyList");
+      const historyEmpty = document.getElementById("historyEmpty");
+      const interviewComposer = document.getElementById("interviewComposer");
+      const interviewInput = document.getElementById("interviewInput");
+      const sendInterviewButton = document.getElementById("sendInterviewButton");
+      const interviewHint = document.getElementById("interviewHint");
+      const interviewMessages = document.getElementById("interviewMessages");
+      const interviewQuestionPanel = document.getElementById("interviewQuestionPanel");
+      const interviewQuestion = document.getElementById("interviewQuestion");
+      const interviewRound = document.getElementById("interviewRound");
+      const interviewOptions = document.getElementById("interviewOptions");
+      const skipInterviewQuestionButton = document.getElementById("skipInterviewQuestionButton");
+      const generationConfirmation = document.getElementById("generationConfirmation");
+      const confirmationTopic = document.getElementById("confirmationTopic");
+      const confirmationAudience = document.getElementById("confirmationAudience");
+      const confirmationSlideCount = document.getElementById("confirmationSlideCount");
+      const confirmationVisual = document.getElementById("confirmationVisual");
+      const continueInterviewButton = document.getElementById("continueInterviewButton");
+      const confirmGenerationButton = document.getElementById("confirmGenerationButton");
+      const manualBriefButton = document.getElementById("manualBriefButton");
+      const newInterviewButton = document.getElementById("newInterviewButton");
+      const briefStatus = document.getElementById("briefStatus");
+      const briefTopic = document.getElementById("briefTopic");
+      const briefAudience = document.getElementById("briefAudience");
+      const briefSlideCount = document.getElementById("briefSlideCount");
+      const briefFocus = document.getElementById("briefFocus");
+      const briefVisual = document.getElementById("briefVisual");
+      const briefReadinessHint = document.getElementById("briefReadinessHint");
       const lastLongDeckJobStorageKey = "ppt_agent_last_long_deck_job_id";
       const chapterDraftStorageKey = "ppt_agent_chapter_draft";
       const longDeckDraftStorageKey = "ppt_agent_long_deck_form_draft";
+      const presentationInterviewStorageKey = "ppt_agent_presentation_interview_id";
       const pptMasterArtifactNames = new Set([
         "ppt_master_source",
         "ppt_master_run_prompt",
@@ -1475,7 +2116,12 @@ INDEX_HTML = """<!doctype html>
         ppt_master_output_manifest: "PPT Master Output Manifest"
       };
       let pollTimer = null;
+      let historySearchTimer = null;
       let activeJobId = null;
+      let activeInterviewId = null;
+      let activeInterviewState = null;
+      let manualBriefVisible = false;
+      let interviewRequestInFlight = false;
       let currentPreviewKey = "";
       let elapsedJobId = null;
       let elapsedBaseSeconds = 0;
@@ -1677,11 +2323,17 @@ INDEX_HTML = """<!doctype html>
           return;
         }
 
-        const candidates = [available[0], available[Math.floor((available.length - 1) / 2)], available.at(-1)];
-        const selected = candidates.filter((value, index) => candidates.indexOf(value) === index);
+        const highlighted = Array.from(new Set(manifest.highlight_slide_numbers || []))
+          .map(Number)
+          .filter((value) => available.includes(value));
+        const selected = highlighted.slice(0, 3);
+        available.forEach((value) => {
+          if (selected.length < 3 && !selected.includes(value)) selected.push(value);
+        });
+        selected.sort((left, right) => left - right);
         const previewKey = `${id}:${manifest.update_token || "0"}:${selected.join(",")}`;
         previewEmpty.hidden = true;
-        previewSummary.textContent = `已生成 ${available.length} 页，正在展示第 ${selected.join(" / ")} 页。`;
+        previewSummary.textContent = `已生成 ${available.length} 页，正在展示视觉高光页 ${selected.join(" / ")}。`;
         const numberLabels = [previewSlideNumber1, previewSlideNumber2, previewSlideNumber3];
         previewSlides.forEach((frame, index) => {
           const slideNumber = selected[index];
@@ -2060,7 +2712,8 @@ INDEX_HTML = """<!doctype html>
           slides: Number(longSlideCount.value),
           user_requirements: document.getElementById("long_user_requirements").value.trim(),
           min_qa_score: 80,
-          max_attempts: 2
+          max_attempts: 2,
+          interview_id: activeInterviewId
         };
       }
 
@@ -2071,7 +2724,8 @@ INDEX_HTML = """<!doctype html>
           slide_count: Number(document.getElementById("long_slide_count").value),
           language: "zh-CN",
           deck_type: "technical_product_share",
-          user_requirements: document.getElementById("long_user_requirements").value.trim()
+          user_requirements: document.getElementById("long_user_requirements").value.trim(),
+          interview_id: activeInterviewId
         };
       }
 
@@ -2103,7 +2757,7 @@ INDEX_HTML = """<!doctype html>
 
       function updateGenerationChoice() {
         const pageCount = Math.max(1, Math.min(100, Number(longSlideCount.value) || 30));
-        longDeckButton.textContent = `生成 ${pageCount} 页 PPT`;
+        longDeckButton.textContent = `确认并生成 ${pageCount} 页 PPT`;
         if (pageCount <= 10) {
           generationStrategyHint.textContent = `${pageCount} 页将使用快速生成模式；系统会自动规划、质检并导出可编辑 PPTX。`;
         } else if (pageCount === 30) {
@@ -2122,6 +2776,336 @@ INDEX_HTML = """<!doctype html>
           throw new Error(body.detail || "请求失败");
         }
         return body;
+      }
+
+      function appendInterviewMessage(role, content) {
+        const message = document.createElement("div");
+        message.className = "conversation-message";
+        message.dataset.role = role;
+        const label = document.createElement("strong");
+        label.textContent = role === "user" ? "你" : "PPT Agent";
+        message.appendChild(label);
+        message.appendChild(document.createTextNode(content));
+        interviewMessages.appendChild(message);
+      }
+
+      function resetBriefSummary() {
+        briefTopic.textContent = "待确认";
+        briefAudience.textContent = "待确认";
+        briefSlideCount.textContent = "待确认";
+        briefFocus.textContent = "待确认";
+        briefVisual.textContent = "待确认";
+        briefStatus.textContent = "等待描述";
+        briefStatus.classList.remove("is-ready");
+        briefReadinessHint.textContent = "Agent 会在对话中实时整理，信息充分后开放最终确认。";
+      }
+
+      function applyBriefToGenerationForm(brief) {
+        if (brief.topic) document.getElementById("long_topic").value = brief.topic;
+        if (brief.audience) document.getElementById("long_audience").value = brief.audience;
+        if (brief.slide_count) longSlideCount.value = String(brief.slide_count);
+        if (brief.user_requirements) {
+          document.getElementById("long_user_requirements").value = brief.user_requirements;
+        }
+        saveLongDeckDraft();
+        updateGenerationChoice();
+      }
+
+      function renderBriefDraft(brief, isReady) {
+        briefTopic.textContent = brief.topic || "待确认";
+        briefAudience.textContent = brief.audience || "待确认";
+        briefSlideCount.textContent = brief.slide_count ? `${brief.slide_count} 页` : "待确认";
+        const focus = [brief.purpose, ...(brief.content_focus || [])].filter(Boolean);
+        briefFocus.textContent = focus.length ? focus.join(" · ") : "待确认";
+        briefVisual.textContent = brief.visual_direction || brief.tone || "待确认";
+        briefStatus.textContent = isReady ? "已理解" : "理解中";
+        briefStatus.classList.toggle("is-ready", isReady);
+        briefReadinessHint.textContent = isReady
+          ? "Agent 已经掌握生成所需信息；你可以直接开始，或继续用对话调整。"
+          : "Agent 正在补齐会影响内容、结构和视觉结果的关键决策。";
+        if (isReady) {
+          applyBriefToGenerationForm(brief);
+          projectTitle.textContent = brief.topic || "PPT 项目工作台";
+        }
+        longDeckForm.hidden = !manualBriefVisible;
+      }
+
+      function renderGenerationConfirmation(brief) {
+        confirmationTopic.textContent = brief.topic || "待确认";
+        confirmationAudience.textContent = brief.audience || "待确认";
+        confirmationSlideCount.textContent = brief.slide_count ? `${brief.slide_count} 页` : "待确认";
+        confirmationVisual.textContent = brief.visual_direction || brief.tone || "待确认";
+        confirmGenerationButton.textContent = `开始生成 ${brief.slide_count || ""} 页 PPT`.replace("  页", "");
+      }
+
+      function renderInterviewState(state, allowAutoStart = false) {
+        activeInterviewId = state.interview_id;
+        activeInterviewState = state;
+        localStorage.setItem(presentationInterviewStorageKey, state.interview_id);
+        interviewMessages.replaceChildren();
+        state.messages.forEach((message, index) => {
+          let content = message.content;
+          const isCurrentAssistant = index === state.messages.length - 1 && message.role === "assistant";
+          if (isCurrentAssistant && state.status === "clarifying" && state.decision.question) {
+            const suffix = `\n\n${state.decision.question}`;
+            if (content.endsWith(suffix)) content = content.slice(0, -suffix.length);
+          }
+          appendInterviewMessage(message.role, content);
+        });
+        interviewMessages.scrollTop = interviewMessages.scrollHeight;
+
+        const decision = state.decision;
+        const isReady = state.status === "ready";
+        renderBriefDraft(decision.brief, isReady);
+        interviewQuestionPanel.hidden = isReady;
+        interviewComposer.hidden = isReady;
+        generationConfirmation.hidden = !isReady;
+        interviewOptions.replaceChildren();
+        if (!isReady) {
+          interviewQuestion.textContent = decision.question;
+          interviewRound.textContent = `第 ${state.turn_count} 轮 · 问题数量动态调整`;
+          decision.options.forEach((option, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "interview-option";
+            const number = document.createElement("span");
+            number.className = "option-number";
+            number.textContent = String(index + 1);
+            const copy = document.createElement("span");
+            copy.className = "option-copy";
+            const label = document.createElement("strong");
+            label.textContent = option.label;
+            const description = document.createElement("span");
+            description.textContent = option.description || "选择这个方向";
+            copy.append(label, description);
+            const arrow = document.createElement("span");
+            arrow.className = "option-arrow";
+            arrow.textContent = "→";
+            button.append(number, copy, arrow);
+            button.addEventListener("click", () => {
+              submitInterviewMessage(option.label, option.option_id);
+            });
+            interviewOptions.appendChild(button);
+          });
+          interviewOptions.after(interviewComposer);
+          interviewInput.placeholder = "选择上面的建议，或者直接输入更符合你想法的回答。";
+          interviewHint.textContent = "每次只回答一个问题，Agent 会继续判断是否还需要追问。";
+          requestAnimationFrame(() => interviewInput.focus());
+        } else {
+          renderGenerationConfirmation(decision.brief);
+          interviewHint.textContent = "需求已整理完成。";
+          const canAutoStart = decision.auto_start || Number(decision.brief.slide_count) <= 10;
+          if (allowAutoStart && canAutoStart) {
+            generationConfirmation.hidden = true;
+            setTimeout(() => longDeckForm.requestSubmit(), 0);
+          }
+        }
+      }
+
+      function setInterviewBusy(isBusy) {
+        interviewRequestInFlight = isBusy;
+        sendInterviewButton.disabled = isBusy;
+        skipInterviewQuestionButton.disabled = isBusy;
+        interviewComposer.setAttribute("aria-busy", String(isBusy));
+        interviewOptions.querySelectorAll("button").forEach((button) => {
+          button.disabled = isBusy;
+        });
+        sendInterviewButton.textContent = isBusy ? "Agent 正在思考..." : "发送给 Agent";
+      }
+
+      async function submitInterviewMessage(message, selectedOptionId = null) {
+        const content = String(message || "").trim();
+        if (!content || interviewRequestInFlight) return;
+        appendInterviewMessage("user", content);
+        interviewInput.value = "";
+        const pendingMessage = document.createElement("div");
+        pendingMessage.className = "conversation-message is-pending";
+        pendingMessage.dataset.role = "assistant";
+        pendingMessage.innerHTML = "<strong>PPT Agent</strong>正在快速整理这一轮需求...";
+        interviewMessages.appendChild(pendingMessage);
+        interviewMessages.scrollTop = interviewMessages.scrollHeight;
+        setInterviewBusy(true);
+        interviewHint.textContent = "Agent 正在判断需求是否已经足够具体...";
+        try {
+          const url = activeInterviewId
+            ? `/api/presentation-interviews/${activeInterviewId}/messages`
+            : "/api/presentation-interviews";
+          const body = activeInterviewId
+            ? {message: content, selected_option_id: selectedOptionId}
+            : {message: content};
+          const state = await requestJson(url, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body)
+          });
+          renderInterviewState(state, true);
+        } catch (error) {
+          pendingMessage.remove();
+          appendInterviewMessage("assistant", `这轮需求分析没有完成：${error.message}。你可以直接重试。`);
+          if (!interviewInput.value.trim()) interviewInput.value = content;
+          interviewHint.textContent = "请求失败，没有丢失已经确认的内容。";
+        } finally {
+          setInterviewBusy(false);
+        }
+      }
+
+      function resetPresentationInterview() {
+        activeInterviewId = null;
+        activeInterviewState = null;
+        manualBriefVisible = false;
+        localStorage.removeItem(presentationInterviewStorageKey);
+        localStorage.removeItem(longDeckDraftStorageKey);
+        interviewMessages.replaceChildren();
+        appendInterviewMessage("assistant", "告诉我你想做什么演示。哪怕只有一个模糊想法也可以，我会一步一步帮你把内容、观众、页数和视觉方向问清楚。");
+        generationConfirmation.after(interviewComposer);
+        interviewQuestionPanel.hidden = true;
+        generationConfirmation.hidden = true;
+        interviewComposer.hidden = false;
+        interviewInput.value = "";
+        interviewInput.placeholder = "例如：我想做一份给大学生看的生态环境保护演示，但还不知道从哪里开始。";
+        interviewHint.textContent = "描述越具体，Agent 需要追问的问题越少。";
+        longDeckForm.reset();
+        longDeckForm.hidden = true;
+        resetBriefSummary();
+        updateGenerationChoice();
+      }
+
+      async function restorePresentationInterview() {
+        const interviewId = localStorage.getItem(presentationInterviewStorageKey);
+        if (!interviewId) return;
+        try {
+          const state = await requestJson(`/api/presentation-interviews/${interviewId}`);
+          renderInterviewState(state, false);
+        } catch (error) {
+          localStorage.removeItem(presentationInterviewStorageKey);
+        }
+      }
+
+      function historyStatusTone(status) {
+        if (status === "succeeded") return "success";
+        if (status === "failed_quality_gate" || status === "partial_failed_quality_gate") return "warning";
+        if (status === "failed" || status === "cancelled" || status === "partial_cancelled") return "danger";
+        return "neutral";
+      }
+
+      function formatHistoryDate(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "时间未知";
+        return new Intl.DateTimeFormat("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(date);
+      }
+
+      async function openPresentationFromHistory(item) {
+        const job = await requestJson(`/api/jobs/${item.job_id}`);
+        activeJobId = job.job_id;
+        rememberActiveJob(job);
+        jobId.textContent = job.job_id;
+        setStatus(job.status, job.accepted, job.error_message || "");
+        setProgress(job);
+        updatePptMasterPackage(job);
+        updatePptMasterExecution(job);
+        updatePptMasterVisualProject(job);
+        updatePptMasterRunner(job);
+        updatePptMasterOutput(job);
+        updateProductDashboard(job);
+        projectTitle.textContent = item.topic;
+        errorMessage.textContent = job.error_message ? jobErrorText(job) : "";
+        await Promise.all([loadArtifacts(job.job_id), updateSlidePreviews(job.job_id)]);
+        if (!isTerminalStatus(job.status)) {
+          setBusy(true);
+          schedulePoll(job.job_id, 1000);
+        }
+        document.getElementById("projectWorkspace").scrollIntoView({behavior: "smooth", block: "start"});
+      }
+
+      function renderPresentationHistory(items, total) {
+        historyList.replaceChildren();
+        historyEmpty.hidden = items.length > 0;
+        historySummary.textContent = total === 0
+          ? "本地 SQLite 中暂无匹配记录"
+          : `共 ${total} 条记录，当前显示最近 ${items.length} 条`;
+        for (const item of items) {
+          const row = document.createElement("article");
+          row.className = "history-row";
+
+          const main = document.createElement("div");
+          const title = document.createElement("h3");
+          title.className = "history-title";
+          title.textContent = item.topic;
+          const meta = document.createElement("p");
+          meta.className = "history-meta";
+          meta.textContent = [
+            item.slide_count ? `${item.slide_count} 页` : "页数未记录",
+            item.audience || "观众未记录",
+            formatHistoryDate(item.created_at)
+          ].join(" · ");
+          main.append(title, meta);
+          if (item.user_requirements) {
+            const requirements = document.createElement("p");
+            requirements.className = "history-requirements";
+            requirements.textContent = item.user_requirements;
+            main.appendChild(requirements);
+          }
+
+          const state = document.createElement("div");
+          state.className = "history-state";
+          const status = document.createElement("span");
+          status.className = "history-status";
+          status.dataset.tone = historyStatusTone(item.status);
+          status.textContent = statusText[item.status] || item.status;
+          const qa = document.createElement("span");
+          qa.className = "history-meta";
+          qa.textContent = item.qa_score == null ? "QA 未评估" : `QA ${item.qa_score} 分`;
+          state.append(status, qa);
+
+          const actions = document.createElement("div");
+          actions.className = "history-actions";
+          const openButton = document.createElement("button");
+          openButton.type = "button";
+          openButton.className = "secondary-button";
+          openButton.textContent = "打开任务";
+          openButton.addEventListener("click", () => {
+            openPresentationFromHistory(item).catch((error) => {
+              historySummary.textContent = `打开任务失败：${error.message}`;
+            });
+          });
+          actions.appendChild(openButton);
+          if (item.pptx_download_url) {
+            const download = document.createElement("a");
+            download.className = "button-link";
+            download.href = item.pptx_download_url;
+            download.textContent = "下载 PPTX";
+            actions.appendChild(download);
+          }
+
+          row.append(main, state, actions);
+          historyList.appendChild(row);
+        }
+      }
+
+      async function loadPresentationHistory() {
+        refreshHistoryButton.disabled = true;
+        historySummary.textContent = "正在读取本地历史记录...";
+        const params = new URLSearchParams({limit: "50"});
+        const query = historySearch.value.trim();
+        const status = historyStatusFilter.value;
+        if (query) params.set("query", query);
+        if (status) params.set("status", status);
+        try {
+          const body = await requestJson(`/api/presentations?${params.toString()}`);
+          renderPresentationHistory(body.items, body.total);
+        } catch (error) {
+          historyList.replaceChildren();
+          historyEmpty.hidden = true;
+          historySummary.textContent = `历史记录读取失败：${error.message}`;
+        } finally {
+          refreshHistoryButton.disabled = false;
+        }
       }
 
       async function loadArtifacts(id) {
@@ -2146,16 +3130,11 @@ INDEX_HTML = """<!doctype html>
       }
 
       async function loadLatestLongDeckJob() {
-        const responses = await Promise.all([
-          fetch("/api/jobs/latest?job_type=long_deck"),
-          fetch("/api/jobs/latest?job_type=long_deck_v2")
-        ]);
-        const jobs = [];
-        for (const response of responses) {
-          if (response.ok) jobs.push(await response.json());
-        }
-        jobs.sort((left, right) => String(right.created_at || "").localeCompare(String(left.created_at || "")));
-        return jobs[0] || null;
+        const history = await requestJson("/api/presentations?limit=20");
+        const latest = history.items.find((item) => (
+          item.job_type === "long_deck" || item.job_type === "long_deck_v2"
+        ));
+        return latest ? requestJson(`/api/jobs/${latest.job_id}`) : null;
       }
 
       async function pollJob(id) {
@@ -2183,6 +3162,7 @@ INDEX_HTML = """<!doctype html>
             rememberActiveJob(job);
           }
           await loadArtifacts(id);
+          await loadPresentationHistory();
           return true;
         }
         return false;
@@ -2237,6 +3217,7 @@ INDEX_HTML = """<!doctype html>
           rememberActiveJob(job);
           jobId.textContent = job.job_id;
           setStatus(job.status, job.accepted, job.error_message || "");
+          await loadPresentationHistory();
           const finished = await pollJob(job.job_id);
           if (!finished) {
             schedulePoll(job.job_id, 1000);
@@ -2413,6 +3394,58 @@ INDEX_HTML = """<!doctype html>
         await submitJob(`/api/long-deck-jobs/${activeJobId}/resume`, {});
       });
 
+      interviewComposer.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await submitInterviewMessage(interviewInput.value);
+      });
+
+      skipInterviewQuestionButton.addEventListener("click", async () => {
+        await submitInterviewMessage(
+          "这个问题我暂时不确定，请根据已有信息给出合理建议并继续。",
+          "skip"
+        );
+      });
+
+      confirmGenerationButton.addEventListener("click", () => {
+        longDeckForm.requestSubmit();
+      });
+
+      continueInterviewButton.addEventListener("click", () => {
+        generationConfirmation.hidden = true;
+        interviewComposer.hidden = false;
+        generationConfirmation.after(interviewComposer);
+        interviewInput.placeholder = "直接告诉 Agent 你想修改什么，例如：改成 15 页，面向小学生。";
+        interviewHint.textContent = "继续用自然语言调整，Agent 会更新理解并再次准备生成。";
+        interviewInput.focus();
+      });
+
+      manualBriefButton.addEventListener("click", () => {
+        manualBriefVisible = true;
+        longDeckForm.hidden = false;
+        briefStatus.textContent = activeInterviewState?.status === "ready" ? "已理解" : "手动调整";
+        briefStatus.classList.toggle("is-ready", activeInterviewState?.status === "ready");
+        briefReadinessHint.textContent = "高级用户可以在这里直接修改 Agent 已整理的信息。";
+        longDeckForm.scrollIntoView({behavior: "smooth", block: "nearest"});
+      });
+
+      newInterviewButton.addEventListener("click", () => {
+        resetPresentationInterview();
+        interviewInput.focus();
+      });
+
+      refreshHistoryButton.addEventListener("click", () => {
+        loadPresentationHistory();
+      });
+
+      historyStatusFilter.addEventListener("change", () => {
+        loadPresentationHistory();
+      });
+
+      historySearch.addEventListener("input", () => {
+        if (historySearchTimer) clearTimeout(historySearchTimer);
+        historySearchTimer = setTimeout(loadPresentationHistory, 250);
+      });
+
       document.querySelectorAll("[data-scroll-target]").forEach((control) => {
         control.addEventListener("click", () => {
           const target = document.getElementById(control.dataset.scrollTarget);
@@ -2439,6 +3472,8 @@ INDEX_HTML = """<!doctype html>
         updateGenerationChoice();
         projectTitle.textContent = document.getElementById("long_topic").value.trim() || "PPT 项目工作台";
         setInterval(renderElapsedClock, 250);
+        loadPresentationHistory();
+        restorePresentationInterview();
         restoreLastLongDeckJob().catch((error) => {
           errorMessage.textContent = error.message;
         });
@@ -2461,6 +3496,7 @@ class CreateJobRequest(StrictModel):
     min_qa_score: int = Field(default=80, ge=0, le=100)
     max_attempts: int = Field(default=2, ge=1)
     patch_path: str | None = Field(default=None, min_length=1)
+    interview_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class CreateLongDeckJobRequest(StrictModel):
@@ -2472,6 +3508,7 @@ class CreateLongDeckJobRequest(StrictModel):
     user_requirements: str = Field(..., min_length=1)
     batch_size: int = Field(default=2, ge=1, le=10)
     max_batch_attempts: int = Field(default=1, ge=1, le=3)
+    interview_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class CreateJobResponse(StrictModel):
@@ -2580,10 +3617,57 @@ class ArtifactListResponse(StrictModel):
     artifacts: list[ArtifactResponse]
 
 
+class PresentationHistoryItem(StrictModel):
+    job_id: str
+    status: JobStatus
+    job_type: str | None = None
+    topic: str
+    audience: str | None = None
+    user_requirements: str | None = None
+    slide_count: int | None = Field(default=None, ge=1, le=100)
+    created_at: str
+    updated_at: str
+    accepted: bool | None = None
+    qa_score: int | None = Field(default=None, ge=0, le=100)
+    pptx_artifact_id: str | None = None
+    pptx_artifact_name: str | None = None
+    pptx_download_url: str | None = None
+
+
+class PresentationHistoryResponse(StrictModel):
+    items: list[PresentationHistoryItem]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=100)
+    offset: int = Field(..., ge=0)
+
+
+class StartPresentationInterviewRequest(StrictModel):
+    message: str = Field(..., min_length=1, max_length=6000)
+
+
+class ContinuePresentationInterviewRequest(StrictModel):
+    message: str = Field(..., min_length=1, max_length=6000)
+    selected_option_id: str | None = Field(default=None, min_length=1, max_length=40)
+
+
 def _create_chat_model():
     from langchain_openai import ChatOpenAI
 
     kwargs = {"model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL)}
+    if os.getenv("OPENAI_BASE_URL"):
+        kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
+    return ChatOpenAI(**kwargs)
+
+
+def _create_interview_chat_model():
+    from langchain_openai import ChatOpenAI
+
+    kwargs = {
+        "model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL),
+        "reasoning_effort": os.getenv("PPT_AGENT_INTERVIEW_REASONING_EFFORT", "low"),
+        "max_completion_tokens": _env_int("PPT_AGENT_INTERVIEW_MAX_TOKENS", 1800),
+        "max_retries": 1,
+    }
     if os.getenv("OPENAI_BASE_URL"):
         kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
     return ChatOpenAI(**kwargs)
@@ -2604,6 +3688,60 @@ def _artifact_response(artifact: ArtifactRecord) -> ArtifactResponse:
         kind=artifact.kind,
         download_url=f"/api/artifacts/{artifact.artifact_id}",
     )
+
+
+def _presentation_history_item(record: PresentationHistoryRecord) -> PresentationHistoryItem:
+    pptx_available = record.pptx_path is not None and record.pptx_path.is_file()
+    return PresentationHistoryItem(
+        job_id=record.job_id,
+        status=record.status,
+        job_type=record.job_type,
+        topic=record.topic or f"历史演示 {record.job_id[:8]}",
+        audience=record.audience or None,
+        user_requirements=record.user_requirements or None,
+        slide_count=record.slide_count,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        accepted=record.accepted,
+        qa_score=record.qa_score,
+        pptx_artifact_id=record.pptx_artifact_id if pptx_available else None,
+        pptx_artifact_name=record.pptx_artifact_name if pptx_available else None,
+        pptx_download_url=(
+            f"/api/artifacts/{record.pptx_artifact_id}"
+            if pptx_available and record.pptx_artifact_id is not None
+            else None
+        ),
+    )
+
+
+def _presentation_interview_state_from_record(record) -> PresentationInterviewState:
+    return PresentationInterviewState(
+        interview_id=record.interview_id,
+        status=record.status,
+        messages=[InterviewMessage.model_validate(item) for item in json.loads(record.messages_json)],
+        decision=PresentationInterviewDecision.model_validate_json(record.decision_json),
+        turn_count=record.turn_count,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _save_presentation_interview_state(
+    store: JobStore,
+    *,
+    interview_id: str,
+    messages: list[InterviewMessage],
+    decision: PresentationInterviewDecision,
+    turn_count: int,
+) -> PresentationInterviewState:
+    record = store.save_presentation_interview(
+        interview_id=interview_id,
+        status=decision.status,
+        messages_json=json.dumps([message.model_dump() for message in messages], ensure_ascii=False),
+        decision_json=decision.model_dump_json(),
+        turn_count=turn_count,
+    )
+    return _presentation_interview_state_from_record(record)
 
 
 def _read_ppt_master_manifest(path: Path) -> dict[str, Any]:
@@ -3141,6 +4279,131 @@ def _ppt_master_preview_slides(job_dir: Path) -> list[Path]:
     return candidates[0][1]
 
 
+def _select_visual_highlights(
+    scored_pages: list[tuple[int, float, str]],
+    *,
+    count: int = 3,
+) -> list[int]:
+    if len(scored_pages) <= count:
+        return sorted(page_number for page_number, _, _ in scored_pages)
+
+    ranked = sorted(scored_pages, key=lambda item: (-item[1], item[0]))
+    page_span = max(page_number for page_number, _, _ in ranked) - min(
+        page_number for page_number, _, _ in ranked
+    )
+    minimum_gap = max(2, page_span // 12)
+    selected = [ranked[0]]
+    remaining = ranked[1:]
+    while remaining and len(selected) < count:
+        used_signatures = {item[2] for item in selected}
+
+        def adjusted_score(candidate: tuple[int, float, str]) -> tuple[float, float, int]:
+            page_number, visual_score, signature = candidate
+            nearest_distance = min(abs(page_number - chosen[0]) for chosen in selected)
+            repeat_penalty = 8.0 if signature in used_signatures else 0.0
+            proximity_penalty = max(0, minimum_gap - nearest_distance) * 2.0
+            return visual_score - repeat_penalty - proximity_penalty, visual_score, -page_number
+
+        chosen = max(remaining, key=adjusted_score)
+        selected.append(chosen)
+        remaining.remove(chosen)
+
+    return sorted(page_number for page_number, _, _ in selected)
+
+
+def _v2_page_visual_score(page: V2PageDesign) -> tuple[float, str]:
+    role_score = {
+        "cover": -8.0,
+        "toc": -3.0,
+        "section_divider": 1.0,
+        "content": 5.0,
+        "quote": 5.0,
+        "stats": 12.0,
+        "comparison": 11.0,
+        "timeline": 11.0,
+        "closing": -8.0,
+    }.get(page.role, 0.0)
+    type_weights = {
+        "chart": 12.0,
+        "table": 9.0,
+        "image": 8.0,
+        "icon": 2.5,
+        "shape": 1.0,
+        "line": 0.5,
+        "text": 0.0,
+    }
+    element_types = [getattr(element, "type", "unknown") for element in page.elements]
+    score = role_score + sum(type_weights.get(element_type, 0.0) for element_type in element_types)
+    score += len(set(element_types)) * 1.5
+    if page.background_gradient is not None:
+        score += 2.0
+    if 4 <= len(page.elements) <= 18:
+        score += 2.0
+    elif len(page.elements) > 24:
+        score -= (len(page.elements) - 24) * 0.4
+
+    text_length = sum(
+        len(getattr(element, "text", ""))
+        for element in page.elements
+        if getattr(element, "type", "") == "text"
+    )
+    if text_length > 650:
+        score -= min(10.0, (text_length - 650) / 80)
+    signature = page.role if page.role != "content" else "+".join(sorted(set(element_types)))
+    return score, signature
+
+
+@lru_cache(maxsize=128)
+def _cached_v2_visual_highlights(job_dir_text: str, update_token: int) -> tuple[int, ...]:
+    del update_token
+    job_dir = Path(job_dir_text)
+    design_path = job_dir / "generated_long_deck_v2_design.json"
+    pages: list[V2PageDesign] = []
+    if design_path.is_file():
+        try:
+            pages = V2DeckDesign.model_validate_json(design_path.read_text(encoding="utf-8")).pages
+        except (OSError, ValueError):
+            return ()
+    else:
+        pages_dir = job_dir / "checkpoints" / "pages"
+        for path in sorted(pages_dir.glob("page_*.json"), key=_natural_slide_key):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                pages.append(V2PageDesign.model_validate(payload.get("page", payload)))
+            except (OSError, ValueError, TypeError):
+                continue
+
+    scored = []
+    for page in pages:
+        score, signature = _v2_page_visual_score(page)
+        scored.append((page.page_number, score, signature))
+    return tuple(_select_visual_highlights(scored))
+
+
+@lru_cache(maxsize=128)
+def _cached_svg_visual_highlights(job_dir_text: str, update_token: int) -> tuple[int, ...]:
+    del update_token
+    slides = _ppt_master_preview_slides(Path(job_dir_text))
+    scored: list[tuple[int, float, str]] = []
+    for index, path in enumerate(slides, start=1):
+        try:
+            svg = path.read_text(encoding="utf-8", errors="replace").lower()
+        except OSError:
+            continue
+        graphic_count = sum(svg.count(f"<{tag}") for tag in ("path", "rect", "circle", "ellipse", "polygon", "line"))
+        text_count = svg.count("<text")
+        image_count = svg.count("<image")
+        gradient_count = svg.count("gradient")
+        color_count = len(set(re.findall(r'(?:fill|stroke)=["\'](#[0-9a-f]{3,8}|rgb\([^)]*\))', svg)))
+        score = min(graphic_count, 40) * 0.35 + min(text_count, 14) * 0.25
+        score += image_count * 4.0 + min(gradient_count, 4) * 1.5 + min(color_count, 10) * 0.6
+        if index in {1, len(slides)}:
+            score -= 6.0
+        density = "image" if image_count else ("diagram" if graphic_count >= 10 else "editorial")
+        scored.append((index, score, density))
+    return tuple(_select_visual_highlights(scored))
+
+
 def _v2_preview_available_slide_numbers(job_dir: Path) -> tuple[list[int], int]:
     design_path = job_dir / "generated_long_deck_v2_design.json"
     if design_path.is_file():
@@ -3353,6 +4616,74 @@ def _load_long_deck_request_artifact(output_dir: Path) -> CreateLongDeckJobReque
             "Long deck request metadata is missing; this job cannot be resumed from the Web UI."
         )
     return CreateLongDeckJobRequest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _save_presentation_request_snapshot(
+    store: JobStore,
+    job_id: str,
+    payload: CreateJobRequest | CreateLongDeckJobRequest,
+    *,
+    resumed_from_job_id: str | None = None,
+) -> None:
+    slide_count = payload.slides if isinstance(payload, CreateJobRequest) else payload.slide_count
+    store.save_presentation_request(
+        job_id,
+        topic=payload.topic,
+        audience=payload.audience,
+        user_requirements=payload.user_requirements or "",
+        slide_count=slide_count,
+        interview_id=payload.interview_id,
+        resumed_from_job_id=resumed_from_job_id,
+    )
+
+
+def _backfill_presentation_request_history(store: JobStore, jobs_root: Path) -> None:
+    """Import metadata from existing job artifacts without changing those artifacts."""
+    for job_id in store.job_ids_missing_presentation_request():
+        job_dir = jobs_root / job_id
+        try:
+            long_request_path = _long_deck_request_path(job_dir)
+            if long_request_path.is_file():
+                payload = CreateLongDeckJobRequest.model_validate_json(
+                    long_request_path.read_text(encoding="utf-8")
+                )
+                _save_presentation_request_snapshot(store, job_id, payload)
+                continue
+
+            brief_path = job_dir / "generated_deck_brief.json"
+            if brief_path.is_file():
+                brief_document = json.loads(brief_path.read_text(encoding="utf-8"))
+                brief = brief_document.get("brief", brief_document)
+                if isinstance(brief, dict):
+                    topic = brief.get("topic")
+                    slide_count = brief.get("slide_count")
+                    if isinstance(topic, str) and topic.strip() and isinstance(slide_count, int):
+                        store.save_presentation_request(
+                            job_id,
+                            topic=topic.strip(),
+                            audience=str(brief.get("audience") or ""),
+                            user_requirements=str(
+                                brief.get("user_requirements_raw") or brief.get("content_focus") or ""
+                            ),
+                            slide_count=slide_count,
+                        )
+                        continue
+
+            deck_ir_path = job_dir / "generated_deck_ir.json"
+            if deck_ir_path.is_file():
+                deck_ir = json.loads(deck_ir_path.read_text(encoding="utf-8"))
+                title = deck_ir.get("title")
+                slides = deck_ir.get("slides")
+                if isinstance(title, str) and title.strip() and isinstance(slides, list) and slides:
+                    store.save_presentation_request(
+                        job_id,
+                        topic=title.strip(),
+                        audience="",
+                        user_requirements="",
+                        slide_count=min(len(slides), 100),
+                    )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            logger.warning("presentation_history_backfill_skipped job_id=%s", job_id)
 
 
 def _read_quality_gate_status(path: Path | None, *, fallback: str | None = None) -> str | None:
@@ -3819,6 +5150,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
     app.state.job_store = store or JobStore(root / "jobs.sqlite3")
     app.state.jobs_root = jobs_root
+    _backfill_presentation_request_history(app.state.job_store, jobs_root)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
@@ -3827,6 +5159,103 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post(
+        "/api/presentation-interviews",
+        response_model=PresentationInterviewState,
+        status_code=201,
+    )
+    def start_presentation_interview(
+        payload: StartPresentationInterviewRequest,
+    ) -> PresentationInterviewState:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+        try:
+            model = _create_interview_chat_model()
+            user_message = InterviewMessage(role="user", content=payload.message.strip())
+            decision = run_requirements_interview_turn(
+                model,
+                [user_message],
+                timeout_seconds=LLM_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(status_code=502, detail=f"Could not analyze presentation requirements: {detail}") from exc
+
+        assistant_content = decision.assistant_message
+        if decision.question:
+            assistant_content = f"{assistant_content}\n\n{decision.question}"
+        messages = [
+            user_message,
+            InterviewMessage(role="assistant", content=assistant_content),
+        ]
+        return _save_presentation_interview_state(
+            app.state.job_store,
+            interview_id=uuid.uuid4().hex,
+            messages=messages,
+            decision=decision,
+            turn_count=1,
+        )
+
+    @app.get(
+        "/api/presentation-interviews/{interview_id}",
+        response_model=PresentationInterviewState,
+    )
+    def get_presentation_interview(interview_id: str) -> PresentationInterviewState:
+        record = app.state.job_store.get_presentation_interview(interview_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Presentation interview not found.")
+        return _presentation_interview_state_from_record(record)
+
+    @app.post(
+        "/api/presentation-interviews/{interview_id}/messages",
+        response_model=PresentationInterviewState,
+    )
+    def continue_presentation_interview(
+        interview_id: str,
+        payload: ContinuePresentationInterviewRequest,
+    ) -> PresentationInterviewState:
+        record = app.state.job_store.get_presentation_interview(interview_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Presentation interview not found.")
+        state = _presentation_interview_state_from_record(record)
+        if state.turn_count >= 20:
+            raise HTTPException(status_code=409, detail="Presentation interview reached its safety turn limit.")
+        if not os.getenv("OPENAI_API_KEY"):
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+
+        user_message = InterviewMessage(
+            role="user",
+            content=payload.message.strip(),
+            selected_option_id=payload.selected_option_id,
+        )
+        model_messages = [*state.messages, user_message]
+        try:
+            model = _create_interview_chat_model()
+            decision = run_requirements_interview_turn(
+                model,
+                model_messages,
+                previous_brief=state.decision.brief,
+                timeout_seconds=LLM_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(status_code=502, detail=f"Could not continue presentation interview: {detail}") from exc
+
+        assistant_content = decision.assistant_message
+        if decision.question:
+            assistant_content = f"{assistant_content}\n\n{decision.question}"
+        persisted_messages = [
+            *model_messages,
+            InterviewMessage(role="assistant", content=assistant_content),
+        ]
+        return _save_presentation_interview_state(
+            app.state.job_store,
+            interview_id=interview_id,
+            messages=persisted_messages,
+            decision=decision,
+            turn_count=state.turn_count + 1,
+        )
 
     @app.post("/api/jobs", response_model=CreateJobResponse, status_code=202)
     def create_job(payload: CreateJobRequest, background_tasks: BackgroundTasks) -> CreateJobResponse:
@@ -3840,6 +5269,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
 
         job = app.state.job_store.create_job(job_type="short_deck")
+        _save_presentation_request_snapshot(app.state.job_store, job.job_id, payload)
         model_name = _model_name(model)
 
         def create_stage_observer(stage_name: str, event: StageEvent, metadata: dict) -> None:
@@ -3875,6 +5305,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
                 ) from exc
 
             job = app.state.job_store.create_job(job_type="long_deck_v2")
+            _save_presentation_request_snapshot(app.state.job_store, job.job_id, payload)
             app.state.job_store.update_long_deck_progress(
                 job.job_id,
                 current_stage="v2_intake",
@@ -3902,6 +5333,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             raise HTTPException(status_code=503, detail=f"Could not initialize OpenAI chat model: {detail}") from exc
 
         job = app.state.job_store.create_job(job_type="long_deck")
+        _save_presentation_request_snapshot(app.state.job_store, job.job_id, payload)
         app.state.job_store.update_progress(job.job_id, current_stage="preparing_long_deck_plan")
         background_tasks.add_task(
             _run_long_deck_job,
@@ -3931,6 +5363,12 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
         resume_job_type = "long_deck_v2" if payload.slide_count != 30 else "long_deck"
         resume_job = app.state.job_store.create_job(job_type=resume_job_type)
+        _save_presentation_request_snapshot(
+            app.state.job_store,
+            resume_job.job_id,
+            payload,
+            resumed_from_job_id=job_id,
+        )
         if payload.slide_count != 30:
             app.state.job_store.update_long_deck_progress(
                 resume_job.job_id,
@@ -4092,6 +5530,26 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         job = _expire_stale_job(app.state.job_store, job)
         return _job_response(app.state.job_store, app.state.jobs_root, job)
 
+    @app.get("/api/presentations", response_model=PresentationHistoryResponse)
+    def list_presentation_history(
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        status: JobStatus | None = None,
+        query: str | None = Query(default=None, max_length=200),
+    ) -> PresentationHistoryResponse:
+        records, total = app.state.job_store.list_presentation_history(
+            limit=limit,
+            offset=offset,
+            status=status,
+            query=query,
+        )
+        return PresentationHistoryResponse(
+            items=[_presentation_history_item(record) for record in records],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def get_job(job_id: str) -> JobResponse:
         job = app.state.job_store.get_job(job_id)
@@ -4109,17 +5567,21 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job.job_type == "long_deck_v2":
             numbers, update_token = _v2_preview_available_slide_numbers(job_dir)
             preview_kind = "v2_html" if numbers else "none"
+            highlights = list(_cached_v2_visual_highlights(str(job_dir.resolve()), update_token))
         elif job.job_type == "long_deck":
             slides = _ppt_master_preview_slides(job_dir)
             numbers = list(range(1, len(slides) + 1))
             update_token = max((path.stat().st_mtime_ns for path in slides), default=0)
             preview_kind = "ppt_master_svg" if numbers else "none"
+            highlights = list(_cached_svg_visual_highlights(str(job_dir.resolve()), update_token))
         else:
             numbers = []
             update_token = 0
             preview_kind = "none"
+            highlights = []
         return {
             "available_slide_numbers": numbers,
+            "highlight_slide_numbers": highlights,
             "total_requested": job.total_batches or len(numbers),
             "preview_kind": preview_kind,
             "update_token": str(update_token),

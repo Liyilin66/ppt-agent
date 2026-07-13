@@ -148,7 +148,7 @@ def provider_config_from_env() -> ProviderConfig:
         raise ProviderError(
             f"Unsupported PPT_AGENT_PROVIDER '{protocol}'; use 'openai' or 'anthropic'."
         )
-    default_model = "gpt-4o" if protocol == "openai" else "claude-sonnet-5"
+    default_model = "gpt-5.5" if protocol == "openai" else "claude-sonnet-5"
     model = (
         os.environ.get("PPT_AGENT_MODEL")
         or os.environ.get("OPENAI_MODEL", default_model if protocol == "openai" else "")

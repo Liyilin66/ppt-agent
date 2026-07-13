@@ -55,6 +55,44 @@ class ArtifactRecord(StrictModel):
     created_at: str
 
 
+class PresentationRequestRecord(StrictModel):
+    job_id: str = Field(..., min_length=1)
+    topic: str = Field(..., min_length=1)
+    audience: str = ""
+    user_requirements: str = ""
+    slide_count: int = Field(..., ge=1, le=100)
+    interview_id: str | None = None
+    resumed_from_job_id: str | None = None
+    created_at: str
+
+
+class PresentationHistoryRecord(StrictModel):
+    job_id: str = Field(..., min_length=1)
+    status: JobStatus
+    job_type: str | None = None
+    topic: str | None = None
+    audience: str | None = None
+    user_requirements: str | None = None
+    slide_count: int | None = Field(default=None, ge=1, le=100)
+    created_at: str
+    updated_at: str
+    accepted: bool | None = None
+    qa_score: int | None = Field(default=None, ge=0, le=100)
+    pptx_artifact_id: str | None = None
+    pptx_artifact_name: str | None = None
+    pptx_path: Path | None = None
+
+
+class PresentationInterviewRecord(StrictModel):
+    interview_id: str = Field(..., min_length=1)
+    status: Literal["clarifying", "ready"]
+    messages_json: str = Field(..., min_length=1)
+    decision_json: str = Field(..., min_length=1)
+    turn_count: int = Field(..., ge=1, le=20)
+    created_at: str
+    updated_at: str
+
+
 class JobStore:
     """Small SQLite-backed store with one connection per operation."""
 
@@ -109,12 +147,51 @@ class JobStore:
                     )
                     """
                 )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS presentation_requests (
+                        job_id TEXT PRIMARY KEY,
+                        topic TEXT NOT NULL,
+                        audience TEXT NOT NULL,
+                        user_requirements TEXT NOT NULL,
+                        slide_count INTEGER NOT NULL,
+                        interview_id TEXT,
+                        resumed_from_job_id TEXT,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS presentation_interviews (
+                        interview_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        messages_json TEXT NOT NULL,
+                        decision_json TEXT NOT NULL,
+                        turn_count INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id)")
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_presentation_requests_created_at "
+                    "ON presentation_requests(created_at DESC)"
+                )
                 self._ensure_job_columns(connection)
+                self._ensure_presentation_request_columns(connection)
             self._initialized = True
 
     def _ensure_job_columns(self, connection: sqlite3.Connection) -> None:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "error_message" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN error_message TEXT")
+        if "accepted" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN accepted INTEGER")
+        if "qa_score" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN qa_score INTEGER")
         if "current_stage" not in columns:
             connection.execute("ALTER TABLE jobs ADD COLUMN current_stage TEXT")
         if "job_type" not in columns:
@@ -129,6 +206,13 @@ class JobStore:
             connection.execute("ALTER TABLE jobs ADD COLUMN failed_batches INTEGER DEFAULT 0")
         if "current_batch" not in columns:
             connection.execute("ALTER TABLE jobs ADD COLUMN current_batch TEXT")
+
+    def _ensure_presentation_request_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(presentation_requests)").fetchall()
+        }
+        if "interview_id" not in columns:
+            connection.execute("ALTER TABLE presentation_requests ADD COLUMN interview_id TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         self._ensure_schema()
@@ -257,6 +341,254 @@ class JobStore:
             completed_batches=row["completed_batches"] or 0,
             failed_batches=row["failed_batches"] or 0,
             current_batch=row["current_batch"],
+        )
+
+    def save_presentation_request(
+        self,
+        job_id: str,
+        *,
+        topic: str,
+        audience: str,
+        user_requirements: str,
+        slide_count: int,
+        interview_id: str | None = None,
+        resumed_from_job_id: str | None = None,
+    ) -> PresentationRequestRecord:
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO presentation_requests (
+                    job_id,
+                    topic,
+                    audience,
+                    user_requirements,
+                    slide_count,
+                    interview_id,
+                    resumed_from_job_id,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(job_id) DO UPDATE SET
+                    topic = excluded.topic,
+                    audience = excluded.audience,
+                    user_requirements = excluded.user_requirements,
+                    slide_count = excluded.slide_count,
+                    interview_id = excluded.interview_id,
+                    resumed_from_job_id = excluded.resumed_from_job_id
+                """,
+                (
+                    job_id,
+                    topic,
+                    audience,
+                    user_requirements,
+                    slide_count,
+                    interview_id,
+                    resumed_from_job_id,
+                    now,
+                ),
+            )
+
+        request = self.get_presentation_request(job_id)
+        if request is None:
+            raise RuntimeError(f"Presentation request for job '{job_id}' could not be loaded.")
+        return request
+
+    def get_presentation_request(self, job_id: str) -> PresentationRequestRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    job_id,
+                    topic,
+                    audience,
+                    user_requirements,
+                    slide_count,
+                    interview_id,
+                    resumed_from_job_id,
+                    created_at
+                FROM presentation_requests
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return PresentationRequestRecord(
+            job_id=row["job_id"],
+            topic=row["topic"],
+            audience=row["audience"],
+            user_requirements=row["user_requirements"],
+            slide_count=row["slide_count"],
+            interview_id=row["interview_id"],
+            resumed_from_job_id=row["resumed_from_job_id"],
+            created_at=row["created_at"],
+        )
+
+    def job_ids_missing_presentation_request(self) -> list[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT jobs.job_id
+                FROM jobs
+                LEFT JOIN presentation_requests
+                    ON presentation_requests.job_id = jobs.job_id
+                WHERE presentation_requests.job_id IS NULL
+                ORDER BY jobs.created_at DESC
+                """
+            ).fetchall()
+        return [row["job_id"] for row in rows]
+
+    def list_presentation_history(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: JobStatus | None = None,
+        query: str | None = None,
+    ) -> tuple[list[PresentationHistoryRecord], int]:
+        conditions: list[str] = []
+        params: list[str | int] = []
+        if status is not None:
+            conditions.append("jobs.status = ?")
+            params.append(status)
+        normalized_query = (query or "").strip().lower()
+        if normalized_query:
+            pattern = f"%{normalized_query}%"
+            conditions.append(
+                "(LOWER(COALESCE(presentation_requests.topic, '')) LIKE ? "
+                "OR LOWER(COALESCE(presentation_requests.audience, '')) LIKE ? "
+                "OR LOWER(jobs.job_id) LIKE ?)"
+            )
+            params.extend([pattern, pattern, pattern])
+        where_sql = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        joins = """
+            FROM jobs
+            LEFT JOIN presentation_requests
+                ON presentation_requests.job_id = jobs.job_id
+        """
+        with self._connect() as connection:
+            total = connection.execute(
+                f"SELECT COUNT(*) {joins}{where_sql}",
+                params,
+            ).fetchone()[0]
+            rows = connection.execute(
+                f"""
+                SELECT
+                    jobs.job_id,
+                    jobs.status,
+                    jobs.job_type,
+                    jobs.created_at,
+                    jobs.updated_at,
+                    jobs.accepted,
+                    jobs.qa_score,
+                    presentation_requests.topic,
+                    presentation_requests.audience,
+                    presentation_requests.user_requirements,
+                    presentation_requests.slide_count,
+                    final_artifact.artifact_id AS pptx_artifact_id,
+                    final_artifact.name AS pptx_artifact_name,
+                    final_artifact.path AS pptx_path
+                {joins}
+                LEFT JOIN artifacts AS final_artifact
+                    ON final_artifact.artifact_id = (
+                        SELECT candidate.artifact_id
+                        FROM artifacts AS candidate
+                        WHERE candidate.job_id = jobs.job_id
+                            AND candidate.kind = 'pptx'
+                        ORDER BY
+                            CASE candidate.name
+                                WHEN 'ppt_master_generated_pptx' THEN 0
+                                WHEN 'generated_long_deck_v2' THEN 1
+                                WHEN 'generated_long_deck' THEN 2
+                                WHEN 'generated_pptx' THEN 3
+                                WHEN 'generated_deck' THEN 4
+                                ELSE 10
+                            END,
+                            candidate.created_at DESC
+                        LIMIT 1
+                    )
+                {where_sql}
+                ORDER BY jobs.created_at DESC, jobs.updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                [*params, limit, offset],
+            ).fetchall()
+
+        return [self._presentation_history_from_row(row) for row in rows], int(total)
+
+    def save_presentation_interview(
+        self,
+        *,
+        interview_id: str,
+        status: Literal["clarifying", "ready"],
+        messages_json: str,
+        decision_json: str,
+        turn_count: int,
+    ) -> PresentationInterviewRecord:
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO presentation_interviews (
+                    interview_id,
+                    status,
+                    messages_json,
+                    decision_json,
+                    turn_count,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(interview_id) DO UPDATE SET
+                    status = excluded.status,
+                    messages_json = excluded.messages_json,
+                    decision_json = excluded.decision_json,
+                    turn_count = excluded.turn_count,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    interview_id,
+                    status,
+                    messages_json,
+                    decision_json,
+                    turn_count,
+                    now,
+                    now,
+                ),
+            )
+        interview = self.get_presentation_interview(interview_id)
+        if interview is None:
+            raise RuntimeError(f"Presentation interview '{interview_id}' could not be loaded.")
+        return interview
+
+    def get_presentation_interview(self, interview_id: str) -> PresentationInterviewRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    interview_id,
+                    status,
+                    messages_json,
+                    decision_json,
+                    turn_count,
+                    created_at,
+                    updated_at
+                FROM presentation_interviews
+                WHERE interview_id = ?
+                """,
+                (interview_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return PresentationInterviewRecord(
+            interview_id=row["interview_id"],
+            status=row["status"],
+            messages_json=row["messages_json"],
+            decision_json=row["decision_json"],
+            turn_count=row["turn_count"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )
 
     def update_job(
@@ -404,6 +736,24 @@ class JobStore:
             kind=row["kind"],
             path=Path(row["path"]),
             created_at=row["created_at"],
+        )
+
+    def _presentation_history_from_row(self, row: sqlite3.Row) -> PresentationHistoryRecord:
+        return PresentationHistoryRecord(
+            job_id=row["job_id"],
+            status=row["status"],
+            job_type=row["job_type"],
+            topic=row["topic"],
+            audience=row["audience"],
+            user_requirements=row["user_requirements"],
+            slide_count=row["slide_count"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            accepted=None if row["accepted"] is None else bool(row["accepted"]),
+            qa_score=row["qa_score"],
+            pptx_artifact_id=row["pptx_artifact_id"],
+            pptx_artifact_name=row["pptx_artifact_name"],
+            pptx_path=None if row["pptx_path"] is None else Path(row["pptx_path"]),
         )
 
     def _elapsed_seconds(self, created_at: str, updated_at: str, status: str) -> int:

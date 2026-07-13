@@ -154,7 +154,7 @@ class TestProviderConfigFromEnv:
         monkeypatch.delenv("OPENAI_MODEL", raising=False)
         config = provider_config_from_env()
         assert config.protocol == "openai"
-        assert config.model
+        assert config.model == "gpt-5.5"
 
     def test_rejects_unknown_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PPT_AGENT_PROVIDER", "gemini")

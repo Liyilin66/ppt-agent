@@ -27,10 +27,66 @@ from ppt_agent.ppt_master_project import (
 )
 from ppt_agent.ppt_master_runner import PPT_MASTER_RUNNER_RESULT_ARTIFACT
 from ppt_agent.v2.design import BUILTIN_THEMES
-from ppt_agent.v2.ir import DeckDesign, Frame, PageDesign, TextItem
+from ppt_agent.v2.ir import ChartItem, ChartSeries, DeckDesign, Frame, IconItem, PageDesign, ShapeItem, TextItem
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+
+
+class _FakeInterviewStructuredModel:
+    def __init__(self, responses: list[dict]) -> None:
+        self.responses = responses
+
+    def invoke(self, prompt: str) -> dict:
+        return self.responses.pop(0)
+
+
+class _FakeInterviewModel:
+    def __init__(self, responses: list[dict]) -> None:
+        self.structured_model = _FakeInterviewStructuredModel(responses)
+
+    def with_structured_output(self, schema):
+        return self.structured_model
+
+
+def _interview_decision(*, ready: bool = False) -> dict:
+    brief = {
+        "topic": "生态环境保护",
+        "audience": "城市规划与环境工程专业学生" if ready else None,
+        "slide_count": 36 if ready else None,
+        "language": "zh-CN",
+        "purpose": "专业课程分享" if ready else None,
+        "tone": "专业、清晰",
+        "visual_direction": "浅色背景，使用地图和指标图表" if ready else None,
+        "content_focus": ["问题诊断", "治理方案"] if ready else [],
+        "constraints": ["可编辑 PPTX"] if ready else [],
+        "user_requirements": "生成 36 页中文可编辑生态环境保护 PPT。" if ready else None,
+    }
+    if ready:
+        return {
+            "status": "ready",
+            "assistant_message": "需求已经足够具体，可以开始生成。",
+            "question": None,
+            "options": [],
+            "brief": brief,
+            "missing_fields": [],
+            "confidence": 0.94,
+            "auto_start": False,
+        }
+    return {
+        "status": "clarifying",
+        "assistant_message": "我先确认这份演示的主要用途。",
+        "question": "你希望观众看完后获得什么？",
+        "options": [
+            {"option_id": "learn", "label": "理解基础知识", "description": "建立认知框架"},
+            {"option_id": "decide", "label": "支持方案决策", "description": "比较可选路径"},
+            {"option_id": "act", "label": "推动具体行动", "description": "形成执行计划"},
+        ],
+        "brief": brief,
+        "missing_fields": ["audience", "purpose", "slide_count", "visual_direction"],
+        "confidence": 0.42,
+        "auto_start": False,
+    }
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -518,6 +574,8 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
         "资料覆盖度",
         "叙事健康度",
         "可编辑成片",
+        "演示历史",
+        "搜索主题、观众或任务 ID",
     ]:
         assert text in response.text
 
@@ -527,9 +585,17 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
 
     assert response.status_code == 200
     for text in [
-        "创建演示",
-        "输入 1–100 页",
-        "系统会自动选择生成策略、并发方式和质量检查",
+            "创建演示",
+            "和 Agent 一起定义演示",
+            "告诉我你想做什么演示",
+            "手动调整",
+            "不确定，暂时跳过",
+            "问题数量动态调整",
+            "像聊天一样说出想法",
+            "Agent 理解充分后会直接准备生成",
+            "Agent 已经理解，可以开始生成",
+            "继续调整",
+            "Agent 理解",
         "Presentation workspace",
         "演示预览",
         "章节页数分配",
@@ -571,11 +637,29 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
     ]:
         assert text in response.text
     assert 'id="longDeckForm"' in response.text
+    assert 'id="interviewComposer"' in response.text
+    assert 'id="interviewQuestionPanel"' in response.text
+    assert 'id="interviewOptions"' in response.text
+    assert 'id="generationConfirmation"' in response.text
+    assert 'id="confirmGenerationButton"' in response.text
+    assert 'id="continueInterviewButton"' in response.text
+    assert "也可以在下方直接输入你的想法" not in response.text
+    assert "不确定，暂时跳过" in response.text
+    assert "interviewOptions.after(interviewComposer)" in response.text
+    assert 'interviewComposer.setAttribute("aria-busy", String(isBusy))' in response.text
+    assert "interviewInput.disabled = isBusy" not in response.text
+    assert "正在快速整理这一轮需求" in response.text
+    assert "Number(decision.brief.slide_count) <= 10" in response.text
+    assert "longDeckForm.hidden = !manualBriefVisible" in response.text
+    assert 'id="briefStatus"' in response.text
+    assert "/api/presentation-interviews" in response.text
     assert 'id="long_slide_count" name="slide_count" type="number" min="1" max="100"' in response.text
     assert "高级生成设置" not in response.text
     assert 'id="long_batch_size"' not in response.text
     assert 'id="long_max_batch_attempts"' not in response.text
     assert '/api/jobs/${id}/preview-slides/${slideNumber}' in response.text
+    assert "manifest.highlight_slide_numbers" in response.text
+    assert "正在展示视觉高光页" in response.text
     assert 'id="previewSlide1"' in response.text
     assert "<iframe" in response.text
     assert "ppt_agent_long_deck_form_draft" in response.text
@@ -590,6 +674,7 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
     assert 'id="patch_path"' not in response.text
     assert 'submitJob("/api/jobs", buildShortDeckPayload())' in response.text
     assert 'submitJob("/api/long-deck-jobs", buildLongDeckPayload())' in response.text
+    assert "/api/presentations" in response.text
 
 
 def test_index_page_keeps_only_unified_presentation_fields(tmp_path: Path) -> None:
@@ -644,6 +729,94 @@ def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypa
     assert "OPENAI_API_KEY is not set" in response.json()["detail"]
 
 
+def test_requirements_interview_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = _client(tmp_path).post(
+        "/api/presentation-interviews",
+        json={"message": "我想做一份生态环境保护演示。"},
+    )
+
+    assert response.status_code == 503
+    assert "OPENAI_API_KEY is not set" in response.json()["detail"]
+
+
+def test_requirements_interview_model_uses_low_latency_gpt55_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("PPT_AGENT_INTERVIEW_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("PPT_AGENT_INTERVIEW_MAX_TOKENS", raising=False)
+
+    model = api._create_interview_chat_model()
+
+    assert model.model_name == "gpt-5.5"
+    assert model.reasoning_effort == "low"
+    assert model.max_tokens == 1800
+    assert model.max_retries == 1
+
+
+def test_requirements_interview_persists_adaptive_question_and_options(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    model = _FakeInterviewModel([_interview_decision(), _interview_decision(ready=True)])
+    monkeypatch.setattr(api, "_create_interview_chat_model", lambda: model)
+    client = _client(tmp_path)
+
+    started = client.post(
+        "/api/presentation-interviews",
+        json={"message": "我想做一份生态环境保护 PPT，但还没有想清楚。"},
+    )
+
+    assert started.status_code == 201
+    first = started.json()
+    assert first["status"] == "clarifying"
+    assert first["turn_count"] == 1
+    assert first["decision"]["question"] == "你希望观众看完后获得什么？"
+    assert len(first["decision"]["options"]) == 3
+    assert client.app.state.job_store.get_presentation_interview(first["interview_id"]) is not None
+
+    continued = client.post(
+        f"/api/presentation-interviews/{first['interview_id']}/messages",
+        json={"message": "推动具体行动", "selected_option_id": "act"},
+    )
+
+    assert continued.status_code == 200
+    final = continued.json()
+    assert final["status"] == "ready"
+    assert final["turn_count"] == 2
+    assert final["decision"]["brief"]["slide_count"] == 36
+    restored = client.get(f"/api/presentation-interviews/{first['interview_id']}")
+    assert restored.json() == final
+
+
+def test_ready_requirements_interview_can_continue_with_natural_language_adjustments(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    model = _FakeInterviewModel([_interview_decision(ready=True), _interview_decision(ready=True)])
+    monkeypatch.setattr(api, "_create_interview_chat_model", lambda: model)
+    client = _client(tmp_path)
+
+    started = client.post(
+        "/api/presentation-interviews",
+        json={"message": "生成一份 36 页生态环境保护课程演示。"},
+    )
+    continued = client.post(
+        f"/api/presentation-interviews/{started.json()['interview_id']}/messages",
+        json={"message": "改成 24 页，并增加真实案例。"},
+    )
+
+    assert started.status_code == 201
+    assert started.json()["status"] == "ready"
+    assert continued.status_code == 200
+    assert continued.json()["status"] == "ready"
+    assert continued.json()["turn_count"] == 2
+    assert continued.json()["messages"][-2]["content"] == "改成 24 页，并增加真实案例。"
+
+
 def test_create_long_deck_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -662,6 +835,76 @@ def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
     body = response.json()
     assert body["job_id"]
     assert body["status"] == "pending"
+
+
+def test_create_job_persists_request_in_presentation_history(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_backend(monkeypatch)
+    client = _client(tmp_path)
+    payload = {
+        **_job_payload(),
+        "user_requirements": "突出可编辑图表和课堂表达。",
+        "interview_id": "interview-history-link",
+    }
+
+    job_id = client.post("/api/jobs", json=payload).json()["job_id"]
+    history = client.get("/api/presentations").json()
+
+    item = next(item for item in history["items"] if item["job_id"] == job_id)
+    assert item["topic"] == payload["topic"]
+    assert item["audience"] == payload["audience"]
+    assert item["slide_count"] == payload["slides"]
+    assert item["user_requirements"] == payload["user_requirements"]
+    assert item["pptx_download_url"].startswith("/api/artifacts/")
+    request = client.app.state.job_store.get_presentation_request(job_id)
+    assert request is not None
+    assert request.interview_id == "interview-history-link"
+
+
+def test_presentation_history_supports_status_and_text_filters(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    matching = store.create_job(job_type="long_deck_v2")
+    store.save_presentation_request(
+        matching.job_id,
+        topic="未来智慧校园",
+        audience="高校管理者",
+        user_requirements="技术产品蓝图",
+        slide_count=100,
+    )
+    store.update_job(matching.job_id, status="succeeded", accepted=True, qa_score=96)
+    other = store.create_job(job_type="short_deck")
+    store.save_presentation_request(
+        other.job_id,
+        topic="零售经营周报",
+        audience="门店经理",
+        user_requirements="经营复盘",
+        slide_count=8,
+    )
+    store.update_job(other.job_id, status="failed", accepted=False)
+    client = TestClient(api.create_app(data_dir=tmp_path, store=store))
+
+    response = client.get("/api/presentations", params={"status": "succeeded", "query": "高校"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["job_id"] == matching.job_id
+
+
+def test_existing_long_deck_request_is_backfilled_into_history(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    job = store.create_job(job_type="long_deck")
+    job_dir = tmp_path / "jobs" / job.job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "long_deck_request.json").write_text(
+        json.dumps(_long_deck_payload(), ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    body = _client(tmp_path).get("/api/presentations").json()
+
+    item = next(item for item in body["items"] if item["job_id"] == job.job_id)
+    assert item["topic"] == _long_deck_payload()["topic"]
+    assert item["slide_count"] == 30
 
 
 def test_create_long_deck_job_rejects_slide_count_outside_supported_range(tmp_path: Path) -> None:
@@ -1614,7 +1857,76 @@ def test_v2_final_design_previews_include_all_pages(tmp_path: Path) -> None:
     manifest = client.get(f"/api/jobs/{job.job_id}/preview-slides")
 
     assert manifest.json()["available_slide_numbers"] == [1, 2, 3]
+    assert manifest.json()["highlight_slide_numbers"] == [1, 2, 3]
     assert client.get(f"/api/jobs/{job.job_id}/preview-slides/3").status_code == 200
+
+
+def test_v2_preview_manifest_selects_visually_rich_highlight_pages(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    job = client.app.state.job_store.create_job(job_type="long_deck_v2")
+    job_dir = client.app.state.jobs_root / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    def title(number: int) -> TextItem:
+        return TextItem(
+            id=f"title-{number}",
+            frame=Frame(x=80, y=70, w=800, h=80),
+            text=f"第 {number} 页",
+            role="title",
+        )
+
+    pages = [
+        PageDesign(page_number=1, role="cover", title="封面", elements=[title(1)]),
+        PageDesign(page_number=2, role="content", title="纯文字", elements=[title(2)]),
+        PageDesign(
+            page_number=3,
+            role="stats",
+            title="指标高光",
+            elements=[
+                title(3),
+                ChartItem(
+                    id="chart-3",
+                    frame=Frame(x=100, y=190, w=650, h=380),
+                    chart="bar",
+                    categories=["A", "B", "C"],
+                    series=[ChartSeries(name="趋势", values=[3, 7, 5])],
+                ),
+                IconItem(id="icon-3", frame=Frame(x=850, y=220, w=90, h=90), name="chart"),
+            ],
+        ),
+        PageDesign(
+            page_number=4,
+            role="timeline",
+            title="流程高光",
+            elements=[
+                title(4),
+                ShapeItem(id="step-1", frame=Frame(x=120, y=240, w=240, h=150)),
+                ShapeItem(id="step-2", frame=Frame(x=440, y=240, w=240, h=150)),
+                IconItem(id="icon-4", frame=Frame(x=760, y=260, w=80, h=80), name="arrow-right"),
+            ],
+        ),
+        PageDesign(
+            page_number=5,
+            role="comparison",
+            title="对比高光",
+            elements=[
+                title(5),
+                ShapeItem(id="left", frame=Frame(x=100, y=210, w=470, h=330)),
+                ShapeItem(id="right", frame=Frame(x=710, y=210, w=470, h=330)),
+            ],
+        ),
+        PageDesign(page_number=6, role="closing", title="结束页", elements=[title(6)]),
+    ]
+    deck = DeckDesign(deck_title="高光页测试", theme=BUILTIN_THEMES["aurora"], pages=pages)
+    (job_dir / "generated_long_deck_v2_design.json").write_text(
+        deck.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    manifest = client.get(f"/api/jobs/{job.job_id}/preview-slides").json()
+
+    assert manifest["available_slide_numbers"] == [1, 2, 3, 4, 5, 6]
+    assert manifest["highlight_slide_numbers"] == [3, 4, 5]
 
 
 def test_artifacts_include_patch_outputs_when_patch_succeeds(tmp_path: Path, monkeypatch) -> None:
