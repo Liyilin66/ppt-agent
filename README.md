@@ -2,9 +2,9 @@
 
 一个本地优先的 AI Presentation Agent：把一句话需求、详细 prompt 或文档资料，转化为经过结构化校验、全页质量检查并可继续编辑的 PowerPoint。
 
-当前产品主线已经验证到 **100 页**。Web UI 提供统一的 1-100 页创建入口；系统在内部自动选择短演示、稳定 30 页批次或 v2 自由布局管线，用户不需要理解 batch、重试次数或 QA 阈值。
+当前产品主线已经验证到 **100 页**。Web UI 提供统一的 1-100 页对话创建入口：1-3 页进入快速管线，4-100 页进入 v2 自由布局管线。legacy 30 页批次与 PPT Master recovery 作为兼容和恢复路径继续保留，但不再要求普通用户理解 batch、重试次数或 QA 阈值。
 
-![ppt-agent Web workspace](docs/readme/web-live-preview.png)
+![ppt-agent live generation studio](docs/readme/web-live-studio.jpg)
 
 ## 当前完成度
 
@@ -12,12 +12,13 @@
 | --- | --- |
 | 1-100 页统一 Web 创建入口 | 已完成 |
 | 自适应需求访谈 Agent：单问题追问、快捷选项、自由回答、生成确认 | 已完成 |
+| 创建、实时生成、页面预览、演示历史、交付中心分区工作台 | 已完成 |
 | 100 页真实 LLM 生成 | 已验证 |
 | 原生可编辑 PPTX | 已完成 |
 | v2 自由布局 PageDesign IR | 已完成 |
 | 并发生成与 checkpoint resume | 已完成 |
 | 全页 QA、自动修复、hard quality gate | 已完成 |
-| 生成中逐步出现页面预览 | 已完成 |
+| 生成中逐页预览、可见区域缩略图加载、跟随最新页面 | 已完成 |
 | SQLite 演示历史、job、进度、取消、恢复、artifact 下载 | 已完成 |
 | OpenAI-compatible / Anthropic BYOK | CLI 与服务端环境变量可用 |
 | PDF / DOCX / MD / TXT 提炼 | v2 CLI 可用，Web 尚未接上传 |
@@ -51,33 +52,38 @@
 
 > 历史 job 记录了调用次数、token 和估算成本，但当时没有持久化 provider/model 名称，因此 README 不声称该次运行使用了某个可验证的具体模型。
 
-## 统一 Web 工作台
+## 产品工作台
 
-Web UI 使用对话式 Agent 作为创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供 2-4 个快捷选项，同时保留自由输入；信息充分后显示生成确认卡，再进入 1-100 页生成。结构化 Brief 仍作为内部生成契约和恢复依据，但不会强迫普通用户填写表单。
+Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供快捷选项，同时保留自由输入；信息充分后进入生成确认，再开始 1-100 页任务。结构化 Brief 只作为内部生成契约和恢复依据，不再让普通用户填写右侧表单。
 
-![Conversational requirements interview](docs/design/ppt-agent-conversational-interview-question.png)
+| 对话创建 | 实时生成工作台 |
+| --- | --- |
+| ![Conversational presentation creation](docs/readme/web-conversational-create.jpg) | ![Live slide generation studio](docs/readme/web-live-studio.jpg) |
 
-清晰需求会直接进入生成确认；模糊需求会按实际缺口继续追问，不预设固定问题数量。用户可以继续用自然语言调整已经收敛的需求；1-10 页演示或用户明确要求“直接生成 / 不用再问”时可以自动开始，11-100 页默认保留一次确认。访谈状态和完整消息保存在 SQLite，并通过 `interview_id` 与最终 presentation job 关联。
+清晰需求会直接进入生成确认；模糊需求会按实际缺口继续追问，不预设固定问题数量。用户可以继续用自然语言调整已经收敛的需求；短演示或用户明确要求“直接生成 / 不用再问”时可以自动开始，长演示默认保留一次确认。访谈状态和完整消息保存在 SQLite，并通过 `interview_id` 与最终 presentation job 关联。
 
-页数支持任意 1-100：
+生成开始后，页面会逐步出现在左侧缩略图和中央画布中。缩略图只加载当前滚动区域附近的页面，因此 100 页任务不会同时创建 100 个 iframe；用户可以手动查看任意已生成页面，也可以继续跟随最新页面。
 
-![Unified 1-100 page create form](docs/readme/web-unified-create.png)
+| SQLite 演示历史 | 交付中心 |
+| --- | --- |
+| ![SQLite presentation history](docs/readme/web-presentation-history.jpg) | ![Presentation delivery center](docs/readme/web-delivery-center.jpg) |
 
-内部路由保持兼容，但不暴露给用户：
+当前 Web 路由：
 
 | 页数 | 内部管线 | 适用场景 |
 | --- | --- | --- |
-| 1-10 | v1 快速管线 | 短汇报、课堂展示、快速提案 |
-| 30 | legacy long-deck 批次管线 | 保留已验证的 batch resume 与 PPT Master recovery |
-| 11-29、31-100 | v2 自由布局管线 | 深度分享、课程、技术方案与长文档 |
+| 1-3 | v1 快速管线 | 极短汇报、单页说明、快速提案 |
+| 4-100 | v2 自由布局管线 | 课堂展示、产品方案、深度分享与长文档 |
+
+`POST /api/long-deck-jobs` 仍兼容没有指定 `deck_type=visual_design_v2` 的 legacy 30 页任务，用于已有 batch resume、quality gate 和 PPT Master recovery 工作流。
 
 Web 工作台还包括：
 
-- 五阶段任务进度与 1 秒运行计时。
+- 五阶段任务进度与前端平滑运行计时。
 - 临时请求失败后自动继续轮询。
-- 主题、观众、页数和详细要求本地草稿恢复。
+- 对话状态、内部 Brief 与 job 关联恢复。
 - v2 checkpoint 页面生成后立即进入 storyboard。
-- 真实 SVG / PageDesign HTML 视觉高光页预览，按图表、流程、对比、视觉层次和内容密度确定性评分。
+- 真实 SVG / PageDesign HTML 单页预览与视觉高光页选择。
 - QA、成本、章节分配与交付状态。
 - PPTX、IR、QA、run report 与 PPT Master artifacts 下载。
 - SQLite 演示历史：搜索主题/观众/任务 ID、按状态筛选、打开旧任务、直接下载最终 PPTX。
@@ -88,34 +94,37 @@ Web 工作台还包括：
 
 ~~~mermaid
 flowchart TD
-    A["主题 / 观众 / 页数 / 详细要求"] --> B{"页数路由"}
-    B -->|"1-10"| C["v1 DeckBrief + DeckPlan"]
-    B -->|"30"| D["legacy batch generation"]
-    B -->|"11-29 / 31-100"| E["v2 ContentBrief + ThemeSpec"]
+    A["自然语言需求 / 文档摘要"] --> B["对话式需求访谈"]
+    B --> C["内部结构化 Brief"]
+    C --> D{"Web 页数路由"}
+    D -->|"1-3"| E["v1 DeckBrief + DeckPlan"]
+    D -->|"4-100"| F["v2 ContentBrief + ThemeSpec"]
+    C -.->|"兼容 API: 30 页"| G["legacy batch generation"]
 
-    C --> F["Strict Deck IR"]
-    D --> G["Batch Deck IR merge"]
-    E --> H["Outline + PageBrief + PageDesign"]
+    E --> H["Strict Deck IR"]
+    F --> I["Outline + PageBrief + PageDesign"]
+    G --> J["Batch Deck IR merge"]
 
-    F --> I["Rule QA"]
-    G --> J["Long-deck QA + hard gate"]
-    J --> T["PPT Master normal / recovery package"]
-    H --> K["Per-page QA + deterministic repair"]
+    H --> K["Rule QA"]
+    I --> L["Per-page QA + deterministic repair"]
+    J --> M["Long-deck QA + hard gate"]
+    M --> N["PPT Master normal / recovery package"]
 
-    I --> L["Editable PPTX"]
-    J --> M{"Gate passed?"}
-    K --> N{"Strict gate passed?"}
+    K --> O["Editable PPTX"]
+    L --> P{"Strict gate passed?"}
+    M --> Q{"Gate passed?"}
 
-    M -->|"Yes"| O["legacy editable PPTX"]
-    M -->|"No"| P["PPT Master recovery package"]
-    N -->|"Yes"| Q["v2 editable PPTX"]
-    N -->|"No"| R["Keep design / QA / run report"]
+    P -->|"Yes"| R["v2 editable PPTX"]
+    P -->|"No"| S["Keep design / QA / run report"]
+    Q -->|"Yes"| T["legacy editable PPTX"]
+    Q -->|"No"| U["PPT Master recovery package"]
 
-    L --> S["Job artifacts"]
-    O --> S
-    P --> S
-    Q --> S
-    T --> S
+    O --> V["SQLite job + artifacts"]
+    R --> V
+    S --> V
+    T --> V
+    U --> V
+    N --> V
 ~~~
 
 核心原则：
@@ -256,7 +265,7 @@ Web UI 不接收用户输入 API key，key 只从服务端环境变量读取：
 ~~~bash
 export OPENAI_API_KEY="..."
 export OPENAI_BASE_URL="https://your-openai-compatible-endpoint/v1"
-export OPENAI_MODEL="gpt-4o"
+export OPENAI_MODEL="gpt-5.5"
 
 export PPT_MASTER_DIR="/Users/you/Documents/ppt-master"  # optional
 export LONG_DECK_JOB_TIMEOUT_SECONDS=7200
@@ -286,7 +295,7 @@ uv run ppt-agent v2 build \
   --prompt "从 0 到 1 设计一座 AI 驱动的未来智慧校园" \
   --pages 100 \
   --provider openai \
-  --model gpt-4o \
+  --model gpt-5.5 \
   --base-url https://your-openai-compatible-endpoint/v1 \
   --concurrency 8 \
   --budget-usd 15 \
@@ -302,7 +311,7 @@ uv run ppt-agent v2 build \
   --prompt "从 0 到 1 设计一座 AI 驱动的未来智慧校园" \
   --pages 100 \
   --provider openai \
-  --model gpt-4o \
+  --model gpt-5.5 \
   --base-url https://your-openai-compatible-endpoint/v1 \
   --output-dir out/smart-campus \
   --resume
@@ -348,8 +357,8 @@ ppt-agent v2 preview   Render DeckDesign as browser HTML
 | Endpoint | 作用 |
 | --- | --- |
 | GET /health | 健康检查 |
-| POST /api/jobs | 1-10 页快速任务 |
-| POST /api/long-deck-jobs | 11-100 页任务 |
+| POST /api/jobs | 1-3 页 Web 快速任务；API 仍支持 1-10 页 |
+| POST /api/long-deck-jobs | 4-100 页任务；Web 默认传入 `visual_design_v2` |
 | POST /api/long-deck-jobs/{job_id}/resume | 从 checkpoint 恢复 |
 | POST /api/jobs/{job_id}/cancel | 请求取消 long-deck job |
 | GET /api/jobs/{job_id} | 状态、QA、PPT Master 状态 |
@@ -396,6 +405,8 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 ~~~text
 src/ppt_agent/
 ├── api.py                     # FastAPI + Web workspace + job endpoints
+├── requirements_interview.py  # 自适应对话访谈与内部 Brief
+├── job_store.py               # SQLite jobs、访谈、请求快照与 artifacts
 ├── generation.py              # v1 structured generation
 ├── pipeline.py                # v1 build/QA/render pipeline
 ├── long_deck_orchestrator.py  # legacy 30-page batching/resume
@@ -423,7 +434,7 @@ docs/design/                   # UI visual QA evidence
 当前验证基线：
 
 ~~~text
-459 passed
+460 passed
 uv sync
 uv lock --check
 uv run pytest
@@ -431,7 +442,6 @@ git diff --check
 ~~~
 
 测试不会调用真实模型，不会打开 PowerPoint，也不会执行完整 PPT Master AI workflow。
-
 
 ## License
 

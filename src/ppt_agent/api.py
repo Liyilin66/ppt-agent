@@ -224,7 +224,7 @@ INDEX_HTML = """<!doctype html>
 
       .app-shell {
         display: grid;
-        grid-template-columns: 236px minmax(0, 1fr);
+        grid-template-columns: 220px minmax(0, 1fr);
         min-height: 100vh;
       }
 
@@ -313,7 +313,7 @@ INDEX_HTML = """<!doctype html>
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 20px;
-        padding: 18px 28px 0;
+        padding: 16px 24px;
         border-bottom: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.96);
       }
@@ -388,9 +388,33 @@ INDEX_HTML = """<!doctype html>
         display: grid;
         grid-template-columns: minmax(0, 1fr) 284px;
         gap: 20px;
-        max-width: 1500px;
+        max-width: 1680px;
         margin: 0 auto;
-        padding: 22px 24px 48px;
+        padding: 20px 24px 40px;
+      }
+
+      .workspace-grid:not([data-view="delivery"]) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .workspace-grid[data-view="create"] .center-column {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .workspace-grid[data-view="studio"] {
+        max-width: none;
+        padding: 16px;
+      }
+
+      .workspace-grid[data-view="studio"] .center-column {
+        gap: 12px;
+      }
+
+      .workspace-grid[data-view="preview"] .center-column,
+      .workspace-grid[data-view="history"] .center-column {
+        width: min(1400px, 100%);
+        margin: 0 auto;
       }
 
       .source-panel, .right-rail {
@@ -404,6 +428,10 @@ INDEX_HTML = """<!doctype html>
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--surface-soft);
+      }
+
+      .side-nav .source-panel {
+        display: none;
       }
 
       .source-summary {
@@ -466,6 +494,306 @@ INDEX_HTML = """<!doctype html>
         border-radius: 8px;
         background: #ffffff;
         scroll-margin-top: 190px;
+      }
+
+      .live-studio {
+        min-height: calc(100vh - 250px);
+        overflow: hidden;
+      }
+
+      .live-studio-grid {
+        display: grid;
+        grid-template-columns: 190px minmax(520px, 1fr) 250px;
+        min-height: calc(100vh - 250px);
+      }
+
+      .slide-navigator {
+        min-width: 0;
+        border-right: 1px solid var(--line);
+        background: #f7f9fa;
+      }
+
+      .slide-navigator-head,
+      .studio-inspector-head {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .slide-navigator-head strong,
+      .slide-navigator-head span {
+        display: block;
+      }
+
+      .slide-navigator-head span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .live-slide-thumbnails {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        max-height: calc(100vh - 330px);
+        padding: 12px;
+        overflow-y: auto;
+      }
+
+      .live-slide-thumbnail {
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr);
+        gap: 8px;
+        width: 100%;
+        min-height: 0;
+        border: 1px solid #c8d2da;
+        border-radius: 6px;
+        padding: 6px;
+        background: #ffffff;
+        color: var(--ink);
+        text-align: left;
+      }
+
+      .live-slide-thumbnail:hover,
+      .live-slide-thumbnail.is-selected {
+        border-color: var(--teal);
+        background: #edf8f6;
+      }
+
+      .live-slide-thumbnail-number {
+        padding-top: 2px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .live-slide-thumbnail-preview {
+        position: relative;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        aspect-ratio: 16 / 9;
+        border: 1px solid #d8e0e5;
+        border-radius: 4px;
+        background: #eef2f4;
+      }
+
+      .live-slide-thumbnail-preview::before {
+        color: var(--muted);
+        content: "正在载入";
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .live-slide-thumbnail-preview iframe {
+        position: absolute;
+        inset: 0;
+        width: 400%;
+        height: 400%;
+        border: 0;
+        pointer-events: none;
+        transform: scale(0.25);
+        transform-origin: top left;
+      }
+
+      .live-slide-placeholder {
+        min-height: 76px;
+        border: 1px dashed #c8d2da;
+        border-radius: 6px;
+        background: #eef2f4;
+        animation: placeholder-pulse 1.4s ease-in-out infinite alternate;
+      }
+
+      @keyframes placeholder-pulse {
+        from { opacity: 0.5; }
+        to { opacity: 1; }
+      }
+
+      .live-canvas-panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        background: #edf1f3;
+      }
+
+      .live-canvas-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .live-canvas-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .live-status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #9aa7b2;
+      }
+
+      .live-status-dot.is-running {
+        background: var(--teal);
+        box-shadow: 0 0 0 4px rgba(8, 127, 120, 0.12);
+      }
+
+      .live-canvas-status strong,
+      .live-canvas-status span {
+        display: block;
+      }
+
+      .live-canvas-status span {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .live-canvas-toolbar button {
+        min-height: 34px;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .live-canvas-surface {
+        display: grid;
+        place-items: center;
+        min-height: 0;
+        padding: 28px;
+        overflow: auto;
+      }
+
+      .live-canvas-frame {
+        position: relative;
+        width: min(100%, 1080px);
+        aspect-ratio: 16 / 9;
+        border: 1px solid #c7d1d8;
+        background: #ffffff;
+        box-shadow: 0 16px 38px rgba(31, 44, 55, 0.14);
+      }
+
+      .live-canvas-frame iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #ffffff;
+      }
+
+      .live-canvas-empty {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 40px;
+        text-align: center;
+      }
+
+      .live-canvas-empty strong,
+      .live-canvas-empty span {
+        display: block;
+      }
+
+      .live-canvas-empty strong {
+        font-size: 18px;
+      }
+
+      .live-canvas-empty span {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .studio-inspector {
+        min-width: 0;
+        border-left: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .studio-inspector-section {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .studio-inspector-section:last-child {
+        border-bottom: 0;
+      }
+
+      .studio-inspector-section h3 {
+        font-size: 13px;
+      }
+
+      .studio-stat-list {
+        display: grid;
+        gap: 9px;
+      }
+
+      .studio-stat {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .studio-stat strong {
+        color: var(--ink);
+        text-align: right;
+      }
+
+      .studio-activity {
+        margin: 0;
+        padding-left: 11px;
+        border-left: 3px solid var(--teal);
+        color: #3f4c5e;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      #projectWorkspace[data-app-view="studio"] .section-head {
+        padding: 11px 16px;
+      }
+
+      #projectWorkspace[data-app-view="studio"] .section-head p,
+      #projectWorkspace[data-app-view="studio"] .metric-strip,
+      #projectWorkspace[data-app-view="studio"] .task-meta {
+        display: none;
+      }
+
+      #projectWorkspace[data-app-view="studio"] .stage-track {
+        padding: 12px 16px;
+      }
+
+      #projectWorkspace[data-app-view="studio"] .task-footer {
+        margin: 0 16px 12px;
+      }
+
+      .workspace-grid[data-view="delivery"] .right-rail {
+        display: grid;
+      }
+
+      .view-context {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .view-context span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--teal);
       }
 
       .section-head {
@@ -1430,6 +1758,10 @@ INDEX_HTML = """<!doctype html>
           grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
+        .live-studio-grid {
+          grid-template-columns: 170px minmax(460px, 1fr) 220px;
+        }
+
       }
 
       @media (max-width: 920px) {
@@ -1480,6 +1812,14 @@ INDEX_HTML = """<!doctype html>
         .right-rail {
           grid-template-columns: 1fr;
         }
+
+        .live-studio-grid {
+          grid-template-columns: 150px minmax(0, 1fr);
+        }
+
+        .studio-inspector {
+          display: none;
+        }
       }
 
       @media (max-width: 680px) {
@@ -1499,6 +1839,34 @@ INDEX_HTML = """<!doctype html>
 
         .workspace-grid {
           padding: 14px 12px 32px;
+        }
+
+        .workspace-grid[data-view="studio"] {
+          padding: 8px;
+        }
+
+        .live-studio-grid {
+          grid-template-columns: 1fr;
+          min-height: auto;
+        }
+
+        .slide-navigator {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .live-slide-thumbnails {
+          grid-auto-flow: column;
+          grid-auto-columns: 132px;
+          grid-template-columns: none;
+          max-height: none;
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+
+        .live-canvas-surface {
+          min-height: 360px;
+          padding: 14px;
         }
 
         .stage-track, .metric-strip, .slide-grid, .form-grid,
@@ -1577,13 +1945,13 @@ INDEX_HTML = """<!doctype html>
       <aside class="side-nav" aria-label="主导航">
         <div class="brand"><span class="brand-mark">P</span><span>ppt-agent</span></div>
         <nav class="nav-list">
-          <button class="nav-item is-active" type="button" data-scroll-target="projectWorkspace">项目工作台</button>
-          <button class="nav-item" type="button" data-scroll-target="createPanel">创建演示</button>
-          <button class="nav-item" type="button" data-scroll-target="historyPanel">演示历史</button>
-          <button class="nav-item" type="button" data-scroll-target="previewPanel">页面预览</button>
-          <button class="nav-item" type="button" data-scroll-target="technicalPanel">技术详情</button>
+          <button class="nav-item is-active" type="button" data-view-target="create">创建演示</button>
+          <button class="nav-item" type="button" data-view-target="studio">生成工作台</button>
+          <button class="nav-item" type="button" data-view-target="preview">页面预览</button>
+          <button class="nav-item" type="button" data-view-target="history">演示历史</button>
+          <button class="nav-item" type="button" data-view-target="delivery">交付中心</button>
         </nav>
-        <aside class="source-panel" aria-labelledby="sourcePanelTitle">
+        <aside class="source-panel" data-app-view="studio" aria-labelledby="sourcePanelTitle" hidden>
           <div class="source-summary">
             <div><p class="eyebrow">Source coverage</p><h2 id="sourcePanelTitle">资料覆盖度</h2></div>
             <strong id="sourceCoverageScore">0%</strong>
@@ -1604,25 +1972,77 @@ INDEX_HTML = """<!doctype html>
       <main class="app-main">
         <header class="project-header">
           <div class="project-title-row">
-            <p class="eyebrow">Presentation workspace</p>
-            <h1 id="projectTitle">AI 产品经理如何设计 Agent 产品</h1>
-            <p>从资料、叙事到可编辑成片，一次看清当前进度和下一步。</p>
+            <p id="viewEyebrow" class="eyebrow">Create with Agent</p>
+            <h1 id="projectTitle">创建演示</h1>
+            <p id="viewDescription">通过对话把想法变成可执行的演示需求。</p>
           </div>
           <div class="header-actions">
-            <button class="secondary-button" type="button" data-scroll-target="createPanel">新建任务</button>
+            <div class="view-context"><span></span><strong id="viewContextLabel">需求访谈</strong></div>
+            <button id="headerNewTaskButton" class="secondary-button" type="button" data-view-target="create">新建演示</button>
             <a id="primaryDownloadTop" class="button-link" href="#technicalPanel">查看交付</a>
           </div>
-          <nav class="project-tabs" aria-label="项目阶段">
-            <button class="project-tab" type="button" data-scroll-target="createPanel">大纲</button>
-            <button class="project-tab is-active" type="button" data-scroll-target="projectWorkspace">生成</button>
-            <button class="project-tab" type="button" data-scroll-target="previewPanel">预览</button>
-            <button class="project-tab" type="button" data-scroll-target="technicalPanel">交付</button>
-          </nav>
         </header>
 
-        <div class="workspace-grid">
+        <div id="workspaceGrid" class="workspace-grid" data-view="create">
           <div class="center-column">
-            <section id="projectWorkspace" class="product-section">
+            <section id="liveStudio" class="product-section live-studio" data-app-view="studio" hidden>
+              <div class="live-studio-grid">
+                <aside class="slide-navigator" aria-label="实时页面列表">
+                  <div class="slide-navigator-head">
+                    <strong>页面</strong>
+                    <span id="liveSlideCount">0 / 0 页</span>
+                  </div>
+                  <div id="liveSlideThumbnails" class="live-slide-thumbnails" aria-live="polite">
+                    <div class="live-slide-placeholder"></div>
+                    <div class="live-slide-placeholder"></div>
+                    <div class="live-slide-placeholder"></div>
+                  </div>
+                </aside>
+
+                <section class="live-canvas-panel" aria-labelledby="liveCanvasTitle">
+                  <div class="live-canvas-toolbar">
+                    <div class="live-canvas-status">
+                      <span id="liveStatusDot" class="live-status-dot"></span>
+                      <div><strong id="liveCanvasTitle">实时画布</strong><span id="liveCanvasSubtitle">等待页面生成</span></div>
+                    </div>
+                    <button id="followLatestSlideButton" class="secondary-button" type="button" disabled>跟随最新</button>
+                  </div>
+                  <div class="live-canvas-surface">
+                    <div class="live-canvas-frame">
+                      <iframe id="liveSlidePreview" title="实时 PPT 页面预览" sandbox="allow-scripts" hidden></iframe>
+                      <div id="liveCanvasEmpty" class="live-canvas-empty">
+                        <div><strong>页面会在这里实时出现</strong><span>Agent 完成一页后，缩略图和画布会自动更新，无需刷新网页。</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <aside class="studio-inspector" aria-label="生成状态">
+                  <div class="studio-inspector-head"><p class="eyebrow">Agent activity</p><h3>生成状态</h3></div>
+                  <section class="studio-inspector-section">
+                    <h3>当前任务</h3>
+                    <div class="studio-stat-list">
+                      <div class="studio-stat"><span>已完成页面</span><strong id="studioGeneratedPages">0</strong></div>
+                      <div class="studio-stat"><span>当前页面</span><strong id="studioCurrentPage">等待中</strong></div>
+                      <div class="studio-stat"><span>运行时间</span><strong><span id="studioElapsedSeconds">0</span> 秒</strong></div>
+                    </div>
+                  </section>
+                  <section class="studio-inspector-section">
+                    <h3>Agent 正在做什么</h3>
+                    <p id="studioAgentActivity" class="studio-activity">等待你确认演示需求。</p>
+                  </section>
+                  <section class="studio-inspector-section">
+                    <h3>质量状态</h3>
+                    <div class="studio-stat-list">
+                      <div class="studio-stat"><span>质量门禁</span><strong id="studioQualityStatus">未评估</strong></div>
+                      <div class="studio-stat"><span>输出状态</span><strong id="studioOutputStatus">未生成</strong></div>
+                    </div>
+                  </section>
+                </aside>
+              </div>
+            </section>
+
+            <section id="projectWorkspace" class="product-section" data-app-view="studio" hidden>
               <div class="section-head">
                 <div><p class="eyebrow">Live task</p><h2>生成进度</h2><p>每一步都对应可检查的中间产物。</p></div>
                 <span id="jobStatus">未开始</span>
@@ -1651,7 +2071,7 @@ INDEX_HTML = """<!doctype html>
               <p class="task-meta">任务 ID：<span id="jobId">暂无</span> · 当前阶段：<span id="currentStage">暂无</span> · 进度单元 <span id="currentBatch">暂无</span> / <span id="totalBatchesMeta">0</span> · 失败 <span id="failedBatches">0</span> · 运行 <span id="elapsedSeconds">0</span> 秒</p>
             </section>
 
-            <section id="previewPanel" class="product-section">
+            <section id="previewPanel" class="product-section" data-app-view="preview" hidden>
               <div class="section-head">
                 <div><p class="eyebrow">Storyboard</p><h2>演示预览</h2><p id="previewSummary">生成后从真实 SVG visual project 读取代表页面。</p></div>
                 <a id="primaryDownloadLink" class="button-link" href="#technicalPanel">查看全部文件</a>
@@ -1668,11 +2088,10 @@ INDEX_HTML = """<!doctype html>
               </div>
             </section>
 
-            <section id="createPanel" class="product-section">
+            <section id="createPanel" class="product-section" data-app-view="create">
               <div class="section-head">
                 <div><p class="eyebrow">Create with Agent</p><h2>和 Agent 一起定义演示</h2><p>像聊天一样说出想法。Agent 理解充分后会直接准备生成；需要时可以继续对话调整。</p></div>
                 <div class="interview-section-actions">
-                  <button id="manualBriefButton" class="secondary-button" type="button">手动调整</button>
                   <button id="newInterviewButton" class="secondary-button" type="button">重新开始</button>
                 </div>
               </div>
@@ -1730,21 +2149,20 @@ INDEX_HTML = """<!doctype html>
                       <div class="brief-summary-row"><span>视觉方向</span><strong id="briefVisual">待确认</strong></div>
                     </div>
                     <p id="briefReadinessHint" class="hint">这里会实时显示 Agent 当前理解，不需要你填写表单。</p>
-                    <form id="longDeckForm" class="embedded-form" hidden>
-                      <div class="form-grid">
-                        <label>主题<input id="long_topic" name="topic" required placeholder="例如：从 0 到 1 设计未来智慧校园"></label>
-                        <label>目标观众<input id="long_audience" name="audience" required placeholder="例如：大学生与年轻产品经理"></label>
-                        <label>页数<input id="long_slide_count" name="slide_count" type="number" min="1" max="100" step="1" value="30" required></label>
-                        <label class="full">PPT 详细要求<textarea id="long_user_requirements" name="user_requirements" required placeholder="写清内容重点、表达风格、章节要求与视觉偏好；系统会保存在当前浏览器。"></textarea></label>
-                      </div>
-                      <div class="form-actions"><p id="generationStrategyHint">系统会根据页数自动选择生成模式并检查内容质量。</p><button id="generateLongDeckButton" type="submit">确认并生成 30 页 PPT</button></div>
+                    <form id="longDeckForm" hidden aria-hidden="true">
+                      <input id="long_topic" name="topic" type="hidden">
+                      <input id="long_audience" name="audience" type="hidden">
+                      <input id="long_slide_count" name="slide_count" type="hidden" value="30">
+                      <input id="long_user_requirements" name="user_requirements" type="hidden">
+                      <span id="generationStrategyHint" hidden></span>
+                      <button id="generateLongDeckButton" type="submit" hidden>生成 PPT</button>
                     </form>
                   </aside>
                 </div>
               </div>
             </section>
 
-            <section id="historyPanel" class="product-section">
+            <section id="historyPanel" class="product-section" data-app-view="history" hidden>
               <div class="section-head">
                 <div><p class="eyebrow">Presentation history</p><h2>演示历史</h2><p>创建请求、生成状态和最终可编辑 PPTX 都保存在本地 SQLite 工作区。</p></div>
               </div>
@@ -1768,7 +2186,7 @@ INDEX_HTML = """<!doctype html>
               <div id="historyEmpty" class="history-empty" hidden>还没有演示记录。创建第一份演示后会自动出现在这里。</div>
             </section>
 
-            <section id="technicalPanel" class="product-section">
+            <section id="technicalPanel" class="product-section" data-app-view="delivery" hidden>
               <div class="section-head"><div><p class="eyebrow">Artifacts</p><h2>交付与技术详情</h2><p>成片、质量证据、源文件和 PPT Master 链路按用途整理。</p></div></div>
               <div class="technical-wrap">
                 <details class="technical-panel">
@@ -1898,7 +2316,7 @@ INDEX_HTML = """<!doctype html>
             </section>
           </div>
 
-          <aside class="right-rail">
+          <aside class="right-rail" data-app-view="delivery" hidden>
             <section class="rail-panel">
               <p class="eyebrow">Editable delivery</p><h2>可编辑成片</h2>
               <div class="delivery-file"><strong id="deliveryFileName">等待生成 PPTX</strong><span id="deliveryStatus">生成后可直接下载</span></div>
@@ -2000,7 +2418,12 @@ INDEX_HTML = """<!doctype html>
       const pptMasterOutputHasNotes = document.getElementById("pptMasterOutputHasNotes");
       const cancelJobButton = document.getElementById("cancelJobButton");
       const resumeJobButton = document.getElementById("resumeJobButton");
+      const workspaceGrid = document.getElementById("workspaceGrid");
       const projectTitle = document.getElementById("projectTitle");
+      const headerNewTaskButton = document.getElementById("headerNewTaskButton");
+      const viewEyebrow = document.getElementById("viewEyebrow");
+      const viewDescription = document.getElementById("viewDescription");
+      const viewContextLabel = document.getElementById("viewContextLabel");
       const totalBatchesMeta = document.getElementById("totalBatchesMeta");
       const stageGenerationDetail = document.getElementById("stageGenerationDetail");
       const stageQualityDetail = document.getElementById("stageQualityDetail");
@@ -2019,6 +2442,20 @@ INDEX_HTML = """<!doctype html>
       const previewSlideNumber1 = document.getElementById("previewSlideNumber1");
       const previewSlideNumber2 = document.getElementById("previewSlideNumber2");
       const previewSlideNumber3 = document.getElementById("previewSlideNumber3");
+      const liveSlideThumbnails = document.getElementById("liveSlideThumbnails");
+      const liveSlidePreview = document.getElementById("liveSlidePreview");
+      const liveCanvasEmpty = document.getElementById("liveCanvasEmpty");
+      const liveSlideCount = document.getElementById("liveSlideCount");
+      const liveCanvasTitle = document.getElementById("liveCanvasTitle");
+      const liveCanvasSubtitle = document.getElementById("liveCanvasSubtitle");
+      const liveStatusDot = document.getElementById("liveStatusDot");
+      const followLatestSlideButton = document.getElementById("followLatestSlideButton");
+      const studioGeneratedPages = document.getElementById("studioGeneratedPages");
+      const studioCurrentPage = document.getElementById("studioCurrentPage");
+      const studioElapsedSeconds = document.getElementById("studioElapsedSeconds");
+      const studioAgentActivity = document.getElementById("studioAgentActivity");
+      const studioQualityStatus = document.getElementById("studioQualityStatus");
+      const studioOutputStatus = document.getElementById("studioOutputStatus");
       const chapterStrip = document.getElementById("chapterStrip");
       const chapterTotal = document.getElementById("chapterTotal");
       const sourceCoverageScore = document.getElementById("sourceCoverageScore");
@@ -2064,7 +2501,6 @@ INDEX_HTML = """<!doctype html>
       const confirmationVisual = document.getElementById("confirmationVisual");
       const continueInterviewButton = document.getElementById("continueInterviewButton");
       const confirmGenerationButton = document.getElementById("confirmGenerationButton");
-      const manualBriefButton = document.getElementById("manualBriefButton");
       const newInterviewButton = document.getElementById("newInterviewButton");
       const briefStatus = document.getElementById("briefStatus");
       const briefTopic = document.getElementById("briefTopic");
@@ -2120,9 +2556,15 @@ INDEX_HTML = """<!doctype html>
       let activeJobId = null;
       let activeInterviewId = null;
       let activeInterviewState = null;
-      let manualBriefVisible = false;
       let interviewRequestInFlight = false;
       let currentPreviewKey = "";
+      let activeView = "create";
+      let livePreviewManifest = null;
+      let livePreviewKey = "";
+      let livePreviewSelectedSlide = null;
+      let livePreviewLatestSlide = null;
+      let livePreviewFollowingLatest = true;
+      let liveThumbnailObserver = null;
       let elapsedJobId = null;
       let elapsedBaseSeconds = 0;
       let elapsedSyncedAt = Date.now();
@@ -2137,6 +2579,69 @@ INDEX_HTML = """<!doctype html>
         const value = currentElapsedSeconds();
         elapsedSeconds.textContent = String(value);
         railElapsedSeconds.textContent = String(value);
+        studioElapsedSeconds.textContent = String(value);
+      }
+
+      const viewMetadata = {
+        create: {
+          eyebrow: "Create with Agent",
+          title: "创建演示",
+          description: "通过对话把想法变成可执行的演示需求。",
+          context: "需求访谈"
+        },
+        studio: {
+          eyebrow: "Live generation studio",
+          title: "生成工作台",
+          description: "逐页查看生成结果、当前进度和 Agent 正在执行的步骤。",
+          context: "实时生成"
+        },
+        preview: {
+          eyebrow: "Presentation preview",
+          title: "页面预览",
+          description: "查看视觉高光页、章节结构和整套演示的完成度。",
+          context: "视觉审阅"
+        },
+        history: {
+          eyebrow: "Presentation library",
+          title: "演示历史",
+          description: "查找之前的创建请求、生成状态和最终交付文件。",
+          context: "本地 SQLite"
+        },
+        delivery: {
+          eyebrow: "Delivery center",
+          title: "交付中心",
+          description: "下载可编辑 PPTX、质量报告和 PPT Master 技术产物。",
+          context: "文件与质量"
+        }
+      };
+
+      function currentProjectTopic() {
+        return document.getElementById("long_topic").value.trim();
+      }
+
+      function updateViewHeader() {
+        const metadata = viewMetadata[activeView] || viewMetadata.create;
+        const topic = currentProjectTopic();
+        viewEyebrow.textContent = metadata.eyebrow;
+        projectTitle.textContent = activeView === "create" || !topic ? metadata.title : topic;
+        viewDescription.textContent = metadata.description;
+        viewContextLabel.textContent = metadata.context;
+      }
+
+      function setAppView(view) {
+        if (!viewMetadata[view]) return;
+        activeView = view;
+        workspaceGrid.dataset.view = view;
+        document.querySelectorAll("[data-app-view]").forEach((node) => {
+          node.hidden = node.dataset.appView !== view;
+        });
+        document.querySelectorAll("[data-view-target]").forEach((control) => {
+          control.classList.toggle("is-active", control.dataset.viewTarget === view);
+        });
+        headerNewTaskButton.hidden = view === "create";
+        primaryDownloadTop.hidden = view === "create";
+        updateViewHeader();
+        window.scrollTo({top: 0, behavior: "smooth"});
       }
 
       function resetElapsedClock() {
@@ -2275,7 +2780,7 @@ INDEX_HTML = """<!doctype html>
       }
 
       function updateProductDashboard(job) {
-        projectTitle.textContent = document.getElementById("long_topic").value.trim() || "PPT 项目工作台";
+        updateViewHeader();
         const isV2 = job.job_type === "long_deck_v2" || (job.current_stage || "").startsWith("v2_");
         totalBatchesMeta.textContent = String(job.total_batches || 0);
         railFailedBatches.textContent = String(job.failed_batches || 0);
@@ -2284,7 +2789,9 @@ INDEX_HTML = """<!doctype html>
         const qualityFailed = job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate";
         qualitySummary.textContent = qualityFailed ? "需恢复" : (job.accepted === true ? "通过" : "未评估");
         railQualityStatus.textContent = qualitySummary.textContent;
+        studioQualityStatus.textContent = qualitySummary.textContent;
         outputSummary.textContent = job.ppt_master_output?.detected ? "已交付" : (job.status === "succeeded" ? "已生成" : "未生成");
+        studioOutputStatus.textContent = outputSummary.textContent;
         const deliveredSlideCount = job.ppt_master_output?.slide_count ?? (isV2 && job.status === "succeeded" ? job.total_batches : null);
         deliverySlideCount.textContent = deliveredSlideCount == null ? "未知" : `${deliveredSlideCount} 页`;
         deliveryStatus.textContent = job.ppt_master_output?.detected || (isV2 && job.status === "succeeded") ? "已注册到当前 job，可直接下载" : "生成后可直接下载";
@@ -2301,6 +2808,154 @@ INDEX_HTML = """<!doctype html>
         return job.error_message || "";
       }
 
+      function liveSlideUrl(id, slideNumber, updateToken) {
+        return `/api/jobs/${id}/preview-slides/${slideNumber}?v=${updateToken || Date.now()}`;
+      }
+
+      function selectLiveSlide(id, slideNumber, manifest, {followLatest = false} = {}) {
+        if (!slideNumber) return;
+        livePreviewSelectedSlide = slideNumber;
+        livePreviewFollowingLatest = followLatest;
+        const targetUrl = liveSlideUrl(id, slideNumber, manifest.update_token);
+        if (liveSlidePreview.getAttribute("src") !== targetUrl) {
+          liveSlidePreview.src = targetUrl;
+        }
+        liveSlidePreview.hidden = false;
+        liveCanvasEmpty.hidden = true;
+        liveCanvasTitle.textContent = `第 ${slideNumber} 页`;
+        liveCanvasSubtitle.textContent = `已生成 ${manifest.available_slide_numbers.length} / ${manifest.total_requested || manifest.available_slide_numbers.length} 页`;
+        studioCurrentPage.textContent = `第 ${slideNumber} 页`;
+        followLatestSlideButton.disabled = slideNumber === livePreviewLatestSlide;
+        liveSlideThumbnails.querySelectorAll(".live-slide-thumbnail").forEach((button) => {
+          button.classList.toggle("is-selected", Number(button.dataset.slideNumber) === slideNumber);
+        });
+        const selectedPreview = liveSlideThumbnails.querySelector(
+          `.live-slide-thumbnail[data-slide-number="${slideNumber}"] .live-slide-thumbnail-preview`
+        );
+        if (selectedPreview) mountLiveThumbnailPreview(selectedPreview);
+      }
+
+      function mountLiveThumbnailPreview(preview) {
+        if (preview.querySelector("iframe")) return;
+        const frame = document.createElement("iframe");
+        frame.title = preview.dataset.previewTitle || "页面缩略图";
+        frame.loading = "lazy";
+        frame.tabIndex = -1;
+        frame.setAttribute("sandbox", "allow-scripts");
+        frame.src = preview.dataset.previewUrl;
+        preview.appendChild(frame);
+      }
+
+      function unmountLiveThumbnailPreview(preview) {
+        const frame = preview.querySelector("iframe");
+        if (frame) frame.remove();
+      }
+
+      function observeLiveThumbnailPreviews() {
+        if (liveThumbnailObserver) liveThumbnailObserver.disconnect();
+        const previews = Array.from(
+          liveSlideThumbnails.querySelectorAll(".live-slide-thumbnail-preview")
+        );
+        if (!("IntersectionObserver" in window)) {
+          previews.forEach(mountLiveThumbnailPreview);
+          return;
+        }
+        // Keep large decks responsive by mounting only thumbnails near the scroll viewport.
+        liveThumbnailObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              mountLiveThumbnailPreview(entry.target);
+            } else {
+              unmountLiveThumbnailPreview(entry.target);
+            }
+          });
+        }, {root: liveSlideThumbnails, rootMargin: "180px 0px"});
+        previews.forEach((preview) => liveThumbnailObserver.observe(preview));
+      }
+
+      function resetLiveSlideWorkspace(totalRequested = Number(longSlideCount.value) || 0) {
+        if (liveThumbnailObserver) {
+          liveThumbnailObserver.disconnect();
+          liveThumbnailObserver = null;
+        }
+        livePreviewManifest = null;
+        livePreviewKey = "";
+        livePreviewSelectedSlide = null;
+        livePreviewLatestSlide = null;
+        livePreviewFollowingLatest = true;
+        liveSlidePreview.hidden = true;
+        liveSlidePreview.removeAttribute("src");
+        liveCanvasEmpty.hidden = false;
+        liveCanvasTitle.textContent = "实时画布";
+        liveCanvasSubtitle.textContent = "等待页面生成";
+        liveSlideCount.textContent = `0 / ${totalRequested || 0} 页`;
+        studioGeneratedPages.textContent = "0";
+        studioCurrentPage.textContent = "等待中";
+        followLatestSlideButton.disabled = true;
+        liveSlideThumbnails.replaceChildren();
+        const placeholders = Math.min(Math.max(totalRequested || 3, 3), 6);
+        for (let index = 0; index < placeholders; index += 1) {
+          const placeholder = document.createElement("div");
+          placeholder.className = "live-slide-placeholder";
+          liveSlideThumbnails.appendChild(placeholder);
+        }
+      }
+
+      function renderLiveSlideWorkspace(id, manifest, available) {
+        const totalRequested = Number(manifest.total_requested || available.length || longSlideCount.value || 0);
+        livePreviewManifest = {...manifest, available_slide_numbers: available};
+        liveSlideCount.textContent = `${available.length} / ${totalRequested} 页`;
+        studioGeneratedPages.textContent = String(available.length);
+        liveStatusDot.classList.toggle("is-running", available.length < totalRequested);
+
+        if (!available.length) {
+          resetLiveSlideWorkspace(totalRequested);
+          liveStatusDot.classList.add("is-running");
+          liveCanvasSubtitle.textContent = "正在规划内容与视觉主题";
+          return;
+        }
+
+        const previousLatest = livePreviewLatestSlide;
+        livePreviewLatestSlide = available[available.length - 1];
+        const shouldFollowLatest = livePreviewFollowingLatest
+          || livePreviewSelectedSlide == null
+          || livePreviewSelectedSlide === previousLatest;
+        const nextSelected = shouldFollowLatest ? livePreviewLatestSlide : livePreviewSelectedSlide;
+        const nextKey = `${id}:${manifest.update_token || "0"}:${available.join(",")}`;
+
+        if (nextKey !== livePreviewKey) {
+          if (liveThumbnailObserver) {
+            liveThumbnailObserver.disconnect();
+            liveThumbnailObserver = null;
+          }
+          liveSlideThumbnails.replaceChildren();
+          available.forEach((slideNumber) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "live-slide-thumbnail";
+            button.dataset.slideNumber = String(slideNumber);
+            button.setAttribute("aria-label", `查看第 ${slideNumber} 页`);
+
+            const number = document.createElement("span");
+            number.className = "live-slide-thumbnail-number";
+            number.textContent = String(slideNumber);
+            const preview = document.createElement("span");
+            preview.className = "live-slide-thumbnail-preview";
+            preview.dataset.previewTitle = `第 ${slideNumber} 页缩略图`;
+            preview.dataset.previewUrl = liveSlideUrl(id, slideNumber, manifest.update_token);
+            button.append(number, preview);
+            button.addEventListener("click", () => {
+              selectLiveSlide(id, slideNumber, livePreviewManifest, {followLatest: false});
+            });
+            liveSlideThumbnails.appendChild(button);
+          });
+          observeLiveThumbnailPreviews();
+          livePreviewKey = nextKey;
+        }
+
+        selectLiveSlide(id, nextSelected, livePreviewManifest, {followLatest: shouldFollowLatest});
+      }
+
       async function updateSlidePreviews(id) {
         let manifest;
         try {
@@ -2312,6 +2967,7 @@ INDEX_HTML = """<!doctype html>
           .map(Number)
           .filter((value) => Number.isInteger(value) && value > 0)
           .sort((left, right) => left - right);
+        renderLiveSlideWorkspace(id, manifest, available);
         if (!available.length) {
           currentPreviewKey = "";
           previewEmpty.hidden = false;
@@ -2672,15 +3328,23 @@ INDEX_HTML = """<!doctype html>
       }
 
       function setProgress(job) {
-        currentStage.textContent = stageLabel(job.current_stage);
+        const readableStage = stageLabel(job.current_stage);
+        currentStage.textContent = readableStage;
         currentBatch.textContent = job.current_batch || "暂无";
         totalBatches.textContent = String(job.total_batches || 0);
         totalBatchesMeta.textContent = String(job.total_batches || 0);
         completedBatches.textContent = String(job.completed_batches || 0);
         failedBatches.textContent = String(job.failed_batches || 0);
         railFailedBatches.textContent = String(job.failed_batches || 0);
+        studioAgentActivity.textContent = readableStage;
+        if (job.current_batch) {
+          studioCurrentPage.textContent = job.current_batch
+            .replace(/^page_0*/, "第 ")
+            .replace(/^batch_0*/, "第 ");
+        }
         syncElapsedClock(job);
         const isTerminal = isTerminalStatus(job.status);
+        liveStatusDot.classList.toggle("is-running", !isTerminal);
         if (job.cancel_requested && !isTerminal) {
           longRunningNotice.textContent = "取消请求已发送；当前 batch 完成后会停止。";
         } else if (!isTerminal && (job.elapsed_seconds || 0) >= 300) {
@@ -2723,7 +3387,7 @@ INDEX_HTML = """<!doctype html>
           audience: document.getElementById("long_audience").value.trim(),
           slide_count: Number(document.getElementById("long_slide_count").value),
           language: "zh-CN",
-          deck_type: "technical_product_share",
+          deck_type: "visual_design_v2",
           user_requirements: document.getElementById("long_user_requirements").value.trim(),
           interview_id: activeInterviewId
         };
@@ -2825,9 +3489,9 @@ INDEX_HTML = """<!doctype html>
           : "Agent 正在补齐会影响内容、结构和视觉结果的关键决策。";
         if (isReady) {
           applyBriefToGenerationForm(brief);
-          projectTitle.textContent = brief.topic || "PPT 项目工作台";
+          updateViewHeader();
         }
-        longDeckForm.hidden = !manualBriefVisible;
+        longDeckForm.hidden = true;
       }
 
       function renderGenerationConfirmation(brief) {
@@ -2952,7 +3616,6 @@ INDEX_HTML = """<!doctype html>
       function resetPresentationInterview() {
         activeInterviewId = null;
         activeInterviewState = null;
-        manualBriefVisible = false;
         localStorage.removeItem(presentationInterviewStorageKey);
         localStorage.removeItem(longDeckDraftStorageKey);
         interviewMessages.replaceChildren();
@@ -2968,6 +3631,7 @@ INDEX_HTML = """<!doctype html>
         longDeckForm.hidden = true;
         resetBriefSummary();
         updateGenerationChoice();
+        updateViewHeader();
       }
 
       async function restorePresentationInterview() {
@@ -3013,14 +3677,14 @@ INDEX_HTML = """<!doctype html>
         updatePptMasterRunner(job);
         updatePptMasterOutput(job);
         updateProductDashboard(job);
-        projectTitle.textContent = item.topic;
+        document.getElementById("long_topic").value = item.topic || "";
+        setAppView("studio");
         errorMessage.textContent = job.error_message ? jobErrorText(job) : "";
         await Promise.all([loadArtifacts(job.job_id), updateSlidePreviews(job.job_id)]);
         if (!isTerminalStatus(job.status)) {
           setBusy(true);
           schedulePoll(job.job_id, 1000);
         }
-        document.getElementById("projectWorkspace").scrollIntoView({behavior: "smooth", block: "start"});
       }
 
       function renderPresentationHistory(items, total) {
@@ -3189,7 +3853,9 @@ INDEX_HTML = """<!doctype html>
         }
         setBusy(true);
         setStatus("submitting");
+        setAppView("studio");
         currentStage.textContent = "正在提交任务";
+        studioAgentActivity.textContent = "正在提交任务并准备内容规划。";
         resetElapsedClock();
         longRunningNotice.textContent = "";
         errorMessage.textContent = "";
@@ -3200,6 +3866,7 @@ INDEX_HTML = """<!doctype html>
         clearPptMasterRunner();
         clearPptMasterOutput();
         updateArtifactDrivenUi([]);
+        resetLiveSlideWorkspace(Number(payload.slide_count || payload.slides || longSlideCount.value) || 0);
         previewEmpty.hidden = false;
         currentPreviewKey = "";
         previewSlides.forEach((frame) => {
@@ -3244,6 +3911,7 @@ INDEX_HTML = """<!doctype html>
             updatePptMasterRunner(job);
             updatePptMasterOutput(job);
             updateProductDashboard(job);
+            setAppView("studio");
             if (job.error_message) {
               errorMessage.textContent = jobErrorText(job);
             }
@@ -3275,6 +3943,7 @@ INDEX_HTML = """<!doctype html>
           updatePptMasterRunner(latest);
           updatePptMasterOutput(latest);
           updateProductDashboard(latest);
+          setAppView("studio");
           if (latest.error_message) {
             errorMessage.textContent = jobErrorText(latest);
           }
@@ -3293,7 +3962,7 @@ INDEX_HTML = """<!doctype html>
         event.preventDefault();
         saveLongDeckDraft();
         const pageCount = Number(longSlideCount.value);
-        if (pageCount <= 10) {
+        if (pageCount <= 3) {
           await submitJob("/api/jobs", buildShortDeckPayload());
         } else {
           await submitJob("/api/long-deck-jobs", buildLongDeckPayload());
@@ -3419,18 +4088,24 @@ INDEX_HTML = """<!doctype html>
         interviewInput.focus();
       });
 
-      manualBriefButton.addEventListener("click", () => {
-        manualBriefVisible = true;
-        longDeckForm.hidden = false;
-        briefStatus.textContent = activeInterviewState?.status === "ready" ? "已理解" : "手动调整";
-        briefStatus.classList.toggle("is-ready", activeInterviewState?.status === "ready");
-        briefReadinessHint.textContent = "高级用户可以在这里直接修改 Agent 已整理的信息。";
-        longDeckForm.scrollIntoView({behavior: "smooth", block: "nearest"});
-      });
-
       newInterviewButton.addEventListener("click", () => {
         resetPresentationInterview();
+        setAppView("create");
         interviewInput.focus();
+      });
+
+      followLatestSlideButton.addEventListener("click", () => {
+        if (!activeJobId || !livePreviewManifest || !livePreviewLatestSlide) return;
+        selectLiveSlide(activeJobId, livePreviewLatestSlide, livePreviewManifest, {followLatest: true});
+      });
+
+      [primaryDownloadTop, primaryDownloadLink, deliveryDownload].forEach((link) => {
+        link.addEventListener("click", (event) => {
+          if (link.getAttribute("href")?.startsWith("#")) {
+            event.preventDefault();
+            setAppView("delivery");
+          }
+        });
       });
 
       refreshHistoryButton.addEventListener("click", () => {
@@ -3446,17 +4121,14 @@ INDEX_HTML = """<!doctype html>
         historySearchTimer = setTimeout(loadPresentationHistory, 250);
       });
 
-      document.querySelectorAll("[data-scroll-target]").forEach((control) => {
+      document.querySelectorAll("[data-view-target]").forEach((control) => {
         control.addEventListener("click", () => {
-          const target = document.getElementById(control.dataset.scrollTarget);
-          if (target) target.scrollIntoView({behavior: "smooth", block: "start"});
-          document.querySelectorAll(".project-tab").forEach((tab) => tab.classList.toggle("is-active", tab === control));
-          document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("is-active", item === control));
+          setAppView(control.dataset.viewTarget);
         });
       });
 
-      document.getElementById("long_topic").addEventListener("input", (event) => {
-        projectTitle.textContent = event.target.value.trim() || "PPT 项目工作台";
+      document.getElementById("long_topic").addEventListener("input", () => {
+        updateViewHeader();
         saveLongDeckDraft();
       });
 
@@ -3470,7 +4142,8 @@ INDEX_HTML = """<!doctype html>
       window.addEventListener("load", () => {
         loadLongDeckDraft();
         updateGenerationChoice();
-        projectTitle.textContent = document.getElementById("long_topic").value.trim() || "PPT 项目工作台";
+        setAppView("create");
+        resetLiveSlideWorkspace(Number(longSlideCount.value) || 0);
         setInterval(renderElapsedClock, 250);
         loadPresentationHistory();
         restorePresentationInterview();
@@ -3502,13 +4175,17 @@ class CreateJobRequest(StrictModel):
 class CreateLongDeckJobRequest(StrictModel):
     topic: str = Field(..., min_length=1)
     audience: str = Field(..., min_length=1)
-    slide_count: int = Field(default=30, ge=11, le=100)
+    slide_count: int = Field(default=30, ge=4, le=100)
     language: str = Field(default="zh-CN", min_length=1)
     deck_type: str = Field(default="technical_product_share", min_length=1)
     user_requirements: str = Field(..., min_length=1)
     batch_size: int = Field(default=2, ge=1, le=10)
     max_batch_attempts: int = Field(default=1, ge=1, le=3)
     interview_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+def _uses_v2_generation(payload: CreateLongDeckJobRequest) -> bool:
+    return payload.deck_type == "visual_design_v2" or payload.slide_count != 30
 
 
 class CreateJobResponse(StrictModel):
@@ -5294,7 +5971,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         payload: CreateLongDeckJobRequest,
         background_tasks: BackgroundTasks,
     ) -> CreateJobResponse:
-        if payload.slide_count != 30:
+        if _uses_v2_generation(payload):
             try:
                 client = _create_v2_model_client()
             except (V2ProviderError, ValueError) as exc:
@@ -5356,12 +6033,12 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         output_dir = app.state.jobs_root / job_id
         try:
             payload = _load_long_deck_request_artifact(output_dir)
-            model = _create_v2_model_client() if payload.slide_count != 30 else _create_chat_model()
+            model = _create_v2_model_client() if _uses_v2_generation(payload) else _create_chat_model()
         except Exception as exc:
             detail = sanitize_error_message(exc)
             raise HTTPException(status_code=503, detail=f"Could not prepare long deck resume job: {detail}") from exc
 
-        resume_job_type = "long_deck_v2" if payload.slide_count != 30 else "long_deck"
+        resume_job_type = "long_deck_v2" if _uses_v2_generation(payload) else "long_deck"
         resume_job = app.state.job_store.create_job(job_type=resume_job_type)
         _save_presentation_request_snapshot(
             app.state.job_store,
@@ -5369,7 +6046,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             payload,
             resumed_from_job_id=job_id,
         )
-        if payload.slide_count != 30:
+        if _uses_v2_generation(payload):
             app.state.job_store.update_long_deck_progress(
                 resume_job.job_id,
                 current_stage="v2_intake",
@@ -5582,7 +6259,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         return {
             "available_slide_numbers": numbers,
             "highlight_slide_numbers": highlights,
-            "total_requested": job.total_batches or len(numbers),
+            "total_requested": max(job.total_batches or 0, len(numbers)),
             "preview_kind": preview_kind,
             "update_token": str(update_token),
         }

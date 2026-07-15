@@ -556,7 +556,7 @@ def test_index_page_returns_html_with_generate_button(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert 'id="generateLongDeckButton"' in response.text
-    assert "生成 30 页 PPT" in response.text
+    assert "开始生成 PPT" in response.text
 
 
 def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
@@ -568,7 +568,6 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
         "主题",
         "目标观众",
         "页数",
-        "PPT 详细要求",
         "生成进度",
         "生成文件",
         "资料覆盖度",
@@ -585,22 +584,25 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
 
     assert response.status_code == 200
     for text in [
-            "创建演示",
-            "和 Agent 一起定义演示",
-            "告诉我你想做什么演示",
-            "手动调整",
-            "不确定，暂时跳过",
-            "问题数量动态调整",
-            "像聊天一样说出想法",
-            "Agent 理解充分后会直接准备生成",
-            "Agent 已经理解，可以开始生成",
-            "继续调整",
-            "Agent 理解",
-        "Presentation workspace",
+        "创建演示",
+        "和 Agent 一起定义演示",
+        "告诉我你想做什么演示",
+        "不确定，暂时跳过",
+        "问题数量动态调整",
+        "像聊天一样说出想法",
+        "Agent 理解充分后会直接准备生成",
+        "Agent 已经理解，可以开始生成",
+        "继续调整",
+        "Agent 理解",
+        "Live generation studio",
+        "生成工作台",
+        "实时画布",
+        "页面会在这里实时出现",
+        "Agent 正在做什么",
         "演示预览",
         "章节页数分配",
         "质量与成本",
-        "生成 30 页 PPT",
+        "开始生成 PPT",
         "取消任务",
         "继续/重试演示",
         "PPT Master 渲染包",
@@ -650,10 +652,18 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
     assert "interviewInput.disabled = isBusy" not in response.text
     assert "正在快速整理这一轮需求" in response.text
     assert "Number(decision.brief.slide_count) <= 10" in response.text
-    assert "longDeckForm.hidden = !manualBriefVisible" in response.text
+    assert "longDeckForm.hidden = true" in response.text
+    assert 'id="manualBriefButton"' not in response.text
+    assert "manualBriefVisible" not in response.text
     assert 'id="briefStatus"' in response.text
     assert "/api/presentation-interviews" in response.text
-    assert 'id="long_slide_count" name="slide_count" type="number" min="1" max="100"' in response.text
+    assert 'id="long_topic" name="topic" type="hidden"' in response.text
+    assert 'id="long_audience" name="audience" type="hidden"' in response.text
+    assert 'id="long_slide_count" name="slide_count" type="hidden"' in response.text
+    assert 'id="long_user_requirements" name="user_requirements" type="hidden"' in response.text
+    assert '<label>主题<input id="long_topic"' not in response.text
+    assert '<label>目标观众<input id="long_audience"' not in response.text
+    assert "PPT 详细要求<textarea" not in response.text
     assert "高级生成设置" not in response.text
     assert 'id="long_batch_size"' not in response.text
     assert 'id="long_max_batch_attempts"' not in response.text
@@ -674,6 +684,20 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
     assert 'id="patch_path"' not in response.text
     assert 'submitJob("/api/jobs", buildShortDeckPayload())' in response.text
     assert 'submitJob("/api/long-deck-jobs", buildLongDeckPayload())' in response.text
+    assert "pageCount <= 3" in response.text
+    assert 'deck_type: "visual_design_v2"' in response.text
+    assert 'data-view-target="create"' in response.text
+    assert 'data-view-target="studio"' in response.text
+    assert 'data-view-target="preview"' in response.text
+    assert 'data-view-target="history"' in response.text
+    assert 'data-view-target="delivery"' in response.text
+    assert 'id="liveSlideThumbnails"' in response.text
+    assert 'id="liveSlidePreview"' in response.text
+    assert "renderLiveSlideWorkspace(id, manifest, available)" in response.text
+    assert "IntersectionObserver" in response.text
+    assert "observeLiveThumbnailPreviews();" in response.text
+    assert "previewStartIndex" not in response.text
+    assert "live-slide-thumbnail-summary" not in response.text
     assert "/api/presentations" in response.text
 
 
@@ -912,7 +936,7 @@ def test_create_long_deck_job_rejects_slide_count_outside_supported_range(tmp_pa
 
     too_short = client.post(
         "/api/long-deck-jobs",
-        json={**_long_deck_payload(), "slide_count": 10},
+        json={**_long_deck_payload(), "slide_count": 3},
     )
     too_long = client.post(
         "/api/long-deck-jobs",
@@ -934,6 +958,26 @@ def test_create_arbitrary_page_long_deck_uses_v2_pipeline(tmp_path: Path, monkey
 
     assert response.status_code == 202
     assert captured["request"].page_count == 75
+
+
+def test_visual_design_web_requests_use_v2_for_four_to_thirty_pages(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    for page_count in (4, 30):
+        response = client.post(
+            "/api/long-deck-jobs",
+            json={
+                **_long_deck_payload(),
+                "slide_count": page_count,
+                "deck_type": "visual_design_v2",
+            },
+        )
+
+        assert response.status_code == 202
+        assert captured["request"].page_count == page_count
+        assert client.get(f"/api/jobs/{response.json()['job_id']}").json()["job_type"] == "long_deck_v2"
 
 
 def test_create_100_page_long_deck_uses_v2_pipeline_and_registers_artifacts(
