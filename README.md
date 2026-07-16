@@ -13,6 +13,7 @@
 | 1-100 页统一 Web 创建入口 | 已完成 |
 | 自适应需求访谈 Agent：单问题追问、快捷选项、自由回答、生成确认 | 已完成 |
 | 创建、实时生成、页面预览、演示历史、交付中心分区工作台 | 已完成 |
+| 独立 Web UI 静态资源与 Python package-data 打包 | 已完成 |
 | 100 页真实 LLM 生成 | 已验证 |
 | 原生可编辑 PPTX | 已完成 |
 | v2 自由布局 PageDesign IR | 已完成 |
@@ -67,6 +68,8 @@ Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句
 | SQLite 演示历史 | 交付中心 |
 | --- | --- |
 | ![SQLite presentation history](docs/readme/web-presentation-history.jpg) | ![Presentation delivery center](docs/readme/web-delivery-center.jpg) |
+
+Web 前端保持零额外框架依赖，但已经从 FastAPI 模块中拆出：`webui/index.html` 负责语义结构，`webui/styles.css` 负责深色产品视觉，`webui/app.js` 负责对话、轮询、实时预览、历史和交付交互。FastAPI 在 `/static` 提供这些资源，setuptools 通过 package data 将它们带入安装包。这样修改 UI 不再需要在 `api.py` 中维护数千行内嵌字符串。
 
 当前 Web 路由：
 
@@ -405,6 +408,10 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 ~~~text
 src/ppt_agent/
 ├── api.py                     # FastAPI + Web workspace + job endpoints
+├── webui/                     # 独立、无框架依赖的 Web 产品界面
+│   ├── index.html             # 五个产品视图和语义结构
+│   ├── styles.css             # 深色设计系统与响应式布局
+│   └── app.js                 # 对话、任务轮询、实时预览和历史交互
 ├── requirements_interview.py  # 自适应对话访谈与内部 Brief
 ├── job_store.py               # SQLite jobs、访谈、请求快照与 artifacts
 ├── generation.py              # v1 structured generation

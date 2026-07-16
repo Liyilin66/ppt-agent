@@ -93,6 +93,16 @@ def _client(tmp_path: Path) -> TestClient:
     return TestClient(api.create_app(data_dir=tmp_path))
 
 
+def _webui_text(tmp_path: Path) -> str:
+    """The web UI is split into static files; combine index HTML with app.js for text assertions."""
+    client = _client(tmp_path)
+    index = client.get("/")
+    assert index.status_code == 200
+    script = client.get("/static/app.js")
+    assert script.status_code == 200
+    return index.text + script.text
+
+
 def _job_payload() -> dict:
     return {
         "topic": "AI in Education",
@@ -580,9 +590,7 @@ def test_index_page_contains_chinese_job_labels(tmp_path: Path) -> None:
 
 
 def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None:
-    response = _client(tmp_path).get("/")
-
-    assert response.status_code == 200
+    page_text = _webui_text(tmp_path)
     for text in [
         "创建演示",
         "和 Agent 一起定义演示",
@@ -637,68 +645,68 @@ def test_index_page_contains_long_deck_product_workspace(tmp_path: Path) -> None
         "系统会从已完成 batch 后继续",
         "当前阶段不会自动运行 ppt-master",
     ]:
-        assert text in response.text
-    assert 'id="longDeckForm"' in response.text
-    assert 'id="interviewComposer"' in response.text
-    assert 'id="interviewQuestionPanel"' in response.text
-    assert 'id="interviewOptions"' in response.text
-    assert 'id="generationConfirmation"' in response.text
-    assert 'id="confirmGenerationButton"' in response.text
-    assert 'id="continueInterviewButton"' in response.text
-    assert "也可以在下方直接输入你的想法" not in response.text
-    assert "不确定，暂时跳过" in response.text
-    assert "interviewOptions.after(interviewComposer)" in response.text
-    assert 'interviewComposer.setAttribute("aria-busy", String(isBusy))' in response.text
-    assert "interviewInput.disabled = isBusy" not in response.text
-    assert "正在快速整理这一轮需求" in response.text
-    assert "Number(decision.brief.slide_count) <= 10" in response.text
-    assert "longDeckForm.hidden = true" in response.text
-    assert 'id="manualBriefButton"' not in response.text
-    assert "manualBriefVisible" not in response.text
-    assert 'id="briefStatus"' in response.text
-    assert "/api/presentation-interviews" in response.text
-    assert 'id="long_topic" name="topic" type="hidden"' in response.text
-    assert 'id="long_audience" name="audience" type="hidden"' in response.text
-    assert 'id="long_slide_count" name="slide_count" type="hidden"' in response.text
-    assert 'id="long_user_requirements" name="user_requirements" type="hidden"' in response.text
-    assert '<label>主题<input id="long_topic"' not in response.text
-    assert '<label>目标观众<input id="long_audience"' not in response.text
-    assert "PPT 详细要求<textarea" not in response.text
-    assert "高级生成设置" not in response.text
-    assert 'id="long_batch_size"' not in response.text
-    assert 'id="long_max_batch_attempts"' not in response.text
-    assert '/api/jobs/${id}/preview-slides/${slideNumber}' in response.text
-    assert "manifest.highlight_slide_numbers" in response.text
-    assert "正在展示视觉高光页" in response.text
-    assert 'id="previewSlide1"' in response.text
-    assert "<iframe" in response.text
-    assert "ppt_agent_long_deck_form_draft" in response.text
-    assert "schedulePoll(id, 1000)" in response.text
-    assert "setInterval(renderElapsedClock, 250)" in response.text
-    assert 'value="AI 产品经理如何设计 Agent 产品"' not in response.text
-    assert "选择 30、50 或 100 页" not in response.text
-    assert "普通 1-10 页生成器" not in response.text
-    assert 'id="jobForm"' not in response.text
-    assert 'id="min_qa_score"' not in response.text
-    assert 'id="max_attempts"' not in response.text
-    assert 'id="patch_path"' not in response.text
-    assert 'submitJob("/api/jobs", buildShortDeckPayload())' in response.text
-    assert 'submitJob("/api/long-deck-jobs", buildLongDeckPayload())' in response.text
-    assert "pageCount <= 3" in response.text
-    assert 'deck_type: "visual_design_v2"' in response.text
-    assert 'data-view-target="create"' in response.text
-    assert 'data-view-target="studio"' in response.text
-    assert 'data-view-target="preview"' in response.text
-    assert 'data-view-target="history"' in response.text
-    assert 'data-view-target="delivery"' in response.text
-    assert 'id="liveSlideThumbnails"' in response.text
-    assert 'id="liveSlidePreview"' in response.text
-    assert "renderLiveSlideWorkspace(id, manifest, available)" in response.text
-    assert "IntersectionObserver" in response.text
-    assert "observeLiveThumbnailPreviews();" in response.text
-    assert "previewStartIndex" not in response.text
-    assert "live-slide-thumbnail-summary" not in response.text
-    assert "/api/presentations" in response.text
+        assert text in page_text
+    assert 'id="longDeckForm"' in page_text
+    assert 'id="interviewComposer"' in page_text
+    assert 'id="interviewQuestionPanel"' in page_text
+    assert 'id="interviewOptions"' in page_text
+    assert 'id="generationConfirmation"' in page_text
+    assert 'id="confirmGenerationButton"' in page_text
+    assert 'id="continueInterviewButton"' in page_text
+    assert "也可以在下方直接输入你的想法" not in page_text
+    assert "不确定，暂时跳过" in page_text
+    assert "interviewOptions.after(interviewComposer)" in page_text
+    assert 'interviewComposer.setAttribute("aria-busy", String(isBusy))' in page_text
+    assert "interviewInput.disabled = isBusy" not in page_text
+    assert "正在快速整理这一轮需求" in page_text
+    assert "Number(decision.brief.slide_count) <= 10" in page_text
+    assert "longDeckForm.hidden = true" in page_text
+    assert 'id="manualBriefButton"' not in page_text
+    assert "manualBriefVisible" not in page_text
+    assert 'id="briefStatus"' in page_text
+    assert "/api/presentation-interviews" in page_text
+    assert 'id="long_topic" name="topic" type="hidden"' in page_text
+    assert 'id="long_audience" name="audience" type="hidden"' in page_text
+    assert 'id="long_slide_count" name="slide_count" type="hidden"' in page_text
+    assert 'id="long_user_requirements" name="user_requirements" type="hidden"' in page_text
+    assert '<label>主题<input id="long_topic"' not in page_text
+    assert '<label>目标观众<input id="long_audience"' not in page_text
+    assert "PPT 详细要求<textarea" not in page_text
+    assert "高级生成设置" not in page_text
+    assert 'id="long_batch_size"' not in page_text
+    assert 'id="long_max_batch_attempts"' not in page_text
+    assert '/api/jobs/${id}/preview-slides/${slideNumber}' in page_text
+    assert "manifest.highlight_slide_numbers" in page_text
+    assert "正在展示视觉高光页" in page_text
+    assert 'id="previewSlide1"' in page_text
+    assert "<iframe" in page_text
+    assert "ppt_agent_long_deck_form_draft" in page_text
+    assert "schedulePoll(id, 1000)" in page_text
+    assert "setInterval(renderElapsedClock, 250)" in page_text
+    assert 'value="AI 产品经理如何设计 Agent 产品"' not in page_text
+    assert "选择 30、50 或 100 页" not in page_text
+    assert "普通 1-10 页生成器" not in page_text
+    assert 'id="jobForm"' not in page_text
+    assert 'id="min_qa_score"' not in page_text
+    assert 'id="max_attempts"' not in page_text
+    assert 'id="patch_path"' not in page_text
+    assert 'submitJob("/api/jobs", buildShortDeckPayload())' in page_text
+    assert 'submitJob("/api/long-deck-jobs", buildLongDeckPayload())' in page_text
+    assert "pageCount <= 3" in page_text
+    assert 'deck_type: "visual_design_v2"' in page_text
+    assert 'data-view-target="create"' in page_text
+    assert 'data-view-target="studio"' in page_text
+    assert 'data-view-target="preview"' in page_text
+    assert 'data-view-target="history"' in page_text
+    assert 'data-view-target="delivery"' in page_text
+    assert 'id="liveSlideThumbnails"' in page_text
+    assert 'id="liveSlidePreview"' in page_text
+    assert "renderLiveSlideWorkspace(id, manifest, available)" in page_text
+    assert "IntersectionObserver" in page_text
+    assert "observeLiveThumbnailPreviews();" in page_text
+    assert "previewStartIndex" not in page_text
+    assert "live-slide-thumbnail-summary" not in page_text
+    assert "/api/presentations" in page_text
 
 
 def test_index_page_keeps_only_unified_presentation_fields(tmp_path: Path) -> None:
@@ -710,38 +718,34 @@ def test_index_page_keeps_only_unified_presentation_fields(tmp_path: Path) -> No
 
 
 def test_index_page_contains_progress_stage_fields(tmp_path: Path) -> None:
-    response = _client(tmp_path).get("/")
-
-    assert response.status_code == 200
-    assert "currentStage" in response.text
-    assert "elapsedSeconds" in response.text
-    assert "generate_deck_chunk_" in response.text
-    assert "正在快速解析需求" in response.text
-    assert "正在快速规划大纲" in response.text
-    assert "正在生成 Deck：第" in response.text
-    assert "已生成，但未通过 QA" in response.text
-    assert "已生成，但 Patch 需要修正" in response.text
-    assert "已生成，但 QA 和 Patch 仍需修正" in response.text
-    assert "任务运行时间较长，请检查后端日志" in response.text
-    assert "generating_batch_" in response.text
-    assert "正在生成长 PPT：batch" in response.text
-    assert "正在执行长 PPT质量门禁" in response.text
-    assert "正在渲染长 PPT PPTX" in response.text
-    assert "质量门禁失败" in response.text
-    assert "currentBatch" in response.text
-    assert "totalBatches" in response.text
-    assert "completedBatches" in response.text
-    assert "failedBatches" in response.text
-    assert "取消请求已发送" in response.text
+    page_text = _webui_text(tmp_path)
+    assert "currentStage" in page_text
+    assert "elapsedSeconds" in page_text
+    assert "generate_deck_chunk_" in page_text
+    assert "正在快速解析需求" in page_text
+    assert "正在快速规划大纲" in page_text
+    assert "正在生成 Deck：第" in page_text
+    assert "已生成，但未通过 QA" in page_text
+    assert "已生成，但 Patch 需要修正" in page_text
+    assert "已生成，但 QA 和 Patch 仍需修正" in page_text
+    assert "任务运行时间较长，请检查后端日志" in page_text
+    assert "generating_batch_" in page_text
+    assert "正在生成长 PPT：batch" in page_text
+    assert "正在执行长 PPT质量门禁" in page_text
+    assert "正在渲染长 PPT PPTX" in page_text
+    assert "质量门禁失败" in page_text
+    assert "currentBatch" in page_text
+    assert "totalBatches" in page_text
+    assert "completedBatches" in page_text
+    assert "failedBatches" in page_text
+    assert "取消请求已发送" in page_text
 
 
 def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> None:
-    response = _client(tmp_path).get("/")
-
-    assert response.status_code == 200
-    assert 'id="patch_path"' not in response.text
-    assert "sample_patch.js\"" not in response.text
-    assert "sample_patch.js<" not in response.text
+    page_text = _webui_text(tmp_path)
+    assert 'id="patch_path"' not in page_text
+    assert "sample_patch.js\"" not in page_text
+    assert "sample_patch.js<" not in page_text
 
 
 def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:

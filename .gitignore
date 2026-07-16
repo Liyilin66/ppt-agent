@@ -24,3 +24,4 @@ examples/demo_long_deck_ai_agent_pm_30/output/
 .DS_Store
 
 .omx/
+.claude/
