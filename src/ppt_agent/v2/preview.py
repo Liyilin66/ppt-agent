@@ -212,13 +212,21 @@ def page_to_html(page: PageDesign, deck: DeckDesign) -> str:
             parts.append(_svg_image(element, theme))
     chrome = ""
     if page.show_chrome and page.role not in ("cover", "closing"):
-        chrome = (
-            f'<div style="position:absolute;left:64px;top:684px;font-size:13px;'
-            f'color:{theme.palette.muted};">{html.escape(deck.deck_title)}</div>'
-            f'<div style="position:absolute;right:64px;top:684px;font-size:13px;'
-            f'color:{theme.palette.muted};">{page.page_number:02d}</div>'
-        )
-        if page.section and page.role not in ("toc", "section_divider"):
+        if theme.chrome.show_footer:
+            chrome += (
+                f'<div style="position:absolute;left:64px;top:684px;font-size:13px;'
+                f'color:{theme.palette.muted};">{html.escape(deck.deck_title)}</div>'
+            )
+        if theme.chrome.show_page_number:
+            chrome += (
+                f'<div style="position:absolute;right:64px;top:684px;font-size:13px;'
+                f'color:{theme.palette.muted};">{page.page_number:02d}</div>'
+            )
+        if (
+            theme.chrome.show_section_kicker
+            and page.section
+            and page.role not in ("toc", "section_divider")
+        ):
             chrome += (
                 f'<div style="position:absolute;left:64px;top:26px;font-size:14px;'
                 f"font-weight:700;letter-spacing:1px;color:{theme.palette.primary};\">"

@@ -1,11 +1,15 @@
-"""Deterministic anchor pages: cover, TOC, section dividers, closing.
+"""Anchor pages: cover, TOC, section dividers, closing.
 
-Structural pages are generated in code, not by the model. They are the
-visual anchors of a long deck — always consistent, always polished, and
-they cost zero tokens. Content pages in between are model-designed.
+Cover, dividers and closing are normally designed by the model (see the
+orchestrator); the builders here are the deterministic fallback library.
+Each builder ships several visual variants so even fallback decks do not
+all share one template. The variant is chosen per deck from the deck title,
+keeping one deck internally consistent while different decks diverge.
 """
 
 from __future__ import annotations
+
+import zlib
 
 from ppt_agent.v2.design import ThemeSpec
 from ppt_agent.v2.ir import (
@@ -21,8 +25,19 @@ from ppt_agent.v2.ir import (
 )
 
 
+COVER_VARIANTS = 4
+DIVIDER_VARIANTS = 4
+CLOSING_VARIANTS = 3
+
+
 def _is_english(language: str) -> bool:
     return language.lower().startswith("en")
+
+
+def anchor_variant_seed(deck_title: str) -> int:
+    """Stable per-deck seed so all fallback anchors share one variant family."""
+
+    return zlib.crc32(deck_title.encode("utf-8"))
 
 
 def build_cover_page(
@@ -32,6 +47,15 @@ def build_cover_page(
     subtitle: str | None,
     language: str,
     theme: ThemeSpec,
+    variant: int | None = None,
+) -> PageDesign:
+    chosen = (anchor_variant_seed(deck_title) if variant is None else variant) % COVER_VARIANTS
+    builder = (_cover_orbs, _cover_side_band, _cover_diagonal, _cover_editorial)[chosen]
+    return builder(page_number, deck_title, subtitle, language, theme)
+
+
+def _cover_orbs(
+    page_number: int, deck_title: str, subtitle: str | None, language: str, theme: ThemeSpec
 ) -> PageDesign:
     elements: list[PageElement] = [
         ShapeItem(
@@ -79,6 +103,199 @@ def build_cover_page(
         title=deck_title,
         background="primary",
         background_gradient=Gradient(start="primary", end="secondary", angle_deg=115),
+        show_chrome=False,
+        elements=elements,
+    )
+
+
+def _cover_side_band(
+    page_number: int, deck_title: str, subtitle: str | None, language: str, theme: ThemeSpec
+) -> PageDesign:
+    elements: list[PageElement] = [
+        ShapeItem(
+            id="cover_edge_band",
+            frame=Frame(x=0, y=0, w=18, h=CANVAS_HEIGHT),
+            shape="rectangle",
+            fill="accent",
+        ),
+        ShapeItem(
+            id="cover_panel",
+            frame=Frame(x=860, y=96, w=356, h=528),
+            shape="rounded_rectangle",
+            fill="on_primary",
+            fill_alpha=0.08,
+        ),
+        ShapeItem(
+            id="cover_bar",
+            frame=Frame(x=104, y=228, w=10, h=250),
+            shape="rectangle",
+            fill="accent",
+        ),
+        TextItem(
+            id="cover_kicker",
+            frame=Frame(x=150, y=232, w=600, h=30),
+            text="PRESENTATION" if _is_english(language) else "专题演示",
+            role="kicker",
+            color="on_primary",
+        ),
+        TextItem(
+            id="cover_title",
+            frame=Frame(x=150, y=272, w=820, h=180),
+            text=deck_title,
+            role="display",
+            color="on_primary",
+        ),
+        ShapeItem(
+            id="cover_sq_1",
+            frame=Frame(x=940, y=560, w=26, h=26),
+            shape="rectangle",
+            fill="accent",
+        ),
+        ShapeItem(
+            id="cover_sq_2",
+            frame=Frame(x=980, y=560, w=26, h=26),
+            shape="rectangle",
+            fill="on_primary",
+            fill_alpha=0.4,
+        ),
+        ShapeItem(
+            id="cover_sq_3",
+            frame=Frame(x=1020, y=560, w=26, h=26),
+            shape="rectangle",
+            fill="on_primary",
+            fill_alpha=0.16,
+        ),
+    ]
+    if subtitle:
+        elements.append(
+            TextItem(
+                id="cover_subtitle",
+                frame=Frame(x=150, y=470, w=700, h=70),
+                text=subtitle,
+                role="subtitle",
+                color="on_primary",
+            )
+        )
+    return PageDesign(
+        page_number=page_number,
+        role="cover",
+        title=deck_title,
+        background="primary",
+        background_gradient=Gradient(start="primary", end="secondary", angle_deg=100),
+        show_chrome=False,
+        elements=elements,
+    )
+
+
+def _cover_diagonal(
+    page_number: int, deck_title: str, subtitle: str | None, language: str, theme: ThemeSpec
+) -> PageDesign:
+    elements: list[PageElement] = [
+        ShapeItem(
+            id="cover_diag_1",
+            frame=Frame(x=740, y=0, w=760, h=720),
+            shape="parallelogram",
+            fill="on_primary",
+            fill_alpha=0.07,
+        ),
+        ShapeItem(
+            id="cover_diag_2",
+            frame=Frame(x=990, y=0, w=430, h=720),
+            shape="parallelogram",
+            fill="accent",
+            fill_alpha=0.15,
+        ),
+        LineItem(
+            id="cover_rule",
+            x1=96,
+            y1=346,
+            x2=430,
+            y2=346,
+            color="accent",
+            width=3,
+        ),
+        TextItem(
+            id="cover_title",
+            frame=Frame(x=96, y=372, w=820, h=170),
+            text=deck_title,
+            role="display",
+            color="on_primary",
+        ),
+    ]
+    if subtitle:
+        elements.append(
+            TextItem(
+                id="cover_subtitle",
+                frame=Frame(x=96, y=556, w=720, h=70),
+                text=subtitle,
+                role="subtitle",
+                color="on_primary",
+            )
+        )
+    return PageDesign(
+        page_number=page_number,
+        role="cover",
+        title=deck_title,
+        background="primary",
+        background_gradient=Gradient(start="secondary", end="primary", angle_deg=160),
+        show_chrome=False,
+        elements=elements,
+    )
+
+
+def _cover_editorial(
+    page_number: int, deck_title: str, subtitle: str | None, language: str, theme: ThemeSpec
+) -> PageDesign:
+    elements: list[PageElement] = [
+        ShapeItem(
+            id="cover_top_rule",
+            frame=Frame(x=0, y=0, w=CANVAS_WIDTH, h=12),
+            shape="rectangle",
+            fill="primary",
+        ),
+        ShapeItem(
+            id="cover_accent_sq",
+            frame=Frame(x=96, y=132, w=52, h=52),
+            shape="rectangle",
+            fill="accent",
+        ),
+        TextItem(
+            id="cover_title",
+            frame=Frame(x=96, y=236, w=1030, h=220),
+            text=deck_title,
+            role="display",
+            color="text",
+        ),
+        LineItem(
+            id="cover_base_rule",
+            x1=96,
+            y1=600,
+            x2=1184,
+            y2=600,
+            color="primary",
+            width=1.5,
+        ),
+        TextItem(
+            id="cover_footer",
+            frame=Frame(x=96, y=616, w=500, h=32),
+            text="Presentation" if _is_english(language) else "专题演示",
+            role="caption",
+        ),
+    ]
+    if subtitle:
+        elements.append(
+            TextItem(
+                id="cover_subtitle",
+                frame=Frame(x=96, y=478, w=860, h=70),
+                text=subtitle,
+                role="subtitle",
+            )
+        )
+    return PageDesign(
+        page_number=page_number,
+        role="cover",
+        title=deck_title,
+        background="background",
         show_chrome=False,
         elements=elements,
     )
@@ -170,6 +387,47 @@ def build_section_divider(
     section_goal: str | None,
     language: str,
     theme: ThemeSpec,
+    variant: int | None = None,
+) -> PageDesign:
+    chosen = (
+        anchor_variant_seed(section_title) if variant is None else variant
+    ) % DIVIDER_VARIANTS
+    builder = (
+        _divider_numbered,
+        _divider_band,
+        _divider_split,
+        _divider_minimal,
+    )[chosen]
+    return builder(
+        page_number, section_index, section_count, section_title, section_goal, language, theme
+    )
+
+
+def _divider_progress_dots(
+    section_index: int, section_count: int, *, color: str = "on_primary", y: float | None = None
+) -> list[PageElement]:
+    dot_size = 12.0
+    y = CANVAS_HEIGHT - 80 if y is None else y
+    return [
+        ShapeItem(
+            id=f"divider_dot_{index}",
+            frame=Frame(x=96 + index * (dot_size + 12), y=y, w=dot_size, h=dot_size),
+            shape="ellipse",
+            fill=color,
+            fill_alpha=1.0 if index < section_index else 0.3,
+        )
+        for index in range(section_count)
+    ]
+
+
+def _divider_numbered(
+    page_number: int,
+    section_index: int,
+    section_count: int,
+    section_title: str,
+    section_goal: str | None,
+    language: str,
+    theme: ThemeSpec,
 ) -> PageDesign:
     elements: list[PageElement] = [
         ShapeItem(
@@ -205,23 +463,7 @@ def build_section_divider(
                 color="on_primary",
             )
         )
-    # Progress dots: filled up to the current section.
-    dot_size = 12.0
-    for index in range(section_count):
-        elements.append(
-            ShapeItem(
-                id=f"divider_dot_{index}",
-                frame=Frame(
-                    x=96 + index * (dot_size + 12),
-                    y=CANVAS_HEIGHT - 80,
-                    w=dot_size,
-                    h=dot_size,
-                ),
-                shape="ellipse",
-                fill="on_primary",
-                fill_alpha=1.0 if index < section_index else 0.3,
-            )
-        )
+    elements.extend(_divider_progress_dots(section_index, section_count))
     return PageDesign(
         page_number=page_number,
         role="section_divider",
@@ -234,6 +476,204 @@ def build_section_divider(
     )
 
 
+def _divider_band(
+    page_number: int,
+    section_index: int,
+    section_count: int,
+    section_title: str,
+    section_goal: str | None,
+    language: str,
+    theme: ThemeSpec,
+) -> PageDesign:
+    elements: list[PageElement] = [
+        TextItem(
+            id="divider_number",
+            frame=Frame(x=830, y=140, w=370, h=300),
+            text=f"{section_index:02d}",
+            role="display",
+            color="on_primary",
+            size_pt=120,
+            align="right",
+        ),
+        ShapeItem(
+            id="divider_band",
+            frame=Frame(x=0, y=300, w=820, h=110),
+            shape="rectangle",
+            fill="on_primary",
+            fill_alpha=0.10,
+        ),
+        ShapeItem(
+            id="divider_band_tip",
+            frame=Frame(x=0, y=300, w=14, h=110),
+            shape="rectangle",
+            fill="accent",
+        ),
+        TextItem(
+            id="divider_title",
+            frame=Frame(x=96, y=312, w=700, h=86),
+            text=section_title,
+            role="section",
+            color="on_primary",
+            valign="middle",
+        ),
+    ]
+    if section_goal:
+        elements.append(
+            TextItem(
+                id="divider_goal",
+                frame=Frame(x=96, y=440, w=760, h=90),
+                text=section_goal,
+                role="subtitle",
+                color="on_primary",
+            )
+        )
+    elements.extend(_divider_progress_dots(section_index, section_count))
+    return PageDesign(
+        page_number=page_number,
+        role="section_divider",
+        section=section_title,
+        title=section_title,
+        background="primary",
+        background_gradient=Gradient(start="primary", end="secondary", angle_deg=25),
+        show_chrome=False,
+        elements=elements,
+    )
+
+
+def _divider_split(
+    page_number: int,
+    section_index: int,
+    section_count: int,
+    section_title: str,
+    section_goal: str | None,
+    language: str,
+    theme: ThemeSpec,
+) -> PageDesign:
+    elements: list[PageElement] = [
+        ShapeItem(
+            id="divider_panel",
+            frame=Frame(x=0, y=0, w=440, h=CANVAS_HEIGHT),
+            shape="rectangle",
+            fill="primary",
+            gradient=Gradient(start="primary", end="secondary", angle_deg=140),
+        ),
+        TextItem(
+            id="divider_kicker",
+            frame=Frame(x=72, y=200, w=300, h=30),
+            text=f"SECTION {section_index:02d}" if _is_english(language) else f"第 {section_index:02d} 章",
+            role="kicker",
+            color="on_primary",
+        ),
+        TextItem(
+            id="divider_number",
+            frame=Frame(x=72, y=250, w=300, h=200),
+            text=f"{section_index:02d}",
+            role="display",
+            color="on_primary",
+            size_pt=110,
+        ),
+        TextItem(
+            id="divider_title",
+            frame=Frame(x=520, y=280, w=660, h=120),
+            text=section_title,
+            role="section",
+            color="text",
+        ),
+    ]
+    if section_goal:
+        elements.append(
+            TextItem(
+                id="divider_goal",
+                frame=Frame(x=520, y=420, w=620, h=100),
+                text=section_goal,
+                role="subtitle",
+            )
+        )
+    elements.extend(
+        _divider_progress_dots(section_index, section_count, color="primary", y=CANVAS_HEIGHT - 88)
+    )
+    # Shift dots to the right column for this layout.
+    for element in elements:
+        if element.id.startswith("divider_dot_"):
+            element.frame.x += 424
+    return PageDesign(
+        page_number=page_number,
+        role="section_divider",
+        section=section_title,
+        title=section_title,
+        background="background",
+        show_chrome=False,
+        elements=elements,
+    )
+
+
+def _divider_minimal(
+    page_number: int,
+    section_index: int,
+    section_count: int,
+    section_title: str,
+    section_goal: str | None,
+    language: str,
+    theme: ThemeSpec,
+) -> PageDesign:
+    progress_width = (CANVAS_WIDTH - 192) * (section_index / max(section_count, 1))
+    elements: list[PageElement] = [
+        ShapeItem(
+            id="divider_top_rule",
+            frame=Frame(x=0, y=0, w=CANVAS_WIDTH, h=10),
+            shape="rectangle",
+            fill="accent",
+        ),
+        TextItem(
+            id="divider_kicker",
+            frame=Frame(x=96, y=200, w=500, h=30),
+            text=(
+                f"SECTION {section_index:02d} / {section_count:02d}"
+                if _is_english(language)
+                else f"第 {section_index:02d} 章 · 共 {section_count:02d} 章"
+            ),
+            role="kicker",
+        ),
+        TextItem(
+            id="divider_title",
+            frame=Frame(x=96, y=250, w=1000, h=120),
+            text=section_title,
+            role="section",
+            color="text",
+        ),
+        ShapeItem(
+            id="divider_progress_track",
+            frame=Frame(x=96, y=600, w=CANVAS_WIDTH - 192, h=6),
+            shape="pill",
+            fill="surface_alt",
+        ),
+        ShapeItem(
+            id="divider_progress_fill",
+            frame=Frame(x=96, y=600, w=max(progress_width, 24), h=6),
+            shape="pill",
+            fill="primary",
+        ),
+    ]
+    if section_goal:
+        elements.append(
+            TextItem(
+                id="divider_goal",
+                frame=Frame(x=96, y=396, w=860, h=100),
+                text=section_goal,
+                role="subtitle",
+            )
+        )
+    return PageDesign(
+        page_number=page_number,
+        role="section_divider",
+        section=section_title,
+        title=section_title,
+        background="background",
+        show_chrome=False,
+        elements=elements,
+    )
+
+
 def build_closing_page(
     *,
     page_number: int,
@@ -241,6 +681,19 @@ def build_closing_page(
     language: str,
     theme: ThemeSpec,
     closing_note: str | None = None,
+    variant: int | None = None,
+) -> PageDesign:
+    chosen = (anchor_variant_seed(deck_title) if variant is None else variant) % CLOSING_VARIANTS
+    builder = (_closing_orb, _closing_editorial, _closing_diagonal)[chosen]
+    return builder(page_number, deck_title, language, theme, closing_note)
+
+
+def _closing_orb(
+    page_number: int,
+    deck_title: str,
+    language: str,
+    theme: ThemeSpec,
+    closing_note: str | None,
 ) -> PageDesign:
     thanks = "Thank You" if _is_english(language) else "谢谢观看"
     note = closing_note or deck_title
@@ -281,6 +734,114 @@ def build_closing_page(
                 role="subtitle",
                 color="on_primary",
                 align="center",
+            ),
+        ],
+    )
+
+
+def _closing_editorial(
+    page_number: int,
+    deck_title: str,
+    language: str,
+    theme: ThemeSpec,
+    closing_note: str | None,
+) -> PageDesign:
+    thanks = "Thank You" if _is_english(language) else "谢谢观看"
+    note = closing_note or deck_title
+    return PageDesign(
+        page_number=page_number,
+        role="closing",
+        title=thanks,
+        background="background",
+        show_chrome=False,
+        elements=[
+            ShapeItem(
+                id="closing_accent_sq",
+                frame=Frame(x=96, y=200, w=52, h=52),
+                shape="rectangle",
+                fill="accent",
+            ),
+            TextItem(
+                id="closing_title",
+                frame=Frame(x=96, y=290, w=1000, h=140),
+                text=thanks,
+                role="display",
+                color="text",
+            ),
+            LineItem(
+                id="closing_rule",
+                x1=96,
+                y1=470,
+                x2=520,
+                y2=470,
+                color="primary",
+                width=2,
+            ),
+            TextItem(
+                id="closing_note",
+                frame=Frame(x=96, y=492, w=860, h=60),
+                text=note,
+                role="subtitle",
+            ),
+        ],
+    )
+
+
+def _closing_diagonal(
+    page_number: int,
+    deck_title: str,
+    language: str,
+    theme: ThemeSpec,
+    closing_note: str | None,
+) -> PageDesign:
+    thanks = "Thank You" if _is_english(language) else "谢谢观看"
+    note = closing_note or deck_title
+    return PageDesign(
+        page_number=page_number,
+        role="closing",
+        title=thanks,
+        background="primary",
+        background_gradient=Gradient(start="secondary", end="primary", angle_deg=205),
+        show_chrome=False,
+        elements=[
+            ShapeItem(
+                id="closing_diag",
+                frame=Frame(x=-220, y=0, w=640, h=720),
+                shape="parallelogram",
+                fill="on_primary",
+                fill_alpha=0.07,
+            ),
+            ShapeItem(
+                id="closing_diag_2",
+                frame=Frame(x=-380, y=0, w=520, h=720),
+                shape="parallelogram",
+                fill="accent",
+                fill_alpha=0.13,
+            ),
+            TextItem(
+                id="closing_title",
+                frame=Frame(x=430, y=300, w=750, h=120),
+                text=thanks,
+                role="display",
+                color="on_primary",
+                align="right",
+            ),
+            LineItem(
+                id="closing_rule",
+                x1=860,
+                y1=440,
+                x2=1180,
+                y2=440,
+                color="accent",
+                width=3,
+            ),
+            TextItem(
+                id="closing_note",
+                frame=Frame(x=480, y=462, w=700, h=60),
+                text=note,
+                role="subtitle",
+                color="on_primary",
+                align="right",
             ),
         ],
     )

@@ -186,7 +186,7 @@ def _timeline_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
 def _two_column_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
     points = brief.points or [brief.summary or brief.title]
     middle = (len(points) + 1) // 2
-    left, right = points[:middle], points[middle:] or [""]
+    left, right = points[:middle], points[middle:] or [brief.summary or brief.title]
     column_width = (CONTENT_WIDTH - 40) / 2
     elements: list[PageElement] = _title_block(brief.title)
     for column, (label, chunk) in enumerate(

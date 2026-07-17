@@ -237,6 +237,12 @@ const viewMetadata = {
     description: "通过对话把想法变成可执行的演示需求。",
     context: "需求访谈"
   },
+  outline: {
+    eyebrow: "Outline & script",
+    title: "大纲脚本",
+    description: "生成前逐页确认大纲、要点和演讲备注。",
+    context: "生成前确认"
+  },
   studio: {
     eyebrow: "Live generation studio",
     title: "生成工作台",
@@ -446,6 +452,7 @@ function updateProductDashboard(job) {
   updateStageTrack(job);
   updateNarrativeHealth(job);
   renderChapterAllocation(job.ppt_master_output?.slide_count || (isV2 ? Number(job.total_batches || 100) : 30));
+  updateRevisionPanel(job);
 }
 
 function jobErrorText(job) {
@@ -1147,7 +1154,10 @@ function renderGenerationConfirmation(brief) {
   confirmationAudience.textContent = brief.audience || "待确认";
   confirmationSlideCount.textContent = brief.slide_count ? `${brief.slide_count} 页` : "待确认";
   confirmationVisual.textContent = brief.visual_direction || brief.tone || "待确认";
-  confirmGenerationButton.textContent = `开始生成 ${brief.slide_count || ""} 页 PPT`.replace("  页", "");
+  const confirmedPageCount = Number(brief.slide_count) || 0;
+  confirmGenerationButton.textContent = confirmedPageCount > 3
+    ? `生成大纲与脚本（${confirmedPageCount} 页）`
+    : `开始生成 ${confirmedPageCount || ""} 页 PPT`.replace("  页", "");
 }
 
 function renderInterviewState(state, allowAutoStart = false) {
@@ -1494,7 +1504,7 @@ function schedulePoll(id, delay = 1000) {
   }, delay);
 }
 
-async function submitJob(url, payload) {
+function prepareJobWorkspace(requestedPages) {
   if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;
@@ -1514,13 +1524,29 @@ async function submitJob(url, payload) {
   clearPptMasterRunner();
   clearPptMasterOutput();
   updateArtifactDrivenUi([]);
-  resetLiveSlideWorkspace(Number(payload.slide_count || payload.slides || longSlideCount.value) || 0);
+  resetLiveSlideWorkspace(requestedPages || 0);
   previewEmpty.hidden = false;
   currentPreviewKey = "";
   previewSlides.forEach((frame) => {
     frame.hidden = true;
     frame.removeAttribute("src");
   });
+}
+
+async function trackCreatedJob(job) {
+  activeJobId = job.job_id;
+  rememberActiveJob(job);
+  jobId.textContent = job.job_id;
+  setStatus(job.status, job.accepted, job.error_message || "");
+  await loadPresentationHistory();
+  const finished = await pollJob(job.job_id);
+  if (!finished) {
+    schedulePoll(job.job_id, 1000);
+  }
+}
+
+async function submitJob(url, payload) {
+  prepareJobWorkspace(Number(payload.slide_count || payload.slides || longSlideCount.value) || 0);
 
   try {
     const job = await requestJson(url, {
@@ -1528,15 +1554,7 @@ async function submitJob(url, payload) {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload)
     });
-    activeJobId = job.job_id;
-    rememberActiveJob(job);
-    jobId.textContent = job.job_id;
-    setStatus(job.status, job.accepted, job.error_message || "");
-    await loadPresentationHistory();
-    const finished = await pollJob(job.job_id);
-    if (!finished) {
-      schedulePoll(job.job_id, 1000);
-    }
+    await trackCreatedJob(job);
   } catch (error) {
     errorMessage.textContent = error.message;
     setStatus("failed");
@@ -1605,6 +1623,533 @@ async function restoreLastLongDeckJob() {
     errorMessage.textContent = error.message;
   }
 }
+
+/* ---------- Post-generation revision chat ---------- */
+
+const revisionPanel = document.getElementById("revisionPanel");
+const revisionStatusChip = document.getElementById("revisionStatusChip");
+const revisionMessages = document.getElementById("revisionMessages");
+const revisionEmpty = document.getElementById("revisionEmpty");
+const revisionComposer = document.getElementById("revisionComposer");
+const revisionInput = document.getElementById("revisionInput");
+const sendRevisionButton = document.getElementById("sendRevisionButton");
+const revisionQuotePageButton = document.getElementById("revisionQuotePageButton");
+
+let revisionJobId = null;
+let revisionPollTimer = null;
+let revisionBusy = false;
+
+function appendRevisionMessage(role, content, options = {}) {
+  const message = document.createElement("div");
+  message.className = "revision-message" + (options.pending ? " is-pending" : "");
+  message.dataset.role = role;
+  const label = document.createElement("strong");
+  label.textContent = role === "user" ? "你" : "PPT Agent";
+  message.appendChild(label);
+  message.appendChild(document.createTextNode(content));
+  revisionMessages.appendChild(message);
+  revisionEmpty.hidden = true;
+  revisionMessages.scrollTop = revisionMessages.scrollHeight;
+  return message;
+}
+
+function setRevisionBusy(busy) {
+  revisionBusy = busy;
+  sendRevisionButton.disabled = busy;
+  revisionStatusChip.textContent = busy ? "修改中" : "待命";
+}
+
+function stopRevisionPolling() {
+  if (revisionPollTimer) {
+    clearTimeout(revisionPollTimer);
+    revisionPollTimer = null;
+  }
+}
+
+function resetRevisionPanel() {
+  stopRevisionPolling();
+  revisionMessages.querySelectorAll(".revision-message").forEach((node) => node.remove());
+  revisionEmpty.hidden = false;
+  setRevisionBusy(false);
+}
+
+function updateRevisionQuoteButton() {
+  const slide = livePreviewSelectedSlide;
+  revisionQuotePageButton.hidden = !slide;
+  if (slide) {
+    revisionQuotePageButton.textContent = `引用第 ${slide} 页`;
+  }
+}
+
+function updateRevisionPanel(job) {
+  const eligible = Boolean(
+    job
+    && job.job_type === "long_deck_v2"
+    && (job.status === "succeeded" || job.status === "failed_quality_gate")
+  );
+  revisionPanel.hidden = !eligible;
+  if (!eligible) {
+    if (revisionJobId !== null) resetRevisionPanel();
+    revisionJobId = null;
+    return;
+  }
+  updateRevisionQuoteButton();
+  if (revisionJobId !== job.job_id) {
+    revisionJobId = job.job_id;
+    loadDeckRevisions(job.job_id);
+  }
+}
+
+async function loadDeckRevisions(jobId) {
+  try {
+    const data = await requestJson(`/api/jobs/${jobId}/revisions`);
+    if (revisionJobId !== jobId) return;
+    resetRevisionPanel();
+    data.items.forEach((item) => {
+      appendRevisionMessage("user", item.message);
+      if (item.status === "succeeded") {
+        appendRevisionMessage("assistant", item.reply || "已完成修改并重新渲染。");
+      } else if (item.status === "failed") {
+        appendRevisionMessage("assistant", `修改失败：${item.error_message || "未知原因"}`);
+      } else {
+        appendRevisionMessage("assistant", "正在修改对应页面…", {pending: true});
+      }
+    });
+    const running = data.items.find((item) => item.status === "running");
+    if (running) {
+      setRevisionBusy(true);
+      scheduleRevisionPoll(jobId, running.revision_id);
+    }
+  } catch (error) {
+    /* history is best-effort; composer still works */
+  }
+}
+
+function scheduleRevisionPoll(jobId, revisionId, delay = 1500) {
+  stopRevisionPolling();
+  revisionPollTimer = setTimeout(async () => {
+    revisionPollTimer = null;
+    if (revisionJobId !== jobId) return;
+    try {
+      const revision = await requestJson(`/api/jobs/${jobId}/revisions/${revisionId}`);
+      if (revision.status === "running") {
+        scheduleRevisionPoll(jobId, revisionId);
+        return;
+      }
+      const pending = revisionMessages.querySelector(".revision-message.is-pending");
+      if (pending) pending.remove();
+      if (revision.status === "succeeded") {
+        appendRevisionMessage("assistant", revision.reply || "已完成修改并重新渲染。");
+      } else {
+        appendRevisionMessage("assistant", `修改失败：${revision.error_message || "未知原因"}`);
+      }
+      setRevisionBusy(false);
+      await pollJob(jobId);
+    } catch (error) {
+      scheduleRevisionPoll(jobId, revisionId, 3000);
+    }
+  }, delay);
+}
+
+revisionComposer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (revisionBusy || !revisionJobId) return;
+  const message = revisionInput.value.trim();
+  if (!message) return;
+  appendRevisionMessage("user", message);
+  const pending = appendRevisionMessage("assistant", "正在规划并修改对应页面…", {pending: true});
+  revisionInput.value = "";
+  setRevisionBusy(true);
+  try {
+    const revision = await requestJson(`/api/jobs/${revisionJobId}/revisions`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        message,
+        page_numbers: livePreviewSelectedSlide ? [livePreviewSelectedSlide] : null
+      })
+    });
+    scheduleRevisionPoll(revisionJobId, revision.revision_id, 1200);
+  } catch (error) {
+    pending.remove();
+    appendRevisionMessage("assistant", `修改请求失败：${error.message}`);
+    setRevisionBusy(false);
+  }
+});
+
+revisionQuotePageButton.addEventListener("click", () => {
+  if (!livePreviewSelectedSlide) return;
+  const prefix = `第 ${livePreviewSelectedSlide} 页：`;
+  if (!revisionInput.value.startsWith(prefix)) {
+    revisionInput.value = prefix + revisionInput.value;
+  }
+  revisionInput.focus();
+});
+
+liveSlideThumbnails.addEventListener("click", () => {
+  setTimeout(updateRevisionQuoteButton, 0);
+});
+
+/* ---------- Pre-generation outline & script confirmation ---------- */
+
+const planStatusChip = document.getElementById("planStatusChip");
+const planEmpty = document.getElementById("planEmpty");
+const planLoading = document.getElementById("planLoading");
+const planError = document.getElementById("planError");
+const planErrorMessage = document.getElementById("planErrorMessage");
+const planEditor = document.getElementById("planEditor");
+const planSections = document.getElementById("planSections");
+const planDeckTitle = document.getElementById("planDeckTitle");
+const planDeckSubtitle = document.getElementById("planDeckSubtitle");
+const planPageSummary = document.getElementById("planPageSummary");
+const confirmPlanButton = document.getElementById("confirmPlanButton");
+const retryPlanButton = document.getElementById("retryPlanButton");
+const skipPlanButton = document.getElementById("skipPlanButton");
+const skipPlanFooterButton = document.getElementById("skipPlanFooterButton");
+const skipOutlineButton = document.getElementById("skipOutlineButton");
+
+const activePlanStorageKey = "ppt_agent_active_deck_plan_id";
+const planLayoutHints = [
+  "auto", "cards", "two_column", "stats", "timeline",
+  "comparison", "quote", "chart", "table", "list"
+];
+let activePlanId = null;
+let activePlan = null;
+let planPollTimer = null;
+
+function stopPlanPolling() {
+  if (planPollTimer) {
+    clearTimeout(planPollTimer);
+    planPollTimer = null;
+  }
+}
+
+function showPlanState(state) {
+  planEmpty.hidden = state !== "empty";
+  planLoading.hidden = state !== "loading";
+  planError.hidden = state !== "error";
+  planEditor.hidden = state !== "editor";
+}
+
+function planContentPages(plan) {
+  return plan.sections.reduce((sum, section) => sum + section.pages.length, 0);
+}
+
+function planStructuralPages(plan) {
+  // Mirrors the server: cover + closing + one divider per section (+ TOC once the deck reaches 10 pages).
+  const sectionCount = plan.sections.length;
+  let structural = 2 + sectionCount;
+  const toc = Math.ceil(sectionCount / 8);
+  if (structural + planContentPages(plan) + toc >= 10) {
+    structural += toc;
+  }
+  return structural;
+}
+
+function planTotalPages(plan) {
+  return planStructuralPages(plan) + planContentPages(plan);
+}
+
+function updatePlanSummary() {
+  if (!activePlan) return;
+  const content = planContentPages(activePlan);
+  const structural = planStructuralPages(activePlan);
+  const total = structural + content;
+  const valid = total >= 4 && total <= 100;
+  planPageSummary.textContent =
+    `内容页 ${content} + 结构页 ${structural}（封面、目录、章节页、结尾）= 共 ${total} 页`
+    + (valid ? "" : " · 总页数需在 4-100 页之间");
+  confirmPlanButton.disabled = !valid;
+  confirmPlanButton.textContent = valid
+    ? `确认大纲，开始生成 ${total} 页 PPT`
+    : "确认大纲，开始生成 PPT";
+}
+
+function planFieldLabel(text, control) {
+  const label = document.createElement("label");
+  label.className = "plan-field";
+  label.append(text, control);
+  return label;
+}
+
+function buildPlanPageCard(section, page, pageIndex) {
+  const card = document.createElement("article");
+  card.className = "plan-page";
+
+  const head = document.createElement("div");
+  head.className = "plan-page-head";
+  const number = document.createElement("span");
+  number.className = "plan-page-number";
+  number.textContent = String(pageIndex + 1);
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.className = "plan-page-title";
+  titleInput.value = page.title;
+  titleInput.placeholder = "这一页的标题";
+  titleInput.addEventListener("input", () => {
+    page.title = titleInput.value;
+  });
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "plan-remove-page";
+  removeButton.textContent = "删除此页";
+  removeButton.disabled = section.pages.length <= 1;
+  removeButton.title = section.pages.length <= 1 ? "每章至少保留一页" : "从这一章删除这一页";
+  removeButton.addEventListener("click", () => {
+    section.pages.splice(pageIndex, 1);
+    renderPlanEditor();
+  });
+  head.append(number, titleInput, removeButton);
+
+  const points = document.createElement("textarea");
+  points.rows = 3;
+  points.value = (page.points || []).join("\n");
+  points.placeholder = "每行一条页面要点";
+  points.addEventListener("input", () => {
+    page.points = points.value.split("\n").map((line) => line.trim()).filter(Boolean);
+  });
+
+  const notes = document.createElement("textarea");
+  notes.rows = 3;
+  notes.value = page.speaker_notes || "";
+  notes.placeholder = "这一页的演讲备注（口播稿），会写进 PPTX 备注";
+  notes.addEventListener("input", () => {
+    page.speaker_notes = notes.value;
+  });
+
+  const metaRow = document.createElement("div");
+  metaRow.className = "plan-page-meta";
+  const layoutSelect = document.createElement("select");
+  planLayoutHints.forEach((hint) => {
+    const option = document.createElement("option");
+    option.value = hint;
+    option.textContent = hint;
+    layoutSelect.appendChild(option);
+  });
+  layoutSelect.value = planLayoutHints.includes(page.layout_hint) ? page.layout_hint : "auto";
+  layoutSelect.addEventListener("input", () => {
+    page.layout_hint = layoutSelect.value;
+  });
+  const dataIdea = document.createElement("input");
+  dataIdea.type = "text";
+  dataIdea.value = page.data_idea || "";
+  dataIdea.placeholder = "图表/数据建议，可留空";
+  dataIdea.addEventListener("input", () => {
+    page.data_idea = dataIdea.value.trim() || null;
+  });
+  metaRow.append(
+    planFieldLabel("版式", layoutSelect),
+    planFieldLabel("图表建议", dataIdea)
+  );
+
+  card.append(
+    head,
+    planFieldLabel("页面要点", points),
+    planFieldLabel("演讲备注", notes),
+    metaRow
+  );
+  return card;
+}
+
+function buildPlanSectionCard(section, sectionIndex) {
+  const card = document.createElement("section");
+  card.className = "plan-section";
+
+  const head = document.createElement("div");
+  head.className = "plan-section-head";
+  const badge = document.createElement("span");
+  badge.className = "plan-section-badge";
+  badge.textContent = `第 ${sectionIndex + 1} 章`;
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.className = "plan-section-title";
+  titleInput.value = section.title;
+  titleInput.placeholder = "章节标题";
+  titleInput.addEventListener("input", () => {
+    section.title = titleInput.value;
+  });
+  const pageCount = document.createElement("span");
+  pageCount.className = "plan-section-count";
+  pageCount.textContent = `${section.pages.length} 页内容`;
+  head.append(badge, titleInput, pageCount);
+
+  const goalInput = document.createElement("input");
+  goalInput.type = "text";
+  goalInput.value = section.goal || "";
+  goalInput.placeholder = "这一章要讲清楚 / 说服什么";
+  goalInput.addEventListener("input", () => {
+    section.goal = goalInput.value;
+  });
+
+  const pages = document.createElement("div");
+  pages.className = "plan-pages";
+  section.pages.forEach((page, pageIndex) => {
+    pages.appendChild(buildPlanPageCard(section, page, pageIndex));
+  });
+
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "plan-add-page";
+  addButton.textContent = "+ 在这一章添加一页";
+  addButton.addEventListener("click", () => {
+    section.pages.push({
+      title: `${section.title || "新章节"} · 补充页`,
+      summary: "",
+      points: [],
+      layout_hint: "auto",
+      data_idea: null,
+      speaker_notes: ""
+    });
+    renderPlanEditor();
+  });
+
+  card.append(head, planFieldLabel("章节目标", goalInput), pages, addButton);
+  return card;
+}
+
+function renderPlanEditor() {
+  if (!activePlan) return;
+  planDeckTitle.value = activePlan.deck_title || "";
+  planDeckSubtitle.value = activePlan.subtitle || "";
+  planSections.replaceChildren();
+  activePlan.sections.forEach((section, sectionIndex) => {
+    planSections.appendChild(buildPlanSectionCard(section, sectionIndex));
+  });
+  updatePlanSummary();
+  showPlanState("editor");
+  planStatusChip.textContent = "待确认";
+}
+
+function showPlanFailure(message) {
+  stopPlanPolling();
+  planErrorMessage.textContent = `大纲规划失败：${message}`;
+  showPlanState("error");
+  planStatusChip.textContent = "规划失败";
+}
+
+function schedulePlanPoll(delay = 1500) {
+  stopPlanPolling();
+  planPollTimer = setTimeout(async () => {
+    planPollTimer = null;
+    if (!activePlanId) return;
+    try {
+      const plan = await requestJson(`/api/deck-plans/${activePlanId}`);
+      applyPlanState(plan);
+    } catch (error) {
+      showPlanFailure(error.message);
+    }
+  }, delay);
+}
+
+function applyPlanState(plan) {
+  if (plan.status === "planning") {
+    showPlanState("loading");
+    planStatusChip.textContent = "规划中";
+    schedulePlanPoll();
+    return;
+  }
+  if (plan.status === "ready") {
+    activePlan = plan.plan;
+    renderPlanEditor();
+    return;
+  }
+  if (plan.status === "failed") {
+    showPlanFailure(plan.error_message || "未知原因");
+    return;
+  }
+  localStorage.removeItem(activePlanStorageKey);
+  showPlanState("empty");
+}
+
+async function startDeckPlan() {
+  stopPlanPolling();
+  saveLongDeckDraft();
+  activePlanId = null;
+  activePlan = null;
+  setAppView("outline");
+  showPlanState("loading");
+  planStatusChip.textContent = "规划中";
+  try {
+    const plan = await requestJson("/api/deck-plans", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(buildLongDeckPayload())
+    });
+    activePlanId = plan.plan_id;
+    localStorage.setItem(activePlanStorageKey, plan.plan_id);
+    schedulePlanPoll(800);
+  } catch (error) {
+    showPlanFailure(error.message);
+  }
+}
+
+async function confirmDeckPlan() {
+  if (!activePlanId || !activePlan) return;
+  confirmPlanButton.disabled = true;
+  planStatusChip.textContent = "正在启动生成";
+  const total = planTotalPages(activePlan);
+  try {
+    const job = await requestJson(`/api/deck-plans/${activePlanId}/confirm`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({plan: activePlan})
+    });
+    localStorage.removeItem(activePlanStorageKey);
+    longSlideCount.value = String(total);
+    showPlanState("empty");
+    planStatusChip.textContent = "已确认";
+    prepareJobWorkspace(total);
+    await trackCreatedJob(job);
+  } catch (error) {
+    planStatusChip.textContent = "待确认";
+    updatePlanSummary();
+    planPageSummary.textContent = `启动生成失败：${error.message}`;
+  }
+}
+
+async function restoreActiveDeckPlan() {
+  const remembered = localStorage.getItem(activePlanStorageKey);
+  if (!remembered) return;
+  try {
+    const plan = await requestJson(`/api/deck-plans/${remembered}`);
+    if (plan.status === "planning" || plan.status === "ready") {
+      activePlanId = remembered;
+      applyPlanState(plan);
+    } else {
+      localStorage.removeItem(activePlanStorageKey);
+    }
+  } catch (error) {
+    localStorage.removeItem(activePlanStorageKey);
+  }
+}
+
+function skipPlanAndGenerateDirectly() {
+  stopPlanPolling();
+  localStorage.removeItem(activePlanStorageKey);
+  activePlanId = null;
+  activePlan = null;
+  longDeckForm.requestSubmit();
+}
+
+confirmPlanButton.addEventListener("click", () => {
+  confirmDeckPlan();
+});
+
+retryPlanButton.addEventListener("click", () => {
+  startDeckPlan();
+});
+
+skipPlanButton.addEventListener("click", skipPlanAndGenerateDirectly);
+skipPlanFooterButton.addEventListener("click", skipPlanAndGenerateDirectly);
+skipOutlineButton.addEventListener("click", skipPlanAndGenerateDirectly);
+
+planDeckTitle.addEventListener("input", () => {
+  if (activePlan) activePlan.deck_title = planDeckTitle.value;
+});
+
+planDeckSubtitle.addEventListener("input", () => {
+  if (activePlan) activePlan.subtitle = planDeckSubtitle.value.trim() || null;
+});
 
 longDeckForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1724,7 +2269,12 @@ skipInterviewQuestionButton.addEventListener("click", async () => {
 });
 
 confirmGenerationButton.addEventListener("click", () => {
-  longDeckForm.requestSubmit();
+  const pageCount = Number(longSlideCount.value);
+  if (pageCount <= 3) {
+    longDeckForm.requestSubmit();
+    return;
+  }
+  startDeckPlan();
 });
 
 continueInterviewButton.addEventListener("click", () => {
@@ -1795,6 +2345,7 @@ window.addEventListener("load", () => {
   setInterval(renderElapsedClock, 250);
   loadPresentationHistory();
   restorePresentationInterview();
+  restoreActiveDeckPlan();
   restoreLastLongDeckJob().catch((error) => {
     errorMessage.textContent = error.message;
   });

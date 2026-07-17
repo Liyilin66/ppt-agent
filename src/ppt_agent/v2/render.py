@@ -471,7 +471,11 @@ def _stamp_chrome(slide, page: PageDesign, deck: DeckDesign, theme: ThemeSpec) -
     muted_role: ColorRole = (
         "muted" if best_text_color(theme.palette, background_hex) == "text" else "on_primary"
     )
-    if page.section and page.role not in ("toc", "section_divider"):
+    if (
+        theme.chrome.show_section_kicker
+        and page.section
+        and page.role not in ("toc", "section_divider")
+    ):
         kicker = TextItem(
             id="_chrome_kicker",
             frame=Frame(x=64, y=26, w=600, h=22),
@@ -479,23 +483,25 @@ def _stamp_chrome(slide, page: PageDesign, deck: DeckDesign, theme: ThemeSpec) -
             role="kicker",
         )
         _render_text(slide, kicker, theme)
-    page_number = TextItem(
-        id="_chrome_page_number",
-        frame=Frame(x=CANVAS_WIDTH - 110, y=CANVAS_HEIGHT - 36, w=80, h=22),
-        text=f"{page.page_number:02d}",
-        role="caption",
-        color=muted_role,
-        align="right",
-    )
-    _render_text(slide, page_number, theme)
-    footer = TextItem(
-        id="_chrome_footer",
-        frame=Frame(x=64, y=CANVAS_HEIGHT - 36, w=600, h=22),
-        text=deck.deck_title,
-        role="caption",
-        color=muted_role,
-    )
-    _render_text(slide, footer, theme)
+    if theme.chrome.show_page_number:
+        page_number = TextItem(
+            id="_chrome_page_number",
+            frame=Frame(x=CANVAS_WIDTH - 110, y=CANVAS_HEIGHT - 36, w=80, h=22),
+            text=f"{page.page_number:02d}",
+            role="caption",
+            color=muted_role,
+            align="right",
+        )
+        _render_text(slide, page_number, theme)
+    if theme.chrome.show_footer:
+        footer = TextItem(
+            id="_chrome_footer",
+            frame=Frame(x=64, y=CANVAS_HEIGHT - 36, w=600, h=22),
+            text=deck.deck_title,
+            role="caption",
+            color=muted_role,
+        )
+        _render_text(slide, footer, theme)
 
 
 def render_page(slide, page: PageDesign, deck: DeckDesign, *, assets_dir: Path | None = None) -> None:

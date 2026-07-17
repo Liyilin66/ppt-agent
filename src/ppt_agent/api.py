@@ -76,7 +76,15 @@ from ppt_agent.v2.orchestrator import (
     BuildRequest as V2BuildRequest,
     BuildResult as V2BuildResult,
     build_deck as build_v2_deck,
+    plan_deck as plan_v2_deck,
 )
+from ppt_agent.v2.planning import (
+    ContentBrief as V2ContentBrief,
+    EditableDeckPlan,
+    editable_plan_from_skeleton,
+    skeleton_from_editable_plan,
+)
+from ppt_agent.v2.revise import RevisionError, revise_deck as revise_v2_deck
 from ppt_agent.v2.design import ThemeSpec as V2ThemeSpec
 from ppt_agent.v2.ir import DeckDesign as V2DeckDesign
 from ppt_agent.v2.ir import PageDesign as V2PageDesign
@@ -169,6 +177,47 @@ class CreateLongDeckJobRequest(StrictModel):
 
 def _uses_v2_generation(payload: CreateLongDeckJobRequest) -> bool:
     return payload.deck_type == "visual_design_v2" or payload.slide_count != 30
+
+
+class DeckPlanResponse(StrictModel):
+    plan_id: str
+    status: Literal["planning", "ready", "failed", "confirmed"]
+    request: CreateLongDeckJobRequest
+    plan: EditableDeckPlan | None = None
+    total_pages: int | None = None
+    error_message: str | None = None
+    job_id: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class UpdateDeckPlanRequest(StrictModel):
+    plan: EditableDeckPlan
+
+
+class ConfirmDeckPlanRequest(StrictModel):
+    plan: EditableDeckPlan | None = None
+
+
+class CreateDeckRevisionRequest(StrictModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    page_numbers: list[int] | None = None
+
+
+class DeckRevisionResponse(StrictModel):
+    revision_id: str
+    job_id: str
+    status: Literal["running", "succeeded", "failed"]
+    message: str
+    reply: str = ""
+    revised_pages: list[int] = Field(default_factory=list)
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DeckRevisionListResponse(StrictModel):
+    items: list[DeckRevisionResponse]
 
 
 class CreateJobResponse(StrictModel):
@@ -1084,6 +1133,10 @@ def _v2_preview_available_slide_numbers(job_dir: Path) -> tuple[list[int], int]:
         if match and path.is_file():
             numbers.append(int(match.group(1)))
             update_token = max(update_token, path.stat().st_mtime_ns)
+    # Theme-only revisions repaint every page without touching page checkpoints.
+    theme_path = job_dir / "checkpoints" / "theme.json"
+    if theme_path.is_file():
+        update_token = max(update_token, theme_path.stat().st_mtime_ns)
     return numbers, update_token
 
 
@@ -1624,6 +1677,188 @@ def _run_v2_long_deck_job(
         )
 
 
+def _deck_plan_response(record) -> DeckPlanResponse:
+    request = CreateLongDeckJobRequest.model_validate_json(record.request_json)
+    plan: EditableDeckPlan | None = None
+    total_pages: int | None = None
+    if record.plan_json:
+        payload = json.loads(record.plan_json)
+        plan = EditableDeckPlan.model_validate(payload["plan"])
+        total_pages = plan.total_pages()
+    return DeckPlanResponse(
+        plan_id=record.plan_id,
+        status=record.status,
+        request=request,
+        plan=plan,
+        total_pages=total_pages,
+        error_message=record.error_message,
+        job_id=record.job_id,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _run_deck_plan(
+    store: JobStore,
+    plans_root: Path,
+    plan_id: str,
+    client,
+    payload: CreateLongDeckJobRequest,
+) -> None:
+    output_dir = plans_root / plan_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def progress_logger(message: str) -> None:
+        logger.info(
+            "deck_plan_stage %s",
+            json.dumps({"plan_id": plan_id, "message": message}, ensure_ascii=False),
+        )
+
+    try:
+        result = plan_v2_deck(
+            V2BuildRequest(
+                prompt=_v2_long_deck_prompt(payload),
+                page_count=payload.slide_count,
+                language=payload.language,
+                output_dir=str(output_dir),
+                deck_name="deck_plan",
+                concurrency=_env_int("PPT_AGENT_V2_CONCURRENCY", DEFAULT_V2_CONCURRENCY),
+                budget_usd=_env_float("PPT_AGENT_V2_BUDGET_USD", DEFAULT_V2_BUDGET_USD),
+            ),
+            client,
+            progress=progress_logger,
+        )
+        editable = editable_plan_from_skeleton(result.skeleton)
+        store.update_deck_plan(
+            plan_id,
+            status="ready",
+            plan_json=json.dumps(
+                {
+                    "brief": result.brief.model_dump(mode="json"),
+                    "plan": editable.model_dump(mode="json"),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    except Exception as exc:
+        error_message = sanitize_error_message(exc)
+        logger.error("deck_plan_failed plan_id=%s error=%s", plan_id, error_message)
+        store.update_deck_plan(plan_id, status="failed", error_message=error_message)
+
+
+def _seed_plan_checkpoints(job_dir: Path, brief: V2ContentBrief, skeleton) -> None:
+    """Write an approved plan as generation checkpoints so resume skips planning."""
+
+    checkpoints_dir = job_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    checkpoints_dir.joinpath("brief.json").write_text(
+        json.dumps(brief.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    skeleton_payload = json.dumps(
+        skeleton.model_dump(mode="json"), ensure_ascii=False, indent=2
+    )
+    checkpoints_dir.joinpath("skeleton.json").write_text(skeleton_payload, encoding="utf-8")
+    checkpoints_dir.joinpath("skeleton_with_briefs.json").write_text(
+        skeleton_payload, encoding="utf-8"
+    )
+
+
+def _deck_revision_response(record) -> DeckRevisionResponse:
+    try:
+        revised_pages = [int(number) for number in json.loads(record.revised_pages_json)]
+    except (ValueError, TypeError):
+        revised_pages = []
+    return DeckRevisionResponse(
+        revision_id=record.revision_id,
+        job_id=record.job_id,
+        status=record.status,
+        message=record.message,
+        reply=record.reply,
+        revised_pages=revised_pages,
+        error_message=record.error_message,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _register_missing_job_artifacts(store: JobStore, job_id: str, output_dir: Path) -> None:
+    """Register artifacts that appeared after the original run (idempotent)."""
+
+    existing = {artifact.name for artifact in store.list_artifacts(job_id)}
+    for artifact_path in sorted(output_dir.rglob("*")):
+        if not artifact_path.is_file() or artifact_path.suffix.lower() not in {".json", ".pptx", ".md"}:
+            continue
+        artifact_name = _artifact_name_for_path(output_dir, artifact_path)
+        if artifact_name is None or artifact_name in existing:
+            continue
+        suffix = artifact_path.suffix.lower()
+        kind: ArtifactKind = "pptx" if suffix == ".pptx" else "md" if suffix == ".md" else "json"
+        store.add_artifact(job_id, name=artifact_name, kind=kind, path=artifact_path)
+
+
+def _run_deck_revision(
+    store: JobStore,
+    jobs_root: Path,
+    job_id: str,
+    revision_id: str,
+    client,
+    message: str,
+    page_numbers: list[int] | None,
+) -> None:
+    output_dir = jobs_root / job_id
+
+    def progress_logger(text: str) -> None:
+        logger.info(
+            "deck_revision_stage %s",
+            json.dumps(
+                {"job_id": job_id, "revision_id": revision_id, "message": text},
+                ensure_ascii=False,
+            ),
+        )
+
+    try:
+        result = revise_v2_deck(
+            output_dir=output_dir,
+            deck_name="generated_long_deck_v2",
+            message=message,
+            client=client,
+            selected_pages=page_numbers,
+            concurrency=_env_int("PPT_AGENT_V2_CONCURRENCY", DEFAULT_V2_CONCURRENCY),
+            progress=progress_logger,
+        )
+        store.update_deck_revision(
+            revision_id,
+            status="succeeded",
+            reply=result.reply,
+            revised_pages_json=json.dumps(result.revised_pages),
+        )
+        _register_missing_job_artifacts(store, job_id, output_dir)
+        job = store.get_job(job_id)
+        if (
+            job is not None
+            and job.status == "failed_quality_gate"
+            and result.qa_error_pages == 0
+            and result.pptx_path
+        ):
+            store.update_job(
+                job_id,
+                status="succeeded",
+                error_message=None,
+                accepted=True,
+                current_stage="v2_completed",
+            )
+    except Exception as exc:
+        error_message = sanitize_error_message(exc)
+        logger.error(
+            "deck_revision_failed job_id=%s revision_id=%s error=%s",
+            job_id,
+            revision_id,
+            error_message,
+        )
+        store.update_deck_revision(revision_id, status="failed", error_message=error_message)
+
+
 def _run_long_deck_job(
     store: JobStore,
     jobs_root: Path,
@@ -1810,6 +2045,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
     app.state.job_store = store or JobStore(root / "jobs.sqlite3")
     app.state.jobs_root = jobs_root
+    app.state.plans_root = root / "plans"
     _backfill_presentation_request_history(app.state.job_store, jobs_root)
 
     app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="static")
@@ -2062,6 +2298,216 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
                 resume=True,
             )
         return CreateJobResponse(job_id=resume_job.job_id, status=resume_job.status)
+
+    @app.post("/api/deck-plans", response_model=DeckPlanResponse, status_code=202)
+    def create_deck_plan(
+        payload: CreateLongDeckJobRequest,
+        background_tasks: BackgroundTasks,
+    ) -> DeckPlanResponse:
+        if payload.slide_count < 4:
+            raise HTTPException(
+                status_code=400,
+                detail="Deck plans support 4-100 page presentations; short decks generate directly.",
+            )
+        try:
+            client = _create_v2_model_client()
+        except (V2ProviderError, ValueError) as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not initialize the v2 model provider: {detail}",
+            ) from exc
+        payload = payload.model_copy(update={"deck_type": "visual_design_v2"})
+        record = app.state.job_store.create_deck_plan(request_json=payload.model_dump_json())
+        background_tasks.add_task(
+            _run_deck_plan,
+            app.state.job_store,
+            app.state.plans_root,
+            record.plan_id,
+            client,
+            payload,
+        )
+        return _deck_plan_response(record)
+
+    @app.get("/api/deck-plans/{plan_id}", response_model=DeckPlanResponse)
+    def get_deck_plan(plan_id: str) -> DeckPlanResponse:
+        record = app.state.job_store.get_deck_plan(plan_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Deck plan not found.")
+        return _deck_plan_response(record)
+
+    @app.put("/api/deck-plans/{plan_id}", response_model=DeckPlanResponse)
+    def update_deck_plan(plan_id: str, payload: UpdateDeckPlanRequest) -> DeckPlanResponse:
+        record = app.state.job_store.get_deck_plan(plan_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Deck plan not found.")
+        if record.status != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Deck plan is '{record.status}'; only a ready plan can be edited.",
+            )
+        try:
+            skeleton_from_editable_plan(payload.plan)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        stored = json.loads(record.plan_json) if record.plan_json else {}
+        stored["plan"] = payload.plan.model_dump(mode="json")
+        record = app.state.job_store.update_deck_plan(
+            plan_id, plan_json=json.dumps(stored, ensure_ascii=False)
+        )
+        return _deck_plan_response(record)
+
+    @app.post(
+        "/api/deck-plans/{plan_id}/confirm",
+        response_model=CreateJobResponse,
+        status_code=202,
+    )
+    def confirm_deck_plan(
+        plan_id: str,
+        background_tasks: BackgroundTasks,
+        payload: ConfirmDeckPlanRequest | None = None,
+    ) -> CreateJobResponse:
+        record = app.state.job_store.get_deck_plan(plan_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Deck plan not found.")
+        if record.status != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Deck plan is '{record.status}'; only a ready plan can be confirmed.",
+            )
+        stored = json.loads(record.plan_json)
+        editable = (
+            payload.plan
+            if payload is not None and payload.plan is not None
+            else EditableDeckPlan.model_validate(stored["plan"])
+        )
+        try:
+            skeleton = skeleton_from_editable_plan(editable)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        brief = V2ContentBrief.model_validate(stored["brief"]).model_copy(
+            update={"deck_title": editable.deck_title, "subtitle": editable.subtitle}
+        )
+
+        try:
+            client = _create_v2_model_client()
+        except (V2ProviderError, ValueError) as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not initialize the v2 model provider: {detail}",
+            ) from exc
+
+        request_payload = CreateLongDeckJobRequest.model_validate_json(
+            record.request_json
+        ).model_copy(
+            update={"slide_count": skeleton.total_pages, "deck_type": "visual_design_v2"}
+        )
+
+        job = app.state.job_store.create_job(job_type="long_deck_v2")
+        _seed_plan_checkpoints(app.state.jobs_root / job.job_id, brief, skeleton)
+        _save_presentation_request_snapshot(app.state.job_store, job.job_id, request_payload)
+        app.state.job_store.update_long_deck_progress(
+            job.job_id,
+            current_stage="v2_intake",
+            total_batches=request_payload.slide_count,
+            completed_batches=0,
+            failed_batches=0,
+        )
+        app.state.job_store.update_deck_plan(
+            plan_id,
+            status="confirmed",
+            job_id=job.job_id,
+            plan_json=json.dumps(
+                {"brief": stored["brief"], "plan": editable.model_dump(mode="json")},
+                ensure_ascii=False,
+            ),
+        )
+        background_tasks.add_task(
+            _run_v2_long_deck_job,
+            app.state.job_store,
+            app.state.jobs_root,
+            job.job_id,
+            client,
+            request_payload,
+            resume=True,
+        )
+        return CreateJobResponse(job_id=job.job_id, status=job.status)
+
+    @app.post(
+        "/api/jobs/{job_id}/revisions",
+        response_model=DeckRevisionResponse,
+        status_code=202,
+    )
+    def create_deck_revision(
+        job_id: str,
+        payload: CreateDeckRevisionRequest,
+        background_tasks: BackgroundTasks,
+    ) -> DeckRevisionResponse:
+        store: JobStore = app.state.job_store
+        job = store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        if job.job_type != "long_deck_v2":
+            raise HTTPException(
+                status_code=400,
+                detail="Only v2 presentations support conversational revisions.",
+            )
+        if job.status not in {"succeeded", "failed_quality_gate"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Job is '{job.status}'; wait for generation to finish before revising.",
+            )
+        checkpoints_dir = app.state.jobs_root / job_id / "checkpoints"
+        if not checkpoints_dir.is_dir():
+            raise HTTPException(
+                status_code=409,
+                detail="This job has no revision checkpoints (it may predate revisions).",
+            )
+        if store.has_running_deck_revision(job_id):
+            raise HTTPException(
+                status_code=409,
+                detail="A revision is already running for this presentation.",
+            )
+        try:
+            client = _create_v2_model_client()
+        except (V2ProviderError, ValueError) as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not initialize the v2 model provider: {detail}",
+            ) from exc
+        record = store.create_deck_revision(job_id=job_id, message=payload.message)
+        background_tasks.add_task(
+            _run_deck_revision,
+            store,
+            app.state.jobs_root,
+            job_id,
+            record.revision_id,
+            client,
+            payload.message,
+            payload.page_numbers,
+        )
+        return _deck_revision_response(record)
+
+    @app.get("/api/jobs/{job_id}/revisions", response_model=DeckRevisionListResponse)
+    def list_deck_revisions(job_id: str) -> DeckRevisionListResponse:
+        if app.state.job_store.get_job(job_id) is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        records = app.state.job_store.list_deck_revisions(job_id)
+        return DeckRevisionListResponse(
+            items=[_deck_revision_response(record) for record in records]
+        )
+
+    @app.get(
+        "/api/jobs/{job_id}/revisions/{revision_id}",
+        response_model=DeckRevisionResponse,
+    )
+    def get_deck_revision(job_id: str, revision_id: str) -> DeckRevisionResponse:
+        record = app.state.job_store.get_deck_revision(revision_id)
+        if record is None or record.job_id != job_id:
+            raise HTTPException(status_code=404, detail="Revision not found.")
+        return _deck_revision_response(record)
 
     @app.post(
         "/api/long-deck-jobs/{job_id}/prepare-ppt-master-execution",

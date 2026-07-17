@@ -93,6 +93,34 @@ class PresentationInterviewRecord(StrictModel):
     updated_at: str
 
 
+DeckPlanStatus = Literal["planning", "ready", "failed", "confirmed"]
+
+DeckRevisionStatus = Literal["running", "succeeded", "failed"]
+
+
+class DeckRevisionRecord(StrictModel):
+    revision_id: str = Field(..., min_length=1)
+    job_id: str = Field(..., min_length=1)
+    status: DeckRevisionStatus
+    message: str = Field(..., min_length=1)
+    reply: str = ""
+    revised_pages_json: str = "[]"
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DeckPlanRecord(StrictModel):
+    plan_id: str = Field(..., min_length=1)
+    status: DeckPlanStatus
+    request_json: str = Field(..., min_length=1)
+    plan_json: str = ""
+    error_message: str | None = None
+    job_id: str | None = None
+    created_at: str
+    updated_at: str
+
+
 class JobStore:
     """Small SQLite-backed store with one connection per operation."""
 
@@ -174,6 +202,38 @@ class JobStore:
                         updated_at TEXT NOT NULL
                     )
                     """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS deck_plans (
+                        plan_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        request_json TEXT NOT NULL,
+                        plan_json TEXT NOT NULL DEFAULT '',
+                        error_message TEXT,
+                        job_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS deck_revisions (
+                        revision_id TEXT PRIMARY KEY,
+                        job_id TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        reply TEXT NOT NULL DEFAULT '',
+                        revised_pages_json TEXT NOT NULL DEFAULT '[]',
+                        error_message TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_deck_revisions_job_id ON deck_revisions(job_id)"
                 )
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id)")
                 connection.execute(
@@ -587,6 +647,182 @@ class JobStore:
             messages_json=row["messages_json"],
             decision_json=row["decision_json"],
             turn_count=row["turn_count"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def create_deck_plan(self, *, request_json: str) -> DeckPlanRecord:
+        plan_id = uuid.uuid4().hex
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO deck_plans (
+                    plan_id, status, request_json, plan_json, created_at, updated_at
+                )
+                VALUES (?, 'planning', ?, '', ?, ?)
+                """,
+                (plan_id, request_json, now, now),
+            )
+        plan = self.get_deck_plan(plan_id)
+        if plan is None:
+            raise RuntimeError(f"Deck plan '{plan_id}' could not be loaded after insert.")
+        return plan
+
+    def get_deck_plan(self, plan_id: str) -> DeckPlanRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT plan_id, status, request_json, plan_json, error_message,
+                       job_id, created_at, updated_at
+                FROM deck_plans
+                WHERE plan_id = ?
+                """,
+                (plan_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return DeckPlanRecord(
+            plan_id=row["plan_id"],
+            status=row["status"],
+            request_json=row["request_json"],
+            plan_json=row["plan_json"],
+            error_message=row["error_message"],
+            job_id=row["job_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def update_deck_plan(
+        self,
+        plan_id: str,
+        *,
+        status: DeckPlanStatus | None = None,
+        plan_json: str | None = None,
+        error_message: str | None = None,
+        job_id: str | None = None,
+    ) -> DeckPlanRecord:
+        assignments = ["updated_at = ?"]
+        values: list[object] = [self._now()]
+        if status is not None:
+            assignments.append("status = ?")
+            values.append(status)
+        if plan_json is not None:
+            assignments.append("plan_json = ?")
+            values.append(plan_json)
+        if error_message is not None:
+            assignments.append("error_message = ?")
+            values.append(error_message)
+        if job_id is not None:
+            assignments.append("job_id = ?")
+            values.append(job_id)
+        values.append(plan_id)
+        with self._connect() as connection:
+            connection.execute(
+                f"UPDATE deck_plans SET {', '.join(assignments)} WHERE plan_id = ?",
+                values,
+            )
+        plan = self.get_deck_plan(plan_id)
+        if plan is None:
+            raise RuntimeError(f"Deck plan '{plan_id}' does not exist.")
+        return plan
+
+    def create_deck_revision(self, *, job_id: str, message: str) -> DeckRevisionRecord:
+        revision_id = uuid.uuid4().hex
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO deck_revisions (
+                    revision_id, job_id, status, message, created_at, updated_at
+                )
+                VALUES (?, ?, 'running', ?, ?, ?)
+                """,
+                (revision_id, job_id, message, now, now),
+            )
+        revision = self.get_deck_revision(revision_id)
+        if revision is None:
+            raise RuntimeError(f"Deck revision '{revision_id}' could not be loaded.")
+        return revision
+
+    def get_deck_revision(self, revision_id: str) -> DeckRevisionRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT revision_id, job_id, status, message, reply,
+                       revised_pages_json, error_message, created_at, updated_at
+                FROM deck_revisions
+                WHERE revision_id = ?
+                """,
+                (revision_id,),
+            ).fetchone()
+        return self._deck_revision_from_row(row) if row is not None else None
+
+    def list_deck_revisions(self, job_id: str) -> list[DeckRevisionRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT revision_id, job_id, status, message, reply,
+                       revised_pages_json, error_message, created_at, updated_at
+                FROM deck_revisions
+                WHERE job_id = ?
+                ORDER BY created_at ASC, revision_id ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [self._deck_revision_from_row(row) for row in rows]
+
+    def has_running_deck_revision(self, job_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM deck_revisions WHERE job_id = ? AND status = 'running' LIMIT 1",
+                (job_id,),
+            ).fetchone()
+        return row is not None
+
+    def update_deck_revision(
+        self,
+        revision_id: str,
+        *,
+        status: DeckRevisionStatus | None = None,
+        reply: str | None = None,
+        revised_pages_json: str | None = None,
+        error_message: str | None = None,
+    ) -> DeckRevisionRecord:
+        assignments = ["updated_at = ?"]
+        values: list[object] = [self._now()]
+        if status is not None:
+            assignments.append("status = ?")
+            values.append(status)
+        if reply is not None:
+            assignments.append("reply = ?")
+            values.append(reply)
+        if revised_pages_json is not None:
+            assignments.append("revised_pages_json = ?")
+            values.append(revised_pages_json)
+        if error_message is not None:
+            assignments.append("error_message = ?")
+            values.append(error_message)
+        values.append(revision_id)
+        with self._connect() as connection:
+            connection.execute(
+                f"UPDATE deck_revisions SET {', '.join(assignments)} WHERE revision_id = ?",
+                values,
+            )
+        revision = self.get_deck_revision(revision_id)
+        if revision is None:
+            raise RuntimeError(f"Deck revision '{revision_id}' does not exist.")
+        return revision
+
+    def _deck_revision_from_row(self, row: sqlite3.Row) -> DeckRevisionRecord:
+        return DeckRevisionRecord(
+            revision_id=row["revision_id"],
+            job_id=row["job_id"],
+            status=row["status"],
+            message=row["message"],
+            reply=row["reply"],
+            revised_pages_json=row["revised_pages_json"],
+            error_message=row["error_message"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

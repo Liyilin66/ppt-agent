@@ -2055,3 +2055,237 @@ def test_missing_artifact_returns_404(tmp_path: Path) -> None:
     response = _client(tmp_path).get("/api/artifacts/missing-artifact")
 
     assert response.status_code == 404
+
+
+def _install_fake_deck_plan_backend(monkeypatch, captured: dict | None = None) -> None:
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+
+    def fake_plan_v2_deck(request, client, *, search_provider=None, progress=print):
+        from ppt_agent.v2.orchestrator import PlanResult
+        from ppt_agent.v2.planning import (
+            ContentBrief,
+            DeckOutline,
+            PageBrief,
+            SectionOutline,
+            build_skeleton,
+        )
+
+        if captured is not None:
+            captured["plan_request"] = request
+        brief = ContentBrief(topic="生态保护", deck_title="守护生命", language="zh-CN")
+        outline = DeckOutline(
+            deck_title="守护生命",
+            sections=[
+                SectionOutline(title="现状", goal="认识问题", content_pages=3),
+                SectionOutline(title="行动", goal="给出路径", content_pages=3),
+            ],
+        )
+        skeleton = build_skeleton(outline, total_pages=request.page_count, language="zh-CN")
+        counter = 0
+        slots = []
+        for slot in skeleton.slots:
+            if slot.kind == "content":
+                counter += 1
+                slot = slot.model_copy(
+                    update={
+                        "brief": PageBrief(
+                            title=f"要点 {counter}",
+                            points=["现状", "动作"],
+                            speaker_notes=f"口播 {counter}",
+                        )
+                    }
+                )
+            slots.append(slot)
+        skeleton = skeleton.model_copy(update={"slots": slots})
+        return PlanResult(brief=brief, skeleton=skeleton, usage={"estimated_cost_usd": 0.1})
+
+    monkeypatch.setattr(api, "plan_v2_deck", fake_plan_v2_deck)
+
+
+def test_deck_plan_lifecycle_edit_confirm_generates_with_seeded_checkpoints(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict = {}
+    _install_fake_deck_plan_backend(monkeypatch, captured)
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    created = client.post(
+        "/api/deck-plans",
+        json={**_long_deck_payload(), "slide_count": 10, "deck_type": "visual_design_v2"},
+    )
+    assert created.status_code == 202
+    plan_id = created.json()["plan_id"]
+
+    fetched = client.get(f"/api/deck-plans/{plan_id}")
+    assert fetched.status_code == 200
+    body = fetched.json()
+    assert body["status"] == "ready"
+    assert body["total_pages"] == 10
+    plan = body["plan"]
+    assert plan["sections"][0]["pages"][0]["speaker_notes"] == "口播 1"
+
+    # Edit: retitle the deck, delete one page, rewrite one spoken script.
+    plan["deck_title"] = "修改后的标题"
+    plan["sections"][0]["pages"] = plan["sections"][0]["pages"][:-1]
+    plan["sections"][0]["pages"][0]["speaker_notes"] = "我改过的口播稿"
+    updated = client.put(f"/api/deck-plans/{plan_id}", json={"plan": plan})
+    assert updated.status_code == 200
+    assert updated.json()["total_pages"] == 8  # dropping below 10 pages also drops the TOC page
+
+    confirmed = client.post(f"/api/deck-plans/{plan_id}/confirm")
+    assert confirmed.status_code == 202
+    job_id = confirmed.json()["job_id"]
+
+    build_request = captured["request"]
+    assert build_request.resume is True
+    assert build_request.page_count == 8
+
+    checkpoints = tmp_path / "jobs" / job_id / "checkpoints"
+    assert (checkpoints / "brief.json").is_file()
+    seeded = json.loads((checkpoints / "skeleton_with_briefs.json").read_text(encoding="utf-8"))
+    assert seeded["deck_title"] == "修改后的标题"
+    seeded_notes = [
+        slot["brief"]["speaker_notes"] for slot in seeded["slots"] if slot["kind"] == "content"
+    ]
+    assert "我改过的口播稿" in seeded_notes
+
+    final = client.get(f"/api/deck-plans/{plan_id}").json()
+    assert final["status"] == "confirmed"
+    assert final["job_id"] == job_id
+    locked = client.put(f"/api/deck-plans/{plan_id}", json={"plan": plan})
+    assert locked.status_code == 409
+
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["status"] == "succeeded"
+    assert job["total_batches"] == 8
+
+
+def test_deck_plan_marks_failed_when_planning_raises(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+
+    def broken_plan(request, client, *, search_provider=None, progress=print):
+        raise RuntimeError("planner exploded")
+
+    monkeypatch.setattr(api, "plan_v2_deck", broken_plan)
+    client = _client(tmp_path)
+
+    created = client.post("/api/deck-plans", json=_long_deck_payload())
+    plan_id = created.json()["plan_id"]
+    body = client.get(f"/api/deck-plans/{plan_id}").json()
+    assert body["status"] == "failed"
+    assert body["error_message"]
+    conflict = client.post(f"/api/deck-plans/{plan_id}/confirm")
+    assert conflict.status_code == 409
+
+
+def test_deck_plan_rejects_edits_outside_page_range(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_deck_plan_backend(monkeypatch)
+    client = _client(tmp_path)
+    created = client.post("/api/deck-plans", json={**_long_deck_payload(), "slide_count": 10})
+    plan_id = created.json()["plan_id"]
+    plan = client.get(f"/api/deck-plans/{plan_id}").json()["plan"]
+    plan["sections"][0]["pages"] = [
+        {**plan["sections"][0]["pages"][0], "title": f"页 {i}"} for i in range(98)
+    ]
+    rejected = client.put(f"/api/deck-plans/{plan_id}", json={"plan": plan})
+    assert rejected.status_code == 422
+    missing = client.get("/api/deck-plans/does-not-exist")
+    assert missing.status_code == 404
+
+
+def _install_fake_revision_backend(monkeypatch, captured: dict | None = None, *, qa_error_pages: int = 0):
+    from ppt_agent.v2.revise import ReviseResult
+
+    def fake_revise_v2_deck(
+        *, output_dir, deck_name, message, client, selected_pages=None, concurrency=6, progress=print
+    ):
+        if captured is not None:
+            captured["revise_args"] = {
+                "output_dir": str(output_dir),
+                "deck_name": deck_name,
+                "message": message,
+                "selected_pages": selected_pages,
+            }
+        pptx_path = Path(output_dir) / f"{deck_name}.pptx"
+        pptx_path.write_bytes(b"revised pptx")
+        return ReviseResult(
+            reply="已更新第 5 页并重新渲染 PPTX。",
+            revised_pages=[5],
+            theme_changed=False,
+            qa_error_pages=qa_error_pages,
+            pptx_path=str(pptx_path),
+            usage={"estimated_cost_usd": 0.2},
+        )
+
+    monkeypatch.setattr(api, "revise_v2_deck", fake_revise_v2_deck)
+
+
+def _create_succeeded_v2_job(client, tmp_path: Path, *, slide_count: int = 10) -> str:
+    response = client.post(
+        "/api/long-deck-jobs",
+        json={**_long_deck_payload(), "slide_count": slide_count, "deck_type": "visual_design_v2"},
+    )
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    (tmp_path / "jobs" / job_id / "checkpoints").mkdir(parents=True, exist_ok=True)
+    return job_id
+
+
+def test_deck_revision_lifecycle(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    _install_fake_revision_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    job_id = _create_succeeded_v2_job(client, tmp_path)
+
+    created = client.post(
+        f"/api/jobs/{job_id}/revisions",
+        json={"message": "第 5 页改成图表页", "page_numbers": [5]},
+    )
+    assert created.status_code == 202
+    revision_id = created.json()["revision_id"]
+
+    single = client.get(f"/api/jobs/{job_id}/revisions/{revision_id}")
+    assert single.status_code == 200
+    body = single.json()
+    assert body["status"] == "succeeded"
+    assert body["revised_pages"] == [5]
+    assert "已更新第 5 页" in body["reply"]
+    assert captured["revise_args"]["message"] == "第 5 页改成图表页"
+    assert captured["revise_args"]["selected_pages"] == [5]
+
+    listed = client.get(f"/api/jobs/{job_id}/revisions")
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+
+
+def test_deck_revision_guards(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_v2_long_deck_backend(monkeypatch)
+    _install_fake_revision_backend(monkeypatch)
+    client = _client(tmp_path)
+
+    missing = client.post("/api/jobs/nope/revisions", json={"message": "改一下"})
+    assert missing.status_code == 404
+
+    job_id = _create_succeeded_v2_job(client, tmp_path)
+    checkpoints = tmp_path / "jobs" / job_id / "checkpoints"
+    checkpoints.rmdir()
+    no_checkpoints = client.post(f"/api/jobs/{job_id}/revisions", json={"message": "改一下"})
+    assert no_checkpoints.status_code == 409
+
+
+def test_deck_revision_upgrades_quality_gate_failed_job(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_v2_long_deck_backend(monkeypatch, status="quality_gate_failed")
+    _install_fake_revision_backend(monkeypatch, qa_error_pages=0)
+    client = _client(tmp_path)
+    job_id = _create_succeeded_v2_job(client, tmp_path)
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "failed_quality_gate"
+
+    created = client.post(f"/api/jobs/{job_id}/revisions", json={"message": "修复失败页"})
+    assert created.status_code == 202
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["status"] == "succeeded"
+    assert job["accepted"] is True

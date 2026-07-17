@@ -72,7 +72,7 @@ Write one brief per slide for a single section of a long deck.
 Reply with ONLY a JSON object: {"pages": [
   {"title": str, "summary": str, "points": [str, ...],
    "layout_hint": "auto|cards|two_column|stats|timeline|comparison|quote|chart|table|list",
-   "data_idea": str or null}
+   "data_idea": str or null, "speaker_notes": str}
 ]}
 Rules:
 - Exactly the requested number of pages, in narrative order.
@@ -82,6 +82,8 @@ Rules:
 - layout_hint variety matters: across the section, mix at least 3 different hints.
 - data_idea: only when the section genuinely benefits from a chart/table; include
   plausible concrete numbers (they may come from the brief digest).
+- speaker_notes: 2-4 spoken sentences the presenter reads aloud for this page,
+  in the slide language; conversational, not a copy of the bullet points.
 - Every slide-visible string in the slide language from the brief."""
 
 
@@ -107,16 +109,30 @@ def build_section_pages_user_prompt(
 
 
 THEME_SYSTEM = """You are the art director of a presentation studio.
-Propose a color theme for a slide deck as ONLY a JSON object:
+Propose a color theme AND a deck-unique style signature as ONLY a JSON object:
 {"name": str, "mood": str, "motif": "corner_arc|side_band|dot_grid|top_rule|diagonal",
  "palette": {"background": "#RRGGBB", "surface": "#RRGGBB", "surface_alt": "#RRGGBB",
   "primary": "#RRGGBB", "primary_soft": "#RRGGBB", "secondary": "#RRGGBB",
-  "accent": "#RRGGBB", "text": "#RRGGBB", "muted": "#RRGGBB", "on_primary": "#RRGGBB"}}
+  "accent": "#RRGGBB", "text": "#RRGGBB", "muted": "#RRGGBB", "on_primary": "#RRGGBB"},
+ "style": {"composition": str, "decor": str, "shape_language": str, "cover_concept": str}}
 Rules:
 - background: near-white tinted toward the brand hue. surface: pure or near white.
 - text on background must exceed WCAG 7:1 contrast; on_primary on primary >= 4.5:1.
 - primary_soft: a pale tint of primary usable as a card/badge background.
-- Choose a palette that fits the topic and audience; avoid neon on corporate topics."""
+- Choose a palette that fits the topic and audience; avoid neon on corporate topics.
+- style: a concrete, topic-specific design language that makes THIS deck look unlike
+  any other deck. Each field is one short English sentence a designer can execute:
+  * composition: the grid/alignment tendency (e.g. "asymmetric editorial layout,
+    oversized left-aligned titles, 2/3 + 1/3 splits").
+  * decor: recurring decorative devices (e.g. "hairline rules and small numbered
+    chips; no blobs or circles").
+  * shape_language: which shapes dominate (e.g. "sharp parallelograms and diagonal
+    cuts echoing motion").
+  * cover_concept: an art-direction idea for the cover and section dividers that is
+    specific to the topic (e.g. for a marine-biology deck: "deep gradient with a
+    rising bubble column of ellipses on the right third").
+  Avoid the generic combo "two soft circles + left-aligned title" — invent something
+  tailored to the topic."""
 
 
 def build_theme_user_prompt(brief: ContentBrief) -> str:
@@ -126,14 +142,7 @@ def build_theme_user_prompt(brief: ContentBrief) -> str:
     )
 
 
-PAGE_DESIGN_SYSTEM_TEMPLATE = """You are the slide designer of a presentation studio.
-Design ONE slide as a JSON layout on a 1280x720 canvas (x grows right, y grows down).
-Reply with ONLY a JSON object:
-{{"role": "content|quote|stats|comparison|timeline",
-  "title": str, "background": <color role>,
-  "elements": [ <element>, ... ], "speaker_notes": str}}
-
-ELEMENT TYPES (each needs a unique "id"; sizes/positions in canvas units):
+_ELEMENT_SCHEMA_TEMPLATE = """ELEMENT TYPES (each needs a unique "id"; sizes/positions in canvas units):
 - text:  {{"type":"text","id":str,"frame":{{"x","y","w","h"}},"text":str,
           "role":"display|title|subtitle|h3|body|body_small|caption|kicker|stat|stat_label|quote",
           "color":<color role, optional>,"align":"left|center|right",
@@ -151,7 +160,20 @@ ELEMENT TYPES (each needs a unique "id"; sizes/positions in canvas units):
 
 COLOR ROLES (the ONLY colors allowed; never write hex values):
 background, surface, surface_alt, primary, primary_soft, secondary, accent,
-text, muted, on_primary, success, warning, danger.
+text, muted, on_primary, success, warning, danger."""
+
+
+PAGE_DESIGN_SYSTEM_TEMPLATE = (
+    """You are the slide designer of a presentation studio.
+Design ONE slide as a JSON layout on a 1280x720 canvas (x grows right, y grows down).
+Reply with ONLY a JSON object:
+{{"role": "content|quote|stats|comparison|timeline",
+  "title": str, "background": <color role>,
+  "elements": [ <element>, ... ], "speaker_notes": str}}
+
+"""
+    + _ELEMENT_SCHEMA_TEMPLATE
+    + """
 
 COMPOSITION RULES:
 1. Safe margins: keep elements inside x:64..1216, y:56..664. Top strip y<56 and
@@ -166,11 +188,20 @@ COMPOSITION RULES:
    put more than ~90 characters of CJK text into a 400x100 frame. Prefer short
    phrases over sentences.
 7. Density: 4-16 elements. One clear focal point per slide. Vary layouts across
-   pages — do not default to the same 3-card grid.
+   pages — do not default to the same 3-card grid. Rotate structures (full-width
+   band, split, stacked rows, oversized numeral, big quote, chart-dominant) while
+   staying inside the deck style signature.
 8. Numbers: use stat/stat_label roles for KPI figures. Charts only when the brief
    provides or implies real numbers; 3-8 categories max.
-9. All visible copy in {language}. Speaker notes 2-4 sentences, same language.
-10. No overlapping text frames; text may only overlap a shape that acts as its card.
+9. FILL THE CANVAS: content must cover well over half of the usable area and the
+   bottom half must never be left empty. When the brief is light, enlarge cards,
+   typography and spacing to fill the page — never shrink everything into one
+   corner and leave the rest blank.
+10. Charts and tables render their own labels: keep every other element out of
+   their frames (no stat numbers or captions on top of a chart). Give tables at
+   least 30 units of height per row, or cut rows.
+11. All visible copy in {language}. Speaker notes 2-4 sentences, same language.
+12. No overlapping text frames; text may only overlap a shape that acts as its card.
 
 EXAMPLE (a stats page, abbreviated):
 {{"role":"stats","title":"增长的三个引擎","background":"background","elements":[
@@ -181,6 +212,7 @@ EXAMPLE (a stats page, abbreviated):
  {{"type":"text","id":"l1","frame":{{"x":96,"y":330,"w":288,"h":30}},"text":"获客效率提升","role":"stat_label"}},
  {{"type":"text","id":"d1","frame":{{"x":96,"y":368,"w":288,"h":72}},"text":"投放结构优化后单客成本下降","role":"body_small"}}
  /* two more cards at x:464 and x:864 */]}}"""
+)
 
 
 def build_page_design_system(language: str) -> str:
@@ -206,6 +238,8 @@ def build_page_design_user_prompt(
         f"Section: {section_title}\n"
         f"Theme mood: {theme.mood} (motif: {theme.motif}; colors come from roles only)\n"
         f"Audience: {brief.audience} | Tone: {brief.tone}\n\n"
+        f"DECK STYLE SIGNATURE (every page must express it):\n"
+        f"{theme.style.as_prompt_block()}\n\n"
         f"PAGE BRIEF\nTitle: {page_brief.title}\n"
         f"Summary: {page_brief.summary}\n"
         f"Points: {json.dumps(page_brief.points, ensure_ascii=False)}\n"
@@ -218,11 +252,206 @@ def build_page_design_user_prompt(
 
 REPAIR_SYSTEM = """You are the design reviewer of a presentation studio.
 You receive one slide's JSON layout plus a list of concrete QA issues.
-Fix ONLY what the issues require (resize/move frames, shorten text, change
-colors to readable roles), preserving the visual intent and the element schema.
+Fix ONLY what the issues require (resize/move/rebalance frames, enlarge cards
+and typography to fill empty regions, move elements off charts/tables, remove
+table rows, shorten text, change colors to readable roles), preserving the
+visual intent and the element schema.
 Reply with ONLY the corrected slide JSON object in the exact same format."""
 
 
 def build_repair_user_prompt(page_json: str, issues: list[str]) -> str:
     issue_lines = "\n".join(f"- {issue}" for issue in issues)
     return f"Slide JSON:\n{page_json}\n\nQA issues to fix:\n{issue_lines}"
+
+
+ANCHOR_DESIGN_SYSTEM_TEMPLATE = (
+    """You are the art director of a presentation studio, designing one STRUCTURAL
+page (cover, section divider, or closing) as a JSON layout on a 1280x720 canvas
+(x grows right, y grows down). Reply with ONLY a JSON object:
+{{"role": "cover|section_divider|closing", "title": str,
+  "background": <color role>,
+  "background_gradient": {{"start": <color role>, "end": <color role>, "angle_deg": 0-359}} (optional),
+  "elements": [ <element>, ... ]}}
+
+"""
+    + _ELEMENT_SCHEMA_TEMPLATE
+    + """
+
+STRUCTURAL PAGE RULES:
+1. This page must read as a cover / divider / closing AT A GLANCE — one huge
+   hero title, a strong backdrop, minimal supporting text. If it could be
+   mistaken for a content slide, it is wrong.
+2. Covers and closings take a dark hero backdrop: background "primary" or
+   "secondary", usually with a background_gradient between them. NEVER plain
+   "background" or "surface" as the page background for a cover/closing.
+3. The hero title uses the "display" role (or "section" on dividers) and owns
+   a large calm area. At most 3-4 text elements total, colored "on_primary"
+   on dark backdrops.
+4. Decoration means large abstract shapes (bleeding off the edges is
+   encouraged) that execute the deck's cover concept and relate to the TOPIC.
+   FORBIDDEN: charts, tables, bullet lists, architecture diagrams, terminal or
+   UI mockups, icon networks with connector lines — those are content-page
+   devices. 3-10 elements total.
+5. Full-bleed art direction: no chrome strips are reserved. Never fall back to
+   the generic "two translucent circles + left title" template.
+6. Section dividers: make the section number a prominent graphic element and
+   include a subtle progress cue (dots or a thin bar showing section X of N).
+7. Closing pages: a short thanks line plus one quiet echo of the deck title.
+8. All visible copy in {language}."""
+)
+
+
+def build_anchor_design_system(language: str) -> str:
+    return ANCHOR_DESIGN_SYSTEM_TEMPLATE.format(
+        icons=icon_catalog_for_prompt(), language=language
+    )
+
+
+def build_anchor_design_user_prompt(
+    *,
+    kind: str,
+    brief: ContentBrief,
+    theme: ThemeSpec,
+    deck_title: str,
+    subtitle: str | None = None,
+    section_index: int | None = None,
+    section_count: int | None = None,
+    section_title: str | None = None,
+    section_goal: str | None = None,
+) -> str:
+    lines = [
+        f"Deck: {deck_title}",
+        f"Topic: {brief.topic} | Audience: {brief.audience} | Tone: {brief.tone}",
+        f"Theme mood: {theme.mood} (motif: {theme.motif}; colors come from roles only)",
+        "",
+        "DECK STYLE SIGNATURE (must drive this design):",
+        theme.style.as_prompt_block(),
+        "",
+    ]
+    if kind == "cover":
+        lines += [
+            "ASSIGNMENT: design the COVER page.",
+            f"Deck title: {deck_title}",
+            f"Subtitle: {subtitle or '(none)'}",
+        ]
+    elif kind == "section_divider":
+        lines += [
+            f"ASSIGNMENT: design the SECTION DIVIDER for section {section_index} of {section_count}.",
+            f"Section title: {section_title}",
+            f"Section goal: {section_goal or '(none)'}",
+        ]
+    else:
+        lines += [
+            "ASSIGNMENT: design the CLOSING page.",
+            f"Deck title to echo: {deck_title}",
+        ]
+    lines.append("Design this structural page now. Return ONLY the JSON object.")
+    return "\n".join(lines)
+
+
+REVISION_PLAN_SYSTEM = """You are the revision planner of a presentation studio.
+A deck is already generated; the user asks for changes in natural language.
+Decide the minimal set of edits. Reply with ONLY a JSON object:
+{"reply": str, "theme_instruction": str or null,
+ "all_pages_instruction": str or null, "pages": [
+  {"page_number": int, "instruction": str,
+   "new_brief": {"title": str, "summary": str, "points": [str, ...],
+     "layout_hint": "auto|cards|two_column|stats|timeline|comparison|quote|chart|table|list",
+     "data_idea": str or null, "speaker_notes": str} or null}
+]}
+YOUR CAPABILITIES — plan only with these levers:
+1. Redesign individual pages (layout and/or content) via `pages`.
+2. Redesign EVERY page with one shared directive via `all_pages_instruction` —
+   for recurring elements painted inside the pages themselves (e.g. "remove
+   the left vertical rail on every page", "shrink the giant page numerals").
+   This is expensive (one model call per page), so use it only when the change
+   truly lives inside every page's elements.
+3. Deck-wide visual settings via `theme_instruction`: the color palette, the
+   style signature, the decorative motif (corner_arc/side_band/dot_grid/
+   top_rule/diagonal, or "none" to remove stamped corner/side decorations),
+   and the page chrome toggles — page numbers, the footer line, the section
+   kicker (e.g. "hide page numbers on every page").
+IMPORTANT: theme_instruction only changes deck-level tokens and stamped
+furniture. It can NOT remove or alter shapes/text that the designer painted
+inside each page (side rails, number chips, decorative panels) — those need
+`all_pages_instruction` or per-page entries.
+NOT possible: adding/removing/reordering pages, per-page chrome, animations,
+images the deck does not have.
+
+Rules:
+- reply: 1-3 sentences to the user, in the user's language, saying what you will
+  change. BE HONEST: promise only what the levers above can actually do. If the
+  request (or part of it) is impossible, say so plainly in reply and leave that
+  part out of the plan — never pretend it will be done.
+- theme_instruction: fill ONLY for deck-wide requests; write an English
+  directive for the art director covering palette / motif / chrome toggles /
+  style. Deck-wide-only changes need no page entries.
+- pages: exactly the pages whose layout or content must change, using the page
+  numbers from the deck structure. Never include TOC pages. Never add or remove
+  pages — if the user asks for that, explain in reply that page structure is
+  edited in the outline step.
+- instruction: a concrete English design/content directive for that single page.
+- new_brief: only when the page's CONTENT (title/points/spoken notes) must change;
+  write it fully, in the slide language. Otherwise null.
+- Global rewording/restyle requests may list many pages; global recolor/chrome
+  changes should use theme_instruction with an empty pages list."""
+
+
+def build_revision_plan_user_prompt(
+    *,
+    message: str,
+    deck_summary: str,
+    selected_pages: list[int] | None = None,
+) -> str:
+    selected = (
+        f"Pages the user currently has selected: {selected_pages}\n"
+        if selected_pages
+        else ""
+    )
+    return (
+        f"DECK STRUCTURE:\n{deck_summary}\n\n"
+        f"{selected}"
+        f"USER CHANGE REQUEST:\n{message.strip()}\n\n"
+        "Plan the revision now. Return ONLY the JSON object."
+    )
+
+
+THEME_REVISE_SYSTEM = (
+    THEME_SYSTEM
+    + """
+
+You are REVISING an existing theme: apply the instruction, keep every field the
+instruction does not touch identical to the current theme, and keep all
+contrast rules satisfied.
+Two extra top-level keys are available when revising (echo them from the
+current theme when untouched):
+- "motif": set to "none" to remove deck-wide side/corner decorations.
+- "chrome": {"show_page_number": bool, "show_footer": bool,
+   "show_section_kicker": bool} — deck-wide page furniture toggles (e.g. hide
+   page numbers on every page)."""
+)
+
+
+def build_theme_revise_user_prompt(*, current_theme_json: str, instruction: str) -> str:
+    return (
+        f"CURRENT THEME:\n{current_theme_json}\n\n"
+        f"REVISION INSTRUCTION:\n{instruction.strip()}\n\n"
+        "Return the full revised JSON theme."
+    )
+
+
+def append_revision_block(
+    user_prompt: str, *, instruction: str, current_page_json: str | None
+) -> str:
+    current = (
+        f"CURRENT DESIGN OF THIS SLIDE (JSON):\n{current_page_json}\n\n"
+        if current_page_json
+        else ""
+    )
+    return (
+        f"{user_prompt}\n\n"
+        f"{current}"
+        f"REVISION REQUEST FOR THIS SLIDE:\n{instruction.strip()}\n"
+        "Redesign the slide applying this revision. Keep everything the request "
+        "does not touch close to the current design. Return ONLY the JSON object."
+    )

@@ -60,8 +60,14 @@ class MockLLMClient:
             return self._section_pages(context)
         if task == "page_design":
             return self._page_design(context)
+        if task == "anchor_design":
+            return self._anchor_design(context)
         if task == "page_repair":
             return context.get("page_payload", {})
+        if task == "revision_plan":
+            return self._revision_plan(context)
+        if task == "theme_revise":
+            return self._theme_revise(context)
         raise ValueError(f"MockLLMClient does not know task '{task}'")
 
     def _brief(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -94,6 +100,12 @@ class MockLLMClient:
             "name": "aurora-mock",
             "mood": "modern tech, confident",
             "motif": "corner_arc",
+            "style": {
+                "composition": "clean modular grid, generous top whitespace",
+                "decor": "soft rounded cards with one accent corner arc",
+                "shape_language": "rounded rectangles and pills",
+                "cover_concept": "deep gradient with a topic-specific focal shape cluster",
+            },
             "palette": {
                 "background": "#F7F8FC",
                 "surface": "#FFFFFF",
@@ -151,9 +163,101 @@ class MockLLMClient:
                     ],
                     "layout_hint": _LAYOUT_CYCLE[index % len(_LAYOUT_CYCLE)],
                     "data_idea": None,
+                    "speaker_notes": f"这一页我们重点讲「{anchor}」，先说现状，再讲动作和结果。",
                 }
             )
         return {"pages": pages}
+
+    def _revision_plan(self, context: dict[str, Any]) -> dict[str, Any]:
+        import re as _re
+
+        message = str(context.get("message", ""))
+        selected = context.get("selected_pages") or []
+        numbers = [int(match) for match in _re.findall(r"第\s*(\d+)\s*页", message)]
+        numbers = list(dict.fromkeys(numbers + [int(n) for n in selected]))
+        wants_restyle = any(
+            word in message for word in ("颜色", "色调", "配色", "风格", "页码", "页脚")
+        )
+        wants_all_pages = not numbers and any(
+            word in message for word in ("每页", "每一页", "所有页", "全部页")
+        )
+        pages = [
+            {"page_number": number, "instruction": message, "new_brief": None}
+            for number in numbers
+        ]
+        return {
+            "reply": "好的，我按你的要求调整对应页面。",
+            "theme_instruction": message if wants_restyle else None,
+            "all_pages_instruction": message if wants_all_pages else None,
+            "pages": pages,
+        }
+
+    def _theme_revise(self, context: dict[str, Any]) -> dict[str, Any]:
+        theme = dict(context.get("theme") or {})
+        instruction = str(context.get("instruction", ""))
+        if any(word in instruction for word in ("页码", "page number", "页脚", "footer")):
+            chrome = dict(theme.get("chrome") or {})
+            if "页码" in instruction or "page number" in instruction:
+                chrome["show_page_number"] = False
+            if "页脚" in instruction or "footer" in instruction:
+                chrome["show_footer"] = False
+            theme["chrome"] = chrome
+        if any(word in instruction for word in ("颜色", "色调", "配色", "color")):
+            palette = dict(theme.get("palette") or {})
+            palette.update({"primary": "#23415E", "secondary": "#4A7BA6", "accent": "#C0574F"})
+            theme["palette"] = palette
+            theme["name"] = f"{theme.get('name', 'theme')}-revised"
+        return theme
+
+    def _anchor_design(self, context: dict[str, Any]) -> dict[str, Any]:
+        kind = str(context.get("kind", "cover"))
+        deck_title = str(context.get("deck_title", "未命名演示"))
+        page_number = int(context.get("page_number", 1))
+        if kind == "cover":
+            return {
+                "role": "cover",
+                "title": deck_title,
+                "background": "primary",
+                "background_gradient": {"start": "primary", "end": "secondary", "angle_deg": 120},
+                "elements": [
+                    {"type": "shape", "id": "mock_cover_diag", "frame": {"x": 820, "y": 0, "w": 460, "h": 720},
+                     "shape": "parallelogram", "fill": "accent", "fill_alpha": 0.14},
+                    {"type": "text", "id": "mock_cover_kicker", "frame": {"x": 96, "y": 220, "w": 500, "h": 30},
+                     "text": "专题演示", "role": "kicker", "color": "on_primary"},
+                    {"type": "text", "id": "mock_cover_title", "frame": {"x": 96, "y": 264, "w": 860, "h": 180},
+                     "text": deck_title, "role": "display", "color": "on_primary"},
+                ],
+            }
+        if kind == "section_divider":
+            section_index = int(context.get("section_index") or 1)
+            section_count = int(context.get("section_count") or 1)
+            section_title = str(context.get("section_title") or "章节")
+            return {
+                "role": "section_divider",
+                "title": section_title,
+                "background": "primary",
+                "background_gradient": {"start": "secondary", "end": "primary", "angle_deg": 45},
+                "elements": [
+                    {"type": "text", "id": "mock_div_num", "frame": {"x": 96, "y": 150, "w": 360, "h": 140},
+                     "text": f"{section_index:02d}", "role": "display", "color": "accent", "size_pt": 84},
+                    {"type": "text", "id": "mock_div_title", "frame": {"x": 96, "y": 310, "w": 900, "h": 110},
+                     "text": section_title, "role": "section", "color": "on_primary"},
+                    {"type": "text", "id": "mock_div_progress", "frame": {"x": 96, "y": 600, "w": 400, "h": 30},
+                     "text": f"{section_index:02d} / {section_count:02d}", "role": "kicker", "color": "on_primary"},
+                ],
+            }
+        return {
+            "role": "closing",
+            "title": "谢谢观看",
+            "background": "primary",
+            "background_gradient": {"start": "primary", "end": "secondary", "angle_deg": 245},
+            "elements": [
+                {"type": "text", "id": "mock_close_title", "frame": {"x": 190, "y": 300, "w": 900, "h": 110},
+                 "text": "谢谢观看", "role": "display", "color": "on_primary", "align": "center"},
+                {"type": "text", "id": "mock_close_note", "frame": {"x": 240, "y": 430, "w": 800, "h": 60},
+                 "text": deck_title, "role": "subtitle", "color": "on_primary", "align": "center"},
+            ],
+        }
 
     def _page_design(self, context: dict[str, Any]) -> dict[str, Any]:
         page_brief = PageBrief.model_validate(context.get("page_brief", {}))
@@ -164,4 +268,15 @@ class MockLLMClient:
             section_title=context.get("section_title"),
             language=str(context.get("language", "zh-CN")),
         )
-        return page.model_dump(mode="json")
+        payload = page.model_dump(mode="json")
+        if context.get("revision_instruction"):
+            payload["elements"].append(
+                {
+                    "type": "text",
+                    "id": "mock_revision_tag",
+                    "frame": {"x": 64, "y": 660, "w": 400, "h": 24},
+                    "text": "已按修改要求重新设计",
+                    "role": "caption",
+                }
+            )
+        return payload

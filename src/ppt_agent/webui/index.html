@@ -23,6 +23,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
             <span>创建演示</span>
           </button>
+          <button class="nav-item" type="button" data-view-target="outline">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3.5 6h.01"/><path d="M3.5 12h.01"/><path d="M3.5 18h.01"/></svg>
+            <span>大纲脚本</span>
+          </button>
           <button class="nav-item" type="button" data-view-target="studio">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M10 8.5l4 2.5-4 2.5z"/><path d="M8 21h8"/></svg>
             <span>生成工作台</span>
@@ -134,6 +138,25 @@
                   </section>
                 </aside>
               </div>
+
+              <section id="revisionPanel" class="revision-panel" hidden aria-label="修改对话">
+                <div class="revision-head">
+                  <div><p class="eyebrow">Revise with Agent</p><h3>和 Agent 继续修改</h3><p class="hint">逐页微调或整体大改都可以;修改完成后会自动重新渲染 PPTX。</p></div>
+                  <span id="revisionStatusChip" class="job-status-chip">待命</span>
+                </div>
+                <div id="revisionMessages" class="revision-stream" aria-live="polite">
+                  <div class="revision-empty" id="revisionEmpty">生成完成后,在这里告诉 Agent 想改什么。例如:「第 5 页换成图表页」「整体色调改成深蓝」「第二章重写,面向投资人」。</div>
+                </div>
+                <form id="revisionComposer" class="revision-composer">
+                  <label class="sr-only" for="revisionInput">告诉 Agent 想修改什么</label>
+                  <textarea id="revisionInput" placeholder="例如：第 5 页信息太密，改成一张对比图表；整体配色换成深蓝科技感。"></textarea>
+                  <div class="revision-actions">
+                    <button id="revisionQuotePageButton" class="secondary-button" type="button" hidden>引用第 1 页</button>
+                    <span class="revision-actions-spacer"></span>
+                    <button id="sendRevisionButton" class="primary-button" type="submit">发送修改请求</button>
+                  </div>
+                </form>
+              </section>
             </section>
 
             <section id="projectWorkspace" class="product-section" data-app-view="studio" hidden>
@@ -219,8 +242,10 @@
                       </div>
                       <div class="confirmation-actions">
                         <button id="continueInterviewButton" class="secondary-button" type="button">继续调整</button>
+                        <button id="skipOutlineButton" class="secondary-button" type="button">跳过确认，直接生成</button>
                         <button id="confirmGenerationButton" class="primary-button" type="button">开始生成 PPT</button>
                       </div>
+                      <p class="hint">开始前 Agent 会先给出章节大纲和每页脚本，你确认或修改后才正式生成。</p>
                     </section>
                     <form id="interviewComposer" class="interview-composer">
                       <label class="sr-only" for="interviewInput">告诉 Agent 你的演示需求</label>
@@ -254,6 +279,46 @@
                       <button id="generateLongDeckButton" type="submit" hidden>生成 PPT</button>
                     </form>
                   </aside>
+                </div>
+              </div>
+            </section>
+
+            <section id="outlinePanel" class="product-section" data-app-view="outline" hidden>
+              <div class="section-head">
+                <div><p class="eyebrow">Outline & script</p><h2>大纲与页面脚本</h2><p>逐页确认要讲什么、怎么讲，改到满意再开始正式生成。</p></div>
+                <span id="planStatusChip" class="job-status-chip">等待规划</span>
+              </div>
+
+              <div id="planEmpty" class="plan-empty">还没有等待确认的大纲。先在「创建演示」里和 Agent 对齐需求，Agent 会在生成前把大纲和每页脚本拿给你确认。</div>
+
+              <div id="planLoading" class="plan-loading" hidden>
+                <span class="plan-spinner" aria-hidden="true"></span>
+                <div>
+                  <strong>Agent 正在规划章节大纲和每页脚本</strong>
+                  <span id="planLoadingDetail">通常需要几十秒。完成后每一页的标题、要点和演讲备注都可以修改。</span>
+                </div>
+              </div>
+
+              <div id="planError" class="plan-error" hidden>
+                <p id="planErrorMessage"></p>
+                <div class="plan-error-actions">
+                  <button id="retryPlanButton" class="secondary-button" type="button">重试规划</button>
+                  <button id="skipPlanButton" type="button">跳过确认，直接生成</button>
+                </div>
+              </div>
+
+              <div id="planEditor" class="plan-editor" hidden>
+                <div class="plan-title-grid">
+                  <label class="plan-field">演示标题<input id="planDeckTitle" type="text"></label>
+                  <label class="plan-field">副标题<input id="planDeckSubtitle" type="text" placeholder="可留空"></label>
+                </div>
+                <div id="planSections" class="plan-sections"></div>
+                <div class="plan-footer">
+                  <p id="planPageSummary" class="hint"></p>
+                  <div class="plan-footer-actions">
+                    <button id="skipPlanFooterButton" class="secondary-button" type="button">跳过确认，直接生成</button>
+                    <button id="confirmPlanButton" class="primary-button" type="button">确认大纲，开始生成 PPT</button>
+                  </div>
                 </div>
               </div>
             </section>

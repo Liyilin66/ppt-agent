@@ -6,13 +6,18 @@ import pytest
 
 from ppt_agent.v2.planning import (
     DeckOutline,
+    EditableDeckPlan,
+    EditablePage,
+    EditableSection,
     PageBrief,
     SectionOutline,
     build_skeleton,
+    editable_plan_from_skeleton,
     parse_page_briefs,
     reconcile_outline,
     reconcile_page_briefs,
     section_start_pages,
+    skeleton_from_editable_plan,
 )
 
 
@@ -87,3 +92,68 @@ class TestPageBriefs:
         assert len(parse_page_briefs({"pages": bare})) == 2
         with pytest.raises(ValueError):
             parse_page_briefs({"nope": 1})
+
+
+class TestEditableDeckPlan:
+    def _plan(self) -> "EditableDeckPlan":
+        return EditableDeckPlan(
+            deck_title="演示",
+            sections=[
+                EditableSection(
+                    title="第一章",
+                    goal="讲清现状",
+                    pages=[
+                        EditablePage(title="p1", points=["a", " ", "b"], speaker_notes="口播一"),
+                        EditablePage(title="p2", layout_hint="not_a_hint"),
+                    ],
+                ),
+                EditableSection(title="第二章", pages=[EditablePage(title="p3")]),
+            ],
+        )
+
+    def test_skeleton_roundtrip_preserves_briefs(self) -> None:
+        skeleton = skeleton_from_editable_plan(self._plan())
+        assert skeleton.total_pages == 7  # cover + 2 dividers + 3 content + closing = 7 (<10, no TOC)
+        content = skeleton.content_slots()
+        assert [slot.brief.title for slot in content] == ["p1", "p2", "p3"]
+        assert content[0].brief.points == ["a", "b"]
+        assert content[0].brief.speaker_notes == "口播一"
+        assert content[1].brief.layout_hint == "auto"  # invalid hint falls back
+        back = editable_plan_from_skeleton(skeleton)
+        assert [len(section.pages) for section in back.sections] == [2, 1]
+        assert back.sections[0].pages[0].speaker_notes == "口播一"
+
+    def test_total_pages_adds_toc_for_long_decks(self) -> None:
+        plan = EditableDeckPlan(
+            deck_title="长演示",
+            sections=[
+                EditableSection(
+                    title="章",
+                    pages=[EditablePage(title=f"p{i}") for i in range(8)],
+                )
+            ],
+        )
+        # cover + toc + divider + 8 content + closing = 12
+        assert plan.total_pages() == 12
+        assert skeleton_from_editable_plan(plan).total_pages == 12
+
+    def test_rejects_out_of_range_totals(self) -> None:
+        oversized = EditableDeckPlan(
+            deck_title="太长",
+            sections=[
+                EditableSection(
+                    title="章",
+                    pages=[EditablePage(title=f"p{i}") for i in range(40)],
+                ),
+                EditableSection(
+                    title="章2",
+                    pages=[EditablePage(title=f"q{i}") for i in range(40)],
+                ),
+                EditableSection(
+                    title="章3",
+                    pages=[EditablePage(title=f"r{i}") for i in range(20)],
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="4-100"):
+            skeleton_from_editable_plan(oversized)

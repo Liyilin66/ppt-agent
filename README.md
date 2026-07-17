@@ -1,6 +1,6 @@
 # ppt-agent
 
-一个本地优先的 AI Presentation Agent：把一句话需求、详细 prompt 或文档资料，转化为经过结构化校验、全页质量检查并可继续编辑的 PowerPoint。
+一个本地优先的 AI Presentation Agent：把一句话需求、详细 prompt 或文档资料，转化为可先确认大纲、生成中逐页预览、成片后继续对话修改的可编辑 PowerPoint。
 
 当前产品主线已经验证到 **100 页**。Web UI 提供统一的 1-100 页对话创建入口：1-3 页进入快速管线，4-100 页进入 v2 自由布局管线。legacy 30 页批次与 PPT Master recovery 作为兼容和恢复路径继续保留，但不再要求普通用户理解 batch、重试次数或 QA 阈值。
 
@@ -12,6 +12,7 @@
 | --- | --- |
 | 1-100 页统一 Web 创建入口 | 已完成 |
 | 自适应需求访谈 Agent：单问题追问、快捷选项、自由回答、生成确认 | 已完成 |
+| 生成前可编辑大纲：章节、逐页要点、版式建议和演讲备注 | 已完成 |
 | 创建、实时生成、页面预览、演示历史、交付中心分区工作台 | 已完成 |
 | 独立 Web UI 静态资源与 Python package-data 打包 | 已完成 |
 | 100 页真实 LLM 生成 | 已验证 |
@@ -20,6 +21,7 @@
 | 并发生成与 checkpoint resume | 已完成 |
 | 全页 QA、自动修复、hard quality gate | 已完成 |
 | 生成中逐页预览、可见区域缩略图加载、跟随最新页面 | 已完成 |
+| 成片后自然语言修改：指定页面或全局主题，重新 QA 并覆盖导出 | 已完成 |
 | SQLite 演示历史、job、进度、取消、恢复、artifact 下载 | 已完成 |
 | OpenAI-compatible / Anthropic BYOK | CLI 与服务端环境变量可用 |
 | PDF / DOCX / MD / TXT 提炼 | v2 CLI 可用，Web 尚未接上传 |
@@ -55,7 +57,7 @@
 
 ## 产品工作台
 
-Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供快捷选项，同时保留自由输入；信息充分后进入生成确认，再开始 1-100 页任务。结构化 Brief 只作为内部生成契约和恢复依据，不再让普通用户填写右侧表单。
+Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供快捷选项，同时保留自由输入；信息充分后进入生成确认。结构化 Brief 只作为内部生成契约和恢复依据，不再让普通用户填写右侧表单。
 
 | 对话创建 | 实时生成工作台 |
 | --- | --- |
@@ -63,7 +65,15 @@ Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句
 
 清晰需求会直接进入生成确认；模糊需求会按实际缺口继续追问，不预设固定问题数量。用户可以继续用自然语言调整已经收敛的需求；短演示或用户明确要求“直接生成 / 不用再问”时可以自动开始，长演示默认保留一次确认。访谈状态和完整消息保存在 SQLite，并通过 `interview_id` 与最终 presentation job 关联。
 
+4-100 页任务可以先生成一份**可编辑大纲与页面脚本**。用户可在正式生成前调整演示标题、章节目标、页面标题、逐页要点、版式提示、数据建议和演讲备注，也可以增删页面。确认后的计划会写入 checkpoint，正式生成复用已批准内容，不再重新规划；用户也可以选择跳过大纲直接生成。
+
+![Editable outline and speaker notes](docs/readme/web-outline-editor.jpg)
+
 生成开始后，页面会逐步出现在左侧缩略图和中央画布中。缩略图只加载当前滚动区域附近的页面，因此 100 页任务不会同时创建 100 个 iframe；用户可以手动查看任意已生成页面，也可以继续跟随最新页面。
+
+成片生成后，用户可以继续用自然语言提出修改，例如“第 5 页改成对比图表”或“全稿换成深蓝科技风并隐藏页码”。修订编排器会先生成结构化修改计划，只重做受影响页面或主题，再重新汇总 DeckDesign、执行全页 QA 并原位更新 PPTX；无法执行的请求会明确说明，不会把未修改的文件伪报为成功。
+
+![Conversational revisions after generation](docs/readme/web-agent-revision.jpg)
 
 | SQLite 演示历史 | 交付中心 |
 | --- | --- |
@@ -85,9 +95,11 @@ Web 工作台还包括：
 - 五阶段任务进度与前端平滑运行计时。
 - 临时请求失败后自动继续轮询。
 - 对话状态、内部 Brief 与 job 关联恢复。
+- 生成前大纲、逐页脚本和 speaker notes 编辑确认。
 - v2 checkpoint 页面生成后立即进入 storyboard。
 - 真实 SVG / PageDesign HTML 单页预览与视觉高光页选择。
 - QA、成本、章节分配与交付状态。
+- 成片后定向页面重设计、全局主题修改与重新导出。
 - PPTX、IR、QA、run report 与 PPT Master artifacts 下载。
 - SQLite 演示历史：搜索主题/观众/任务 ID、按状态筛选、打开旧任务、直接下载最终 PPTX。
 
@@ -102,10 +114,13 @@ flowchart TD
     C --> D{"Web 页数路由"}
     D -->|"1-3"| E["v1 DeckBrief + DeckPlan"]
     D -->|"4-100"| F["v2 ContentBrief + ThemeSpec"]
+    F --> F1["可编辑大纲 + 逐页脚本"]
+    F1 --> F2{"确认或跳过"}
+    F2 -->|"确认"| I["Approved DeckSkeleton + PageDesign"]
+    F2 -->|"跳过"| I
     C -.->|"兼容 API: 30 页"| G["legacy batch generation"]
 
     E --> H["Strict Deck IR"]
-    F --> I["Outline + PageBrief + PageDesign"]
     G --> J["Batch Deck IR merge"]
 
     H --> K["Rule QA"]
@@ -123,6 +138,9 @@ flowchart TD
     Q -->|"No"| U["PPT Master recovery package"]
 
     O --> V["SQLite job + artifacts"]
+    R --> W["自然语言修改计划"]
+    W --> X["重做受影响页面 / 更新主题"]
+    X --> L
     R --> V
     S --> V
     T --> V
@@ -147,6 +165,8 @@ Prompt / source digest / optional search
                 ↓
 ContentBrief → ThemeSpec → DeckOutline → DeckSkeleton
                 ↓
+可编辑大纲与逐页脚本 → 用户确认 → approved checkpoints
+                ↓
 Section PageBriefs（按章节并发）
                 ↓
 Anchor pages（封面/目录/章节页/结尾，代码生成）
@@ -158,6 +178,10 @@ Rule QA → deterministic repair → optional LLM repair
 Strict full-deck quality gate
                 ↓
 DeckDesign JSON → editable PPTX → artifacts
+                ↓
+自然语言修订 → 结构化 RevisionPlan → 局部重设计 / 主题更新
+                ↓
+全页 QA → 重新渲染 PPTX → revision history
 ~~~
 
 ### 为什么能稳定处理 100 页
@@ -165,9 +189,11 @@ DeckDesign JSON → editable PPTX → artifacts
 - **每页一个请求**：避免把 100 页塞进一次超长模型调用。
 - **并发池**：默认 concurrency 为 8。
 - **checkpoint**：brief、theme、skeleton、section briefs 和每个内容页都独立保存。
+- **plan approval**：确认后的章节、页面要点和 speaker notes 直接写入 checkpoint，正式生成不会推翻用户批准的大纲。
 - **resume**：中断后跳过已经完成且有效的页面。
 - **结构页确定性生成**：减少 token，并稳定整份演示的视觉锚点。
 - **严格 QA**：文本容量、重叠、越界和页面结构都进入检查。
+- **局部修订**：成片后只删除并重建受影响页面 checkpoint，全局主题修改则复用全部页面内容重新渲染。
 - **预算护栏**：记录 token 和估算成本；内容页失败时可以进入确定性 fallback。
 
 ### v2 产物
@@ -179,6 +205,8 @@ DeckDesign JSON → editable PPTX → artifacts
 | &lt;name&gt;_qa_report.json | 全页 QA、自动修复与 fallback 记录 |
 | &lt;name&gt;_run_report.json | 调用次数、token、成本估算、阶段耗时和逐页状态 |
 | checkpoints/ | 断点续跑所需的阶段与逐页数据 |
+
+修订记录另外保存在 SQLite `deck_revisions` 表中；每次成功修订都会更新 design、QA report、run report 和 PPTX artifact，同时保留用户请求、Agent 回复和受影响页码。
 
 ## PPT Master 集成边界
 
@@ -368,6 +396,12 @@ ppt-agent v2 preview   Render DeckDesign as browser HTML
 | POST /api/presentation-interviews | 开始自适应需求访谈 |
 | POST /api/presentation-interviews/{id}/messages | 回答当前问题并继续收敛 Brief |
 | GET /api/presentation-interviews/{id} | 恢复 SQLite 中的访谈状态 |
+| POST /api/deck-plans | 为 4-100 页任务生成可编辑大纲和逐页脚本 |
+| GET /api/deck-plans/{plan_id} | 查询规划状态或恢复待确认计划 |
+| PUT /api/deck-plans/{plan_id} | 保存用户编辑后的章节和页面脚本 |
+| POST /api/deck-plans/{plan_id}/confirm | 确认计划、写入 checkpoint 并启动生成 |
+| POST /api/jobs/{job_id}/revisions | 用自然语言修改已完成的 v2 演示 |
+| GET /api/jobs/{job_id}/revisions | 查询该演示的修订历史 |
 | GET /api/presentations | SQLite 演示历史、筛选和最终 PPTX 下载入口 |
 | GET /api/jobs/{job_id}/preview-slides | 可用预览页清单 |
 | GET /api/jobs/{job_id}/preview-slides/{n} | SVG 或 v2 HTML 单页预览 |
@@ -413,7 +447,7 @@ src/ppt_agent/
 │   ├── styles.css             # 深色设计系统与响应式布局
 │   └── app.js                 # 对话、任务轮询、实时预览和历史交互
 ├── requirements_interview.py  # 自适应对话访谈与内部 Brief
-├── job_store.py               # SQLite jobs、访谈、请求快照与 artifacts
+├── job_store.py               # SQLite jobs、访谈、计划、修订与 artifacts
 ├── generation.py              # v1 structured generation
 ├── pipeline.py                # v1 build/QA/render pipeline
 ├── long_deck_orchestrator.py  # legacy 30-page batching/resume
@@ -423,6 +457,7 @@ src/ppt_agent/
     ├── orchestrator.py        # 100-page pipeline
     ├── providers.py           # OpenAI-compatible / Anthropic BYOK
     ├── planning.py            # brief, outline, skeleton, page briefs
+    ├── revise.py              # 结构化修订计划、局部重设计和重新导出
     ├── ir.py                  # PageDesign / DeckDesign
     ├── qa.py                  # page QA and deterministic repair
     ├── render.py              # editable PPTX renderer
@@ -441,7 +476,7 @@ docs/design/                   # UI visual QA evidence
 当前验证基线：
 
 ~~~text
-460 passed
+489 passed
 uv sync
 uv lock --check
 uv run pytest

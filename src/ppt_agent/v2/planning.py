@@ -71,6 +71,9 @@ class PageBrief(StrictModel):
     data_idea: str | None = Field(
         default=None, description="Optional concrete chart/table suggestion with numbers."
     )
+    speaker_notes: str = Field(
+        default="", description="Spoken script for this page; written into the PPTX notes."
+    )
 
 
 SlotKind = Literal["cover", "toc", "section_divider", "content", "closing"]
@@ -250,3 +253,121 @@ def parse_page_briefs(payload: Any) -> list[PageBrief]:
     if not isinstance(payload, list):
         raise ValueError("Page brief reply is not a list")
     return [PageBrief.model_validate(item) for item in payload]
+
+
+class EditablePage(StrictModel):
+    """One content page as shown in the pre-generation review UI."""
+
+    title: str = Field(..., min_length=1)
+    summary: str = ""
+    points: list[str] = Field(default_factory=list)
+    layout_hint: str = "auto"
+    data_idea: str | None = None
+    speaker_notes: str = ""
+
+    def to_brief(self) -> PageBrief:
+        hint = self.layout_hint if self.layout_hint in PageBrief.model_fields["layout_hint"].annotation.__args__ else "auto"
+        return PageBrief(
+            title=self.title,
+            summary=self.summary,
+            points=[point for point in (item.strip() for item in self.points) if point],
+            layout_hint=hint,
+            data_idea=self.data_idea or None,
+            speaker_notes=self.speaker_notes.strip(),
+        )
+
+
+class EditableSection(StrictModel):
+    title: str = Field(..., min_length=1)
+    goal: str = ""
+    pages: list[EditablePage] = Field(..., min_length=1, max_length=40)
+
+
+class EditableDeckPlan(StrictModel):
+    """User-facing, editable form of brief + skeleton_with_briefs."""
+
+    deck_title: str = Field(..., min_length=1)
+    subtitle: str | None = None
+    language: str = "zh-CN"
+    sections: list[EditableSection] = Field(..., min_length=1, max_length=16)
+
+    def structural_pages(self) -> int:
+        base = 2 + len(self.sections)  # cover + closing + one divider per section
+        content = sum(len(section.pages) for section in self.sections)
+        toc = math.ceil(len(self.sections) / 8)
+        # Matches reconcile_outline: decks that reach 10 pages carry a TOC.
+        if base + content + toc >= 10:
+            base += toc
+        return base
+
+    def total_pages(self) -> int:
+        return self.structural_pages() + sum(len(section.pages) for section in self.sections)
+
+
+def editable_plan_from_skeleton(skeleton: DeckSkeleton) -> EditableDeckPlan:
+    """Project an enriched skeleton into the user-editable plan shape."""
+
+    sections: list[EditableSection] = []
+    for index, section in enumerate(skeleton.outline.sections, start=1):
+        pages = [
+            EditablePage(
+                title=slot.brief.title if slot.brief else f"{section.title} · {position}",
+                summary=slot.brief.summary if slot.brief else "",
+                points=list(slot.brief.points) if slot.brief else [],
+                layout_hint=slot.brief.layout_hint if slot.brief else "auto",
+                data_idea=slot.brief.data_idea if slot.brief else None,
+                speaker_notes=slot.brief.speaker_notes if slot.brief else "",
+            )
+            for position, slot in enumerate(
+                (slot for slot in skeleton.slots if slot.kind == "content" and slot.section_index == index),
+                start=1,
+            )
+        ]
+        sections.append(EditableSection(title=section.title, goal=section.goal, pages=pages))
+    return EditableDeckPlan(
+        deck_title=skeleton.deck_title,
+        subtitle=skeleton.subtitle,
+        language=skeleton.language,
+        sections=sections,
+    )
+
+
+def skeleton_from_editable_plan(plan: EditableDeckPlan) -> DeckSkeleton:
+    """Rebuild an exact skeleton (with briefs) from a user-edited plan.
+
+    Raises ValueError when the edited plan falls outside the supported
+    [MIN_PAGES, MAX_PAGES] deck size.
+    """
+
+    total = plan.total_pages()
+    if not MIN_PAGES <= total <= MAX_PAGES:
+        raise ValueError(
+            f"Edited plan needs {total} pages; supported range is {MIN_PAGES}-{MAX_PAGES}."
+        )
+    outline = DeckOutline(
+        deck_title=plan.deck_title,
+        subtitle=plan.subtitle,
+        sections=[
+            SectionOutline(
+                title=section.title,
+                goal=section.goal,
+                content_pages=len(section.pages),
+                talking_points=[page.title for page in section.pages],
+            )
+            for section in plan.sections
+        ],
+    )
+    skeleton = build_skeleton(outline, total_pages=total, language=plan.language)
+    briefs_by_section = {
+        index: [page.to_brief() for page in section.pages]
+        for index, section in enumerate(plan.sections, start=1)
+    }
+    cursor: dict[int, int] = {}
+    slots: list[PageSlot] = []
+    for slot in skeleton.slots:
+        if slot.kind == "content" and slot.section_index is not None:
+            position = cursor.get(slot.section_index, 0)
+            cursor[slot.section_index] = position + 1
+            slot = slot.model_copy(update={"brief": briefs_by_section[slot.section_index][position]})
+        slots.append(slot)
+    return skeleton.model_copy(update={"slots": slots})

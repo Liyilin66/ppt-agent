@@ -23,10 +23,12 @@ from ppt_agent.v2.icons import ICON_GLYPHS
 from ppt_agent.v2.ir import (
     CANVAS_HEIGHT,
     CANVAS_WIDTH,
+    ChartItem,
     Frame,
     IconItem,
     PageDesign,
     ShapeItem,
+    TableItem,
     TextItem,
 )
 from ppt_agent.v2.metrics import estimated_overflow_ratio, fit_font_size
@@ -37,6 +39,15 @@ SAFE_BOTTOM = CANVAS_HEIGHT - 56.0
 OVERFLOW_WARNING = 0.05
 OVERFLOW_ERROR = 0.35
 TEXT_OVERLAP_IOU = 0.15
+# Charts/tables auto-render their own text; anything drawn on top collides.
+HEAVY_OVERLAP_RATIO = 0.12
+# python-pptx grows table rows to fit ~10.5pt text + margins; below this many
+# canvas units per row the table overflows its declared frame downwards.
+TABLE_MIN_ROW_UNITS = 28.0
+# Content pages whose text/icons/charts/tables cover less of the content zone
+# than this read as half-empty slides.
+SPARSE_COVERAGE_ERROR = 0.20
+BOTTOM_EMPTY_COVERAGE = 0.08
 
 Severity = Literal["warning", "error"]
 
@@ -85,6 +96,40 @@ def _effective_background_hex(page: PageDesign, item: TextItem, theme: ThemeSpec
     if page.background_gradient is not None:
         return theme.palette.resolve(page.background_gradient.start)
     return theme.palette.resolve(page.background)
+
+
+def _overlap_area(a: Frame, b: Frame) -> float:
+    width = min(a.right, b.right) - max(a.x, b.x)
+    height = min(a.bottom, b.bottom) - max(a.y, b.y)
+    return max(0.0, width) * max(0.0, height)
+
+
+def _frame_area(frame: Frame) -> float:
+    return frame.w * frame.h
+
+
+def _content_coverage(elements: list, *, y_from: float, y_to: float) -> float:
+    """Fraction of the given horizontal band covered by real content frames."""
+
+    boxes = [
+        element.frame
+        for element in elements
+        if isinstance(element, (TextItem, IconItem, ChartItem, TableItem))
+    ]
+    if not boxes or y_to <= y_from:
+        return 0.0
+    columns, rows = 32, 12
+    x_from, x_to = 64.0, CANVAS_WIDTH - 64.0
+    covered = 0
+    for column in range(columns):
+        px = x_from + (column + 0.5) * (x_to - x_from) / columns
+        for row in range(rows):
+            py = y_from + (row + 0.5) * (y_to - y_from) / rows
+            if any(
+                box.x <= px <= box.right and box.y <= py <= box.bottom for box in boxes
+            ):
+                covered += 1
+    return covered / (columns * rows)
 
 
 def _shift_into_safe_zone(frame: Frame) -> Frame | None:
@@ -205,6 +250,86 @@ def review_page(page: PageDesign, theme: ThemeSpec) -> tuple[PageDesign, PageQAR
                         ),
                     )
                 )
+
+    # Charts and tables render their own labels; overlapping elements collide.
+    heavy_items = [
+        element for element in elements if isinstance(element, (ChartItem, TableItem))
+    ]
+    for heavy in heavy_items:
+        for element in elements:
+            if element is heavy:
+                continue
+            if not isinstance(element, (TextItem, ChartItem, TableItem, IconItem)):
+                continue
+            overlap = _overlap_area(heavy.frame, element.frame)
+            smaller = min(_frame_area(heavy.frame), _frame_area(element.frame))
+            if smaller > 0 and overlap / smaller > HEAVY_OVERLAP_RATIO:
+                issues.append(
+                    QAIssue(
+                        code="heavy_overlap",
+                        severity="error",
+                        element_id=heavy.id,
+                        message=(
+                            f"'{element.id}' overlaps the {heavy.type} '{heavy.id}' "
+                            f"({overlap / smaller:.0%} of the smaller frame); charts and "
+                            "tables need their own clear region — move the element away "
+                            "or drop it"
+                        ),
+                    )
+                )
+
+    # Tables physically grow to fit their text; a frame that allots less than
+    # ~28 units per row will overflow downwards over whatever sits below it.
+    for element in elements:
+        if not isinstance(element, TableItem):
+            continue
+        rows = len(element.rows) + 1
+        needed = rows * TABLE_MIN_ROW_UNITS
+        if needed > element.frame.h * 1.1:
+            issues.append(
+                QAIssue(
+                    code="table_overflow",
+                    severity="error",
+                    element_id=element.id,
+                    message=(
+                        f"Table '{element.id}' has {rows} rows in a "
+                        f"{element.frame.h:.0f}-unit-tall frame; it will render "
+                        f"~{needed:.0f} units tall and spill over elements below — "
+                        "enlarge the frame to at least that height or remove rows"
+                    ),
+                )
+            )
+
+    # Half-empty content pages: measure how much of the content zone actual
+    # content (text/icons/charts/tables) covers, overall and in the bottom half.
+    if page.role not in ("cover", "toc", "section_divider", "closing"):
+        coverage = _content_coverage(elements, y_from=SAFE_TOP + 84, y_to=SAFE_BOTTOM)
+        bottom_coverage = _content_coverage(
+            elements, y_from=(SAFE_TOP + SAFE_BOTTOM) / 2, y_to=SAFE_BOTTOM
+        )
+        if coverage < SPARSE_COVERAGE_ERROR:
+            issues.append(
+                QAIssue(
+                    code="layout_sparse",
+                    severity="error",
+                    message=(
+                        f"Content covers only ~{coverage:.0%} of the usable canvas; "
+                        "large regions are empty — enlarge cards and typography, add "
+                        "supporting structure, and spread content across the page"
+                    ),
+                )
+            )
+        elif bottom_coverage < BOTTOM_EMPTY_COVERAGE and coverage < 0.5:
+            issues.append(
+                QAIssue(
+                    code="bottom_half_empty",
+                    severity="error",
+                    message=(
+                        "The bottom half of the slide is almost empty while the top is "
+                        "loaded — rebalance the layout vertically or enlarge the content"
+                    ),
+                )
+            )
 
     # Density bounds.
     if page.role == "content" and len(elements) < 3:

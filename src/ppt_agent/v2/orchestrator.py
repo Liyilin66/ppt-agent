@@ -25,6 +25,7 @@ from pydantic import Field, ValidationError
 from ppt_agent.models import StrictModel
 from ppt_agent.v2 import prompts
 from ppt_agent.v2.anchors import (
+    anchor_variant_seed,
     build_closing_page,
     build_cover_page,
     build_section_divider,
@@ -35,10 +36,18 @@ from ppt_agent.v2.design import (
     ThemeSpec,
     get_builtin_theme,
     normalize_theme,
+    relative_luminance,
 )
 from ppt_agent.v2.fallback import design_fallback_page
 from ppt_agent.v2.intake import IntakeResult, ingest_sources
-from ppt_agent.v2.ir import DeckDesign, PageDesign, normalize_page_payload
+from ppt_agent.v2.ir import (
+    ChartItem,
+    DeckDesign,
+    PageDesign,
+    TableItem,
+    TextItem,
+    normalize_page_payload,
+)
 from ppt_agent.v2.planning import (
     MAX_PAGES,
     MIN_PAGES,
@@ -322,6 +331,8 @@ async def _design_content_page(
     repair_rounds: int,
     qa_gate: str,
     progress: Progress,
+    revision_instruction: str | None = None,
+    current_page_json: str | None = None,
 ) -> tuple[PageDesign, PageQAResult, PageOutcome]:
     checkpoint_name = f"pages/page_{slot.page_number:03d}.json"
     cached = checkpoints.load(checkpoint_name)
@@ -334,6 +345,7 @@ async def _design_content_page(
     page_brief = slot.brief or PageBrief(title=slot.section_title or "Untitled")
     neighbor_titles = _neighbor_titles(skeleton, slot)
     context = {
+        "revision_instruction": revision_instruction,
         "page_brief": page_brief.model_dump(mode="json"),
         "page_number": slot.page_number,
         "section_title": slot.section_title,
@@ -341,19 +353,26 @@ async def _design_content_page(
     }
 
     async def call_model() -> PageDesign:
+        user_prompt = prompts.build_page_design_user_prompt(
+            brief=brief,
+            theme=theme,
+            deck_title=skeleton.deck_title,
+            section_title=slot.section_title or "",
+            page_brief=page_brief,
+            page_number=slot.page_number,
+            total_pages=skeleton.total_pages,
+            neighbor_titles=neighbor_titles,
+        )
+        if revision_instruction:
+            user_prompt = prompts.append_revision_block(
+                user_prompt,
+                instruction=revision_instruction,
+                current_page_json=current_page_json,
+            )
         payload = await client.complete_json(
             task="page_design",
             system=prompts.build_page_design_system(brief.language),
-            user=prompts.build_page_design_user_prompt(
-                brief=brief,
-                theme=theme,
-                deck_title=skeleton.deck_title,
-                section_title=slot.section_title or "",
-                page_brief=page_brief,
-                page_number=slot.page_number,
-                total_pages=skeleton.total_pages,
-                neighbor_titles=neighbor_titles,
-            ),
+            user=user_prompt,
             context=context,
         )
         normalized = normalize_page_payload(dict(payload), page_number=slot.page_number)
@@ -433,6 +452,12 @@ async def _design_content_page(
             )
             page, qa_result = review_page(page, theme)
 
+        # A user-approved spoken script always wins over the model's own notes,
+        # and is checkpointed so rebuilds (revisions) keep it.
+        approved_notes = (slot.brief.speaker_notes if slot.brief else "").strip()
+        if approved_notes:
+            page = page.model_copy(update={"speaker_notes": approved_notes})
+
     outcome = PageOutcome(
         page_number=slot.page_number,
         status=status,
@@ -465,9 +490,11 @@ def _neighbor_titles(skeleton: DeckSkeleton, slot: PageSlot) -> list[str]:
 def _build_anchor_pages(
     skeleton: DeckSkeleton, brief: ContentBrief, theme: ThemeSpec
 ) -> dict[int, PageDesign]:
+    """Deterministic anchor pages. Only the TOC remains code-generated; cover,
+    dividers and closing are model-designed via _design_anchor_page."""
+
     anchors: dict[int, PageDesign] = {}
     toc_entries = section_start_pages(skeleton)
-    section_count = len(skeleton.outline.sections)
     toc_slots = [slot for slot in skeleton.slots if slot.kind == "toc"]
     if toc_slots:
         toc_pages = build_toc_pages(
@@ -478,34 +505,243 @@ def _build_anchor_pages(
         )
         for page in toc_pages[: len(toc_slots)]:
             anchors[page.page_number] = page
-    for slot in skeleton.slots:
-        if slot.kind == "cover":
-            anchors[slot.page_number] = build_cover_page(
-                page_number=slot.page_number,
-                deck_title=skeleton.deck_title,
-                subtitle=skeleton.subtitle or brief.subtitle,
-                language=brief.language,
-                theme=theme,
-            )
-        elif slot.kind == "section_divider":
-            section = skeleton.outline.sections[(slot.section_index or 1) - 1]
-            anchors[slot.page_number] = build_section_divider(
-                page_number=slot.page_number,
-                section_index=slot.section_index or 1,
-                section_count=section_count,
-                section_title=section.title,
-                section_goal=section.goal or None,
-                language=brief.language,
-                theme=theme,
-            )
-        elif slot.kind == "closing":
-            anchors[slot.page_number] = build_closing_page(
-                page_number=slot.page_number,
-                deck_title=skeleton.deck_title,
-                language=brief.language,
-                theme=theme,
-            )
     return anchors
+
+
+def _anchor_fallback_page(
+    slot: PageSlot, skeleton: DeckSkeleton, brief: ContentBrief, theme: ThemeSpec
+) -> PageDesign:
+    """Archetype fallback for a structural page, variant chosen per deck."""
+
+    variant = anchor_variant_seed(skeleton.deck_title)
+    if slot.kind == "cover":
+        return build_cover_page(
+            page_number=slot.page_number,
+            deck_title=skeleton.deck_title,
+            subtitle=skeleton.subtitle or brief.subtitle,
+            language=brief.language,
+            theme=theme,
+            variant=variant,
+        )
+    if slot.kind == "closing":
+        return build_closing_page(
+            page_number=slot.page_number,
+            deck_title=skeleton.deck_title,
+            language=brief.language,
+            theme=theme,
+            variant=variant,
+        )
+    section = skeleton.outline.sections[(slot.section_index or 1) - 1]
+    return build_section_divider(
+        page_number=slot.page_number,
+        section_index=slot.section_index or 1,
+        section_count=len(skeleton.outline.sections),
+        section_title=section.title,
+        section_goal=section.goal or None,
+        language=brief.language,
+        theme=theme,
+        variant=variant,
+    )
+
+
+_PAGE_DESIGN_FIELDS = frozenset(PageDesign.model_fields.keys())
+
+
+def _anchor_design_rejection(page: PageDesign, kind: str, theme: ThemeSpec) -> str | None:
+    """Why a model-designed structural page must be replaced; None if it passes.
+
+    Structural pages have one job: read as a cover / divider / closing at a
+    glance. A page full of small text, diagrams or a pale washed-out backdrop
+    reads as a content page, so the deterministic archetype wins instead.
+    """
+
+    if any(isinstance(element, (ChartItem, TableItem)) for element in page.elements):
+        return "charts/tables do not belong on structural pages"
+    if len(page.elements) > 12:
+        return f"{len(page.elements)} elements are too busy for a structural page"
+    texts = [element for element in page.elements if isinstance(element, TextItem)]
+    if len(texts) > 5:
+        return f"{len(texts)} text blocks read like a content page"
+    if not any(
+        text.role in ("display", "section") or (text.size_pt or 0) >= 40 for text in texts
+    ):
+        return "no hero title (display/section role)"
+    if kind in ("cover", "closing") and theme.dark_cover:
+        backdrop = (
+            page.background_gradient.start
+            if page.background_gradient is not None
+            else page.background
+        )
+        if relative_luminance(theme.palette.resolve(backdrop)) > 0.55:
+            return "cover/closing needs a strong dark hero backdrop"
+    return None
+
+
+async def _design_anchor_page(
+    client: LLMClient,
+    checkpoints: _Checkpoints,
+    brief: ContentBrief,
+    theme: ThemeSpec,
+    skeleton: DeckSkeleton,
+    slot: PageSlot,
+    *,
+    semaphore: asyncio.Semaphore,
+    progress: Progress,
+    revision_instruction: str | None = None,
+    current_page_json: str | None = None,
+) -> tuple[PageDesign, PageQAResult, PageOutcome]:
+    """Model-design one structural page (cover/divider/closing) with the same
+    QA + archetype-fallback guarantees as content pages."""
+
+    checkpoint_name = f"pages/page_{slot.page_number:03d}.json"
+    cached = checkpoints.load(checkpoint_name)
+    if cached is not None:
+        page = PageDesign.model_validate(cached["page"])
+        qa_result = PageQAResult.model_validate(cached["qa"])
+        outcome = PageOutcome.model_validate(cached["outcome"])
+        return page, qa_result, outcome
+
+    section = (
+        skeleton.outline.sections[(slot.section_index or 1) - 1]
+        if slot.kind == "section_divider"
+        else None
+    )
+
+    async def call_model() -> PageDesign:
+        user_prompt = prompts.build_anchor_design_user_prompt(
+            kind=slot.kind,
+            brief=brief,
+            theme=theme,
+            deck_title=skeleton.deck_title,
+            subtitle=skeleton.subtitle or brief.subtitle,
+            section_index=slot.section_index,
+            section_count=len(skeleton.outline.sections),
+            section_title=section.title if section else None,
+            section_goal=(section.goal or None) if section else None,
+        )
+        if revision_instruction:
+            user_prompt = prompts.append_revision_block(
+                user_prompt,
+                instruction=revision_instruction,
+                current_page_json=current_page_json,
+            )
+        payload = await client.complete_json(
+            task="anchor_design",
+            system=prompts.build_anchor_design_system(brief.language),
+            user=user_prompt,
+            context={
+                "revision_instruction": revision_instruction,
+                "kind": slot.kind,
+                "page_number": slot.page_number,
+                "deck_title": skeleton.deck_title,
+                "section_index": slot.section_index,
+                "section_count": len(skeleton.outline.sections),
+                "section_title": section.title if section else None,
+                "language": brief.language,
+            },
+        )
+        normalized = normalize_page_payload(dict(payload), page_number=slot.page_number)
+        normalized = {
+            key: value for key, value in normalized.items() if key in _PAGE_DESIGN_FIELDS
+        }
+        normalized["page_number"] = slot.page_number
+        normalized["role"] = slot.kind
+        normalized["show_chrome"] = False
+        if section is not None:
+            normalized["section"] = section.title
+        normalized.setdefault("title", section.title if section else skeleton.deck_title)
+        return PageDesign.model_validate(normalized)
+
+    status: PageStatus = "model"
+    attempts = 0
+    page: PageDesign | None = None
+    async with semaphore:
+        for attempt in range(2):
+            attempts += 1
+            try:
+                page = await call_model()
+                break
+            except BudgetExceededError:
+                progress(
+                    f"[design] budget reached; anchor page {slot.page_number} uses the archetype library"
+                )
+                break
+            except (ValidationError, ValueError, RuntimeError) as exc:
+                progress(
+                    f"[design] anchor page {slot.page_number} attempt {attempt + 1} failed: "
+                    f"{str(exc)[:160]}"
+                )
+        if page is None:
+            status = "anchor"
+            page = _anchor_fallback_page(slot, skeleton, brief, theme)
+
+        # Identity gate: a structural page that does not read as one is
+        # replaced outright — repair cannot fix a wrong concept.
+        if status == "model":
+            rejection = _anchor_design_rejection(page, slot.kind, theme)
+            if rejection:
+                progress(
+                    f"[anchor-gate] page {slot.page_number} ({slot.kind}) uses the "
+                    f"archetype library: {rejection}"
+                )
+                status = "anchor"
+                page = _anchor_fallback_page(slot, skeleton, brief, theme)
+
+        page, qa_result = review_page(page, theme)
+        if qa_result.errors and status == "model":
+            try:
+                repair_payload = await client.complete_json(
+                    task="page_repair",
+                    system=prompts.REPAIR_SYSTEM,
+                    user=prompts.build_repair_user_prompt(
+                        page.model_dump_json(),
+                        [issue.message for issue in qa_result.errors],
+                    ),
+                    context={"page_payload": page.model_dump(mode="json")},
+                )
+                repaired = PageDesign.model_validate(
+                    normalize_page_payload(dict(repair_payload), page_number=slot.page_number)
+                )
+                repaired, repaired_qa = review_page(repaired, theme)
+                if len(repaired_qa.errors) < len(qa_result.errors):
+                    page, qa_result = repaired, repaired_qa
+                    status = "repaired"
+            except (ValidationError, ValueError, RuntimeError, BudgetExceededError) as exc:
+                progress(
+                    f"[repair] anchor page {slot.page_number} repair skipped: {str(exc)[:160]}"
+                )
+
+        note: str | None = None
+        if qa_result.errors and status != "anchor":
+            note = (
+                f"replaced by QA gate: {len(qa_result.errors)} unresolved error(s) — "
+                + "; ".join(issue.code for issue in qa_result.errors)
+            )
+            progress(
+                f"[qa-gate] anchor page {slot.page_number} replaced by archetype "
+                f"({len(qa_result.errors)} unresolved errors)"
+            )
+            status = "anchor"
+            page = _anchor_fallback_page(slot, skeleton, brief, theme)
+            page, qa_result = review_page(page, theme)
+
+    outcome = PageOutcome(
+        page_number=slot.page_number,
+        status=status,
+        model_attempts=attempts,
+        error_issues=len(qa_result.errors),
+        warning_issues=len(qa_result.issues) - len(qa_result.errors),
+        note=note,
+    )
+    checkpoints.save(
+        checkpoint_name,
+        {
+            "page": page.model_dump(mode="json"),
+            "qa": qa_result.model_dump(mode="json"),
+            "outcome": outcome.model_dump(mode="json"),
+        },
+    )
+    return page, qa_result, outcome
 
 
 async def build_deck_async(
@@ -574,6 +810,11 @@ async def build_deck_async(
     finish = timed("page_designs")
     semaphore = asyncio.Semaphore(request.concurrency)
     content_slots = skeleton.content_slots()
+    anchor_slots = [
+        slot
+        for slot in skeleton.slots
+        if slot.kind in ("cover", "section_divider", "closing")
+    ]
     completed = 0
     lock = asyncio.Lock()
 
@@ -581,7 +822,7 @@ async def build_deck_async(
         slot: PageSlot,
     ) -> tuple[PageDesign, PageQAResult, PageOutcome]:
         nonlocal completed
-        result = await _design_content_page(
+        page, qa_result, outcome = await _design_content_page(
             client,
             checkpoints,
             brief,
@@ -597,10 +838,27 @@ async def build_deck_async(
             completed += 1
             if completed % 10 == 0 or completed == len(content_slots):
                 progress(f"[design] {completed}/{len(content_slots)} content pages done")
-        return result
+        return page, qa_result, outcome
+
+    async def design_anchor_with_progress(
+        slot: PageSlot,
+    ) -> tuple[PageDesign, PageQAResult, PageOutcome]:
+        page, qa_result, outcome = await _design_anchor_page(
+            client,
+            checkpoints,
+            brief,
+            theme,
+            skeleton,
+            slot,
+            semaphore=semaphore,
+            progress=progress,
+        )
+        progress(f"[design] anchor page {slot.page_number} ({slot.kind}) ready")
+        return page, qa_result, outcome
 
     design_results = await asyncio.gather(
-        *(design_with_progress(slot) for slot in content_slots)
+        *(design_with_progress(slot) for slot in content_slots),
+        *(design_anchor_with_progress(slot) for slot in anchor_slots),
     )
     finish()
 
@@ -712,6 +970,77 @@ def build_deck(
 
     return asyncio.run(
         build_deck_async(
+            request, client, search_provider=search_provider, progress=progress
+        )
+    )
+
+
+class PlanResult(StrictModel):
+    """Output of the standalone planning phase (no page designs yet)."""
+
+    brief: ContentBrief
+    skeleton: DeckSkeleton
+    usage: dict[str, Any]
+
+
+async def plan_deck_async(
+    request: BuildRequest,
+    client: LLMClient,
+    *,
+    search_provider: SearchProvider | None = None,
+    progress: Progress = print,
+) -> PlanResult:
+    """Run only the planning stages: intake -> brief -> outline -> page briefs.
+
+    Checkpoints land in <output_dir>/checkpoints using the same file names as
+    build_deck_async, so an approved plan can seed a later generation run that
+    resumes past every planning stage.
+    """
+
+    output_dir = Path(request.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoints = _Checkpoints(output_dir / "checkpoints", resume=request.resume)
+
+    intake = ingest_sources(request.source_paths) if request.source_paths else IntakeResult()
+    for warning in intake.warnings:
+        progress(f"[intake] {warning}")
+    search_digest: str | None = None
+    if request.enable_search and search_provider is not None:
+        try:
+            results = await search_provider.search(request.prompt, max_results=6)
+            search_digest = format_search_digest(results) or None
+        except Exception as exc:  # noqa: BLE001 - research is best-effort
+            progress(f"[search] skipped: {exc}")
+
+    brief = await _run_brief_stage(request, client, checkpoints, intake, search_digest)
+    progress(f"[brief] '{brief.deck_title}' | language={brief.language}")
+    skeleton = await _run_outline_stage(request, client, checkpoints, brief)
+    progress(
+        f"[outline] {len(skeleton.outline.sections)} sections / {skeleton.total_pages} pages"
+    )
+    skeleton = await _run_page_brief_stage(
+        client,
+        checkpoints,
+        brief,
+        skeleton,
+        concurrency=request.concurrency,
+        progress=progress,
+    )
+    progress("[plan] page briefs ready for review")
+    return PlanResult(brief=brief, skeleton=skeleton, usage=client.usage.snapshot())
+
+
+def plan_deck(
+    request: BuildRequest,
+    client: LLMClient,
+    *,
+    search_provider: SearchProvider | None = None,
+    progress: Progress = print,
+) -> PlanResult:
+    """Synchronous wrapper for CLI/API callers."""
+
+    return asyncio.run(
+        plan_deck_async(
             request, client, search_provider=search_provider, progress=progress
         )
     )

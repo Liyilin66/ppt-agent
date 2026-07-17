@@ -103,6 +103,46 @@ class ThemeFonts(StrictModel):
     body_east_asian: str = "Microsoft YaHei"
 
 
+class StyleSignature(StrictModel):
+    """Deck-unique design language, written by the theme stage and injected
+    into every page-design prompt so one deck stays coherent while different
+    decks stop looking like the same template."""
+
+    composition: str = Field(
+        default="", description="Layout tendency, e.g. 'asymmetric editorial, left-weighted titles'."
+    )
+    decor: str = Field(
+        default="", description="Decoration vocabulary, e.g. 'thin hairline rules + numbered chips'."
+    )
+    shape_language: str = Field(
+        default="", description="Shape vocabulary, e.g. 'sharp rectangles and diagonals, no circles'."
+    )
+    cover_concept: str = Field(
+        default="", description="A concrete art-direction idea for the cover and section dividers."
+    )
+
+    def as_prompt_block(self) -> str:
+        lines = [
+            ("Composition", self.composition),
+            ("Decoration", self.decor),
+            ("Shape language", self.shape_language),
+            ("Cover concept", self.cover_concept),
+        ]
+        rendered = "\n".join(f"- {label}: {value}" for label, value in lines if value)
+        return rendered or "- (no explicit signature; use restrained professional design)"
+
+
+class ChromeSpec(StrictModel):
+    """Deck-wide chrome toggles: the page furniture stamped on content pages.
+
+    These are the only master-level switches a post-generation revision can
+    flip (e.g. "去掉页码" -> show_page_number=False)."""
+
+    show_page_number: bool = True
+    show_footer: bool = True
+    show_section_kicker: bool = True
+
+
 class ThemeSpec(StrictModel):
     """All deck-wide visual decisions, fixed before any page is generated."""
 
@@ -113,6 +153,8 @@ class ThemeSpec(StrictModel):
     motif: Motif = "corner_arc"
     dark_cover: bool = True
     corner_radius: float = Field(default=10, ge=0, description="Card corner radius in canvas units.")
+    style: StyleSignature = Field(default_factory=StyleSignature)
+    chrome: ChromeSpec = Field(default_factory=ChromeSpec)
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -162,6 +204,12 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
             on_primary="#FFFFFF",
         ),
         motif="corner_arc",
+        style=StyleSignature(
+            composition="clean modular grid, generous top whitespace, left-aligned titles",
+            decor="soft rounded cards with one accent corner arc per page",
+            shape_language="rounded rectangles and pills, occasional large ellipse",
+            cover_concept="deep gradient with two translucent orbs and a pill accent",
+        ),
     ),
     "ink": ThemeSpec(
         name="ink",
@@ -180,6 +228,12 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
         ),
         motif="top_rule",
         dark_cover=True,
+        style=StyleSignature(
+            composition="editorial magazine layout, oversized serif-feel titles, strong top rule",
+            decor="thin hairline rules, small caps kickers, numbered chips",
+            shape_language="sharp rectangles only; no circles or blobs",
+            cover_concept="near-black cover with a single gold rule and huge title block",
+        ),
     ),
     "forest": ThemeSpec(
         name="forest",
@@ -197,6 +251,12 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
             on_primary="#FFFFFF",
         ),
         motif="side_band",
+        style=StyleSignature(
+            composition="calm 2/3 + 1/3 splits with a left vertical band anchor",
+            decor="leaf-green side bands and soft-tinted stat panels",
+            shape_language="tall rounded bars and organic ellipses",
+            cover_concept="forest gradient with a tall light band and stacked title",
+        ),
     ),
     "slate": ThemeSpec(
         name="slate",
@@ -214,6 +274,12 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
             on_primary="#FFFFFF",
         ),
         motif="dot_grid",
+        style=StyleSignature(
+            composition="boardroom symmetry, centered section heads, disciplined columns",
+            decor="subtle dot-grid corners and slim divider lines",
+            shape_language="squares and hexagons, muted strokes",
+            cover_concept="steel-blue cover with a precise dot-grid field and compact title plate",
+        ),
     ),
     "sunrise": ThemeSpec(
         name="sunrise",
@@ -231,6 +297,12 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
             on_primary="#FFFFFF",
         ),
         motif="diagonal",
+        style=StyleSignature(
+            composition="dynamic diagonal energy, titles set against angled cuts",
+            decor="bold diagonal ribbons and chunky stat numerals",
+            shape_language="parallelograms, chevrons and triangles",
+            cover_concept="sunset gradient sliced by a bright diagonal band carrying the title",
+        ),
     ),
 }
 
