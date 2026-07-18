@@ -79,6 +79,10 @@ class BuildRequest(StrictModel):
         default=None, description="Force the slide language; default follows the prompt."
     )
     source_paths: list[str] = Field(default_factory=list)
+    image_paths: list[str] = Field(
+        default_factory=list,
+        description="User-provided images: vision-digested into the brief and staged as placeable page assets.",
+    )
     enable_search: bool = False
     theme: str = Field(
         default="auto",
@@ -150,6 +154,114 @@ class _Checkpoints:
         path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+
+_IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+def _stage_image_assets(image_paths: list[str], output_dir: Path) -> dict[str, Path]:
+    """Copy user images into <output_dir>/assets; returns {asset_name: path}."""
+
+    import shutil
+
+    assets: dict[str, Path] = {}
+    if not image_paths:
+        return assets
+    assets_dir = output_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for index, raw in enumerate(image_paths):
+        source = Path(raw)
+        if not source.is_file():
+            continue
+        name = source.name
+        if name in assets:
+            name = f"{source.stem}_{index}{source.suffix}"
+        target = assets_dir / name
+        if not target.is_file() or target.stat().st_size != source.stat().st_size:
+            shutil.copyfile(source, target)
+        assets[name] = target
+    return assets
+
+
+def _image_dimensions(path: Path) -> tuple[int | None, int | None]:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return image.width, image.height
+    except Exception:  # noqa: BLE001 - dimensions are cosmetic prompt info
+        return None, None
+
+
+async def _run_image_digest_stage(
+    request: BuildRequest,
+    client: LLMClient,
+    checkpoints: _Checkpoints,
+    *,
+    progress: Progress,
+) -> list[dict[str, Any]]:
+    """Vision-describe user images; returns AVAILABLE IMAGES entries."""
+
+    if not request.image_paths:
+        return []
+    # Staging is idempotent and must happen even on checkpoint hits so the
+    # renderer finds the files under <output_dir>/assets.
+    assets = _stage_image_assets(request.image_paths, Path(request.output_dir))
+    cached = checkpoints.load("image_digests.json")
+    if cached is not None:
+        return list(cached)
+    import base64 as _base64
+
+    entries: list[dict[str, Any]] = []
+    for name, path in assets.items():
+        width, height = _image_dimensions(path)
+        entry: dict[str, Any] = {
+            "src": name,
+            "width": width,
+            "height": height,
+            "description": "",
+            "extracted_text": "",
+        }
+        try:
+            payload = await client.complete_json(
+                task="image_digest",
+                system=prompts.IMAGE_DIGEST_SYSTEM,
+                user=prompts.build_image_digest_user_prompt(
+                    name=name, language=request.language or "zh-CN"
+                ),
+                context={"name": name},
+                images=[
+                    (
+                        _IMAGE_MEDIA_TYPES.get(path.suffix.lower(), "image/png"),
+                        _base64.b64encode(path.read_bytes()).decode("ascii"),
+                    )
+                ],
+            )
+            entry["description"] = str(payload.get("description") or "").strip()
+            entry["extracted_text"] = str(payload.get("extracted_text") or "").strip()
+        except (BudgetExceededError, ValidationError, ValueError, RuntimeError) as exc:
+            progress(f"[images] digest for {name} skipped: {str(exc)[:120]}")
+        entries.append(entry)
+    checkpoints.save("image_digests.json", entries)
+    progress(f"[images] {len(entries)} user image(s) staged as placeable assets")
+    return entries
+
+
+def _image_digest_text(entries: list[dict[str, Any]]) -> str:
+    lines = []
+    for entry in entries:
+        parts = [f"[用户图片 {entry['src']}]"]
+        if entry.get("description"):
+            parts.append(entry["description"])
+        if entry.get("extracted_text"):
+            parts.append(f"图中文字: {entry['extracted_text']}")
+        lines.append(" ".join(parts))
+    return "\n".join(lines)
 
 
 async def _run_brief_stage(
@@ -333,6 +445,7 @@ async def _design_content_page(
     progress: Progress,
     revision_instruction: str | None = None,
     current_page_json: str | None = None,
+    available_images: list[dict[str, Any]] | None = None,
 ) -> tuple[PageDesign, PageQAResult, PageOutcome]:
     checkpoint_name = f"pages/page_{slot.page_number:03d}.json"
     cached = checkpoints.load(checkpoint_name)
@@ -362,6 +475,7 @@ async def _design_content_page(
             page_number=slot.page_number,
             total_pages=skeleton.total_pages,
             neighbor_titles=neighbor_titles,
+            available_images=available_images,
         )
         if revision_instruction:
             user_prompt = prompts.append_revision_block(
@@ -776,6 +890,23 @@ async def build_deck_async(
             search_digest = format_search_digest(results) or None
         except Exception as exc:  # noqa: BLE001 - research is best-effort
             progress(f"[search] skipped: {exc}")
+    image_entries = await _run_image_digest_stage(
+        request, client, checkpoints, progress=progress
+    )
+    if image_entries:
+        combined = "\n\n".join(
+            part for part in (intake.digest, _image_digest_text(image_entries)) if part
+        )
+        intake = intake.model_copy(update={"digest": combined})
+    available_images = [
+        {
+            "src": entry["src"],
+            "description": entry.get("description", ""),
+            "width": entry.get("width"),
+            "height": entry.get("height"),
+        }
+        for entry in image_entries
+    ] or None
     finish()
 
     finish = timed("brief")
@@ -833,6 +964,7 @@ async def build_deck_async(
             repair_rounds=request.repair_rounds,
             qa_gate=request.qa_gate,
             progress=progress,
+            available_images=available_images,
         )
         async with lock:
             completed += 1
@@ -914,7 +1046,11 @@ async def build_deck_async(
     pptx_path: Path | None = None
     if quality_gate_passed or request.qa_gate == "lenient":
         finish = timed("render")
-        pptx_path = render_deck(deck, output_dir / f"{request.deck_name}.pptx")
+        pptx_path = render_deck(
+            deck,
+            output_dir / f"{request.deck_name}.pptx",
+            assets_dir=output_dir / "assets",
+        )
         finish()
 
     if not quality_gate_passed and request.qa_gate == "strict":
@@ -1011,6 +1147,14 @@ async def plan_deck_async(
             search_digest = format_search_digest(results) or None
         except Exception as exc:  # noqa: BLE001 - research is best-effort
             progress(f"[search] skipped: {exc}")
+    image_entries = await _run_image_digest_stage(
+        request, client, checkpoints, progress=progress
+    )
+    if image_entries:
+        combined = "\n\n".join(
+            part for part in (intake.digest, _image_digest_text(image_entries)) if part
+        )
+        intake = intake.model_copy(update={"digest": combined})
 
     brief = await _run_brief_stage(request, client, checkpoints, intake, search_digest)
     progress(f"[brief] '{brief.deck_title}' | language={brief.language}")

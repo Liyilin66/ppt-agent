@@ -2200,7 +2200,8 @@ def _install_fake_revision_backend(monkeypatch, captured: dict | None = None, *,
     from ppt_agent.v2.revise import ReviseResult
 
     def fake_revise_v2_deck(
-        *, output_dir, deck_name, message, client, selected_pages=None, concurrency=6, progress=print
+        *, output_dir, deck_name, message, client, selected_pages=None,
+        attachment_paths=None, concurrency=6, progress=print
     ):
         if captured is not None:
             captured["revise_args"] = {
@@ -2208,6 +2209,7 @@ def _install_fake_revision_backend(monkeypatch, captured: dict | None = None, *,
                 "deck_name": deck_name,
                 "message": message,
                 "selected_pages": selected_pages,
+                "attachment_paths": attachment_paths or [],
             }
         pptx_path = Path(output_dir) / f"{deck_name}.pptx"
         pptx_path.write_bytes(b"revised pptx")
@@ -2289,3 +2291,84 @@ def test_deck_revision_upgrades_quality_gate_failed_job(tmp_path: Path, monkeypa
     job = client.get(f"/api/jobs/{job_id}").json()
     assert job["status"] == "succeeded"
     assert job["accepted"] is True
+
+
+def _write_tiny_png(path: Path) -> None:
+    from PIL import Image
+
+    image = Image.new("RGB", (4, 4), color=(30, 80, 160))
+    image.save(path)
+
+
+def test_upload_and_fetch_roundtrip(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/uploads?filename=notes.md", content="# 参考资料\n要点一".encode("utf-8")
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["kind"] == "document"
+    assert body["name"] == "notes.md"
+
+    fetched = client.get(f"/api/uploads/{body['upload_id']}")
+    assert fetched.status_code == 200
+    assert "参考资料" in fetched.text
+
+    missing = client.get("/api/uploads/deadbeefdeadbeefdeadbeefdeadbeef")
+    assert missing.status_code == 404
+
+
+def test_upload_rejects_unsupported_type_and_oversize(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path)
+    bad_type = client.post("/api/uploads?filename=malware.exe", content=b"xx")
+    assert bad_type.status_code == 415
+
+    monkeypatch.setattr(api, "UPLOAD_MAX_BYTES", 10)
+    too_big = client.post("/api/uploads?filename=big.txt", content=b"x" * 11)
+    assert too_big.status_code == 413
+
+
+def test_long_deck_job_splits_attachments_into_sources_and_images(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    doc = client.post("/api/uploads?filename=source.md", content="资料".encode("utf-8")).json()
+    png_path = tmp_path / "photo.png"
+    _write_tiny_png(png_path)
+    image = client.post("/api/uploads?filename=photo.png", content=png_path.read_bytes()).json()
+
+    response = client.post(
+        "/api/long-deck-jobs",
+        json={
+            **_long_deck_payload(),
+            "slide_count": 10,
+            "deck_type": "visual_design_v2",
+            "attachment_ids": [doc["upload_id"], image["upload_id"]],
+        },
+    )
+    assert response.status_code == 202
+    request = captured["request"]
+    assert [Path(p).name for p in request.source_paths] == ["source.md"]
+    assert [Path(p).name for p in request.image_paths] == ["photo.png"]
+
+
+def test_interview_message_carries_attachment_digest(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    model = _FakeInterviewModel([_interview_decision()])
+    monkeypatch.setattr(api, "_create_interview_chat_model", lambda: model)
+    client = _client(tmp_path)
+
+    doc = client.post(
+        "/api/uploads?filename=brief.txt", content="产品定位：面向大学生的环保行动指南".encode("utf-8")
+    ).json()
+    state = client.post(
+        "/api/presentation-interviews",
+        json={"message": "根据我上传的资料做一份演示", "attachment_ids": [doc["upload_id"]]},
+    )
+    assert state.status_code == 201
+    message = state.json()["messages"][0]
+    assert message["attachments"][0]["name"] == "brief.txt"
+    assert "环保行动指南" in message["attachments"][0]["digest"]

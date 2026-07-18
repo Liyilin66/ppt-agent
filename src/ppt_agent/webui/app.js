@@ -1036,6 +1036,19 @@ function buildShortDeckPayload() {
   };
 }
 
+function interviewAttachmentIds() {
+  if (!activeInterviewState || !Array.isArray(activeInterviewState.messages)) return [];
+  const ids = [];
+  activeInterviewState.messages.forEach((message) => {
+    (message.attachments || []).forEach((attachment) => {
+      if (attachment.upload_id && !ids.includes(attachment.upload_id)) {
+        ids.push(attachment.upload_id);
+      }
+    });
+  });
+  return ids;
+}
+
 function buildLongDeckPayload() {
   return {
     topic: document.getElementById("long_topic").value.trim(),
@@ -1044,7 +1057,8 @@ function buildLongDeckPayload() {
     language: "zh-CN",
     deck_type: "visual_design_v2",
     user_requirements: document.getElementById("long_user_requirements").value.trim(),
-    interview_id: activeInterviewId
+    interview_id: activeInterviewId,
+    attachment_ids: interviewAttachmentIds()
   };
 }
 
@@ -1097,7 +1111,7 @@ async function requestJson(url, options) {
   return body;
 }
 
-function appendInterviewMessage(role, content) {
+function appendInterviewMessage(role, content, attachments = null) {
   const message = document.createElement("div");
   message.className = "conversation-message";
   message.dataset.role = role;
@@ -1105,6 +1119,7 @@ function appendInterviewMessage(role, content) {
   label.textContent = role === "user" ? "你" : "PPT Agent";
   message.appendChild(label);
   message.appendChild(document.createTextNode(content));
+  appendAttachmentChipsTo(message, attachments);
   interviewMessages.appendChild(message);
 }
 
@@ -1172,7 +1187,7 @@ function renderInterviewState(state, allowAutoStart = false) {
       const suffix = `\n\n${state.decision.question}`;
       if (content.endsWith(suffix)) content = content.slice(0, -suffix.length);
     }
-    appendInterviewMessage(message.role, content);
+    appendInterviewMessage(message.role, content, message.attachments || null);
   });
   interviewMessages.scrollTop = interviewMessages.scrollHeight;
 
@@ -1238,7 +1253,13 @@ function setInterviewBusy(isBusy) {
 async function submitInterviewMessage(message, selectedOptionId = null) {
   const content = String(message || "").trim();
   if (!content || interviewRequestInFlight) return;
-  appendInterviewMessage("user", content);
+  if (interviewAttachmentPicker.hasPendingUploads()) {
+    interviewHint.textContent = "附件还在上传中，请稍候再发送。";
+    return;
+  }
+  const attachmentIds = interviewAttachmentPicker.ids();
+  const attachmentSummaries = interviewAttachmentPicker.summaries();
+  appendInterviewMessage("user", content, attachmentSummaries);
   interviewInput.value = "";
   const pendingMessage = document.createElement("div");
   pendingMessage.className = "conversation-message is-pending";
@@ -1253,13 +1274,14 @@ async function submitInterviewMessage(message, selectedOptionId = null) {
       ? `/api/presentation-interviews/${activeInterviewId}/messages`
       : "/api/presentation-interviews";
     const body = activeInterviewId
-      ? {message: content, selected_option_id: selectedOptionId}
-      : {message: content};
+      ? {message: content, selected_option_id: selectedOptionId, attachment_ids: attachmentIds}
+      : {message: content, attachment_ids: attachmentIds};
     const state = await requestJson(url, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body)
     });
+    interviewAttachmentPicker.clear();
     renderInterviewState(state, true);
   } catch (error) {
     pendingMessage.remove();
@@ -1624,6 +1646,194 @@ async function restoreLastLongDeckJob() {
   }
 }
 
+/* ---------- Chat attachments (interview + revision composers) ---------- */
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+function formatFileSize(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${bytes}B`;
+}
+
+function attachmentIcon(kind) {
+  return kind === "image" ? "🖼" : "📄";
+}
+
+function normalizedAttachmentFile(file) {
+  // Pasted screenshots arrive as a generic "image.png"; give them unique names.
+  if (/^image\.(png|jpe?g|webp)$/i.test(file.name)) {
+    const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+    const suffix = file.name.split(".").pop();
+    return new File([file], `粘贴图片-${stamp}.${suffix}`, {type: file.type});
+  }
+  return file;
+}
+
+function createAttachmentPicker({input, button, chips, dropzone, pasteTarget, onError}) {
+  const items = [];
+
+  function render() {
+    chips.replaceChildren();
+    chips.hidden = items.length === 0;
+    items.forEach((item, index) => {
+      const chip = document.createElement("span");
+      chip.className = "attachment-chip" + (item.uploading ? " is-uploading" : "") + (item.error ? " is-error" : "");
+      const label = document.createElement("span");
+      label.textContent = `${attachmentIcon(item.kind)} ${item.name}`
+        + (item.uploading ? " · 上传中…" : item.error ? ` · ${item.error}` : ` · ${formatFileSize(item.size)}`);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = "移除附件";
+      remove.addEventListener("click", () => {
+        items.splice(index, 1);
+        render();
+      });
+      chip.append(label, remove);
+      chips.appendChild(chip);
+    });
+  }
+
+  async function uploadFile(file) {
+    if (items.filter((item) => !item.error).length >= MAX_ATTACHMENTS_PER_MESSAGE) {
+      onError(`一条消息最多 ${MAX_ATTACHMENTS_PER_MESSAGE} 个附件`);
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      onError(`「${file.name}」超过 20MB 限制`);
+      return;
+    }
+    const item = {
+      name: file.name,
+      size: file.size,
+      kind: /\.(png|jpe?g|webp)$/i.test(file.name) ? "image" : "document",
+      uploading: true,
+      error: null,
+      upload_id: null
+    };
+    items.push(item);
+    render();
+    try {
+      const response = await fetch(`/api/uploads?filename=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        body: file
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "上传失败");
+      item.upload_id = body.upload_id;
+      item.kind = body.kind;
+      item.uploading = false;
+    } catch (error) {
+      item.uploading = false;
+      item.error = error.message;
+    }
+    render();
+  }
+
+  async function uploadAll(fileList) {
+    for (const file of Array.from(fileList || [])) {
+      await uploadFile(normalizedAttachmentFile(file));
+    }
+  }
+
+  button.addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const files = Array.from(input.files || []);
+    input.value = "";
+    await uploadAll(files);
+  });
+
+  if (pasteTarget) {
+    pasteTarget.addEventListener("paste", async (event) => {
+      const files = Array.from(event.clipboardData?.files || []);
+      if (!files.length) return;
+      event.preventDefault();
+      await uploadAll(files);
+    });
+  }
+
+  if (dropzone) {
+    let dragDepth = 0;
+    dropzone.addEventListener("dragenter", (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      dragDepth += 1;
+      dropzone.classList.add("is-dragover");
+    });
+    dropzone.addEventListener("dragover", (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+    });
+    dropzone.addEventListener("dragleave", () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) dropzone.classList.remove("is-dragover");
+    });
+    dropzone.addEventListener("drop", async (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) return;
+      event.preventDefault();
+      dragDepth = 0;
+      dropzone.classList.remove("is-dragover");
+      await uploadAll(files);
+    });
+  }
+
+  return {
+    ids() {
+      return items.filter((item) => item.upload_id).map((item) => item.upload_id);
+    },
+    summaries() {
+      return items
+        .filter((item) => item.upload_id)
+        .map((item) => ({name: item.name, kind: item.kind}));
+    },
+    hasPendingUploads() {
+      return items.some((item) => item.uploading);
+    },
+    clear() {
+      items.length = 0;
+      render();
+    }
+  };
+}
+
+function appendAttachmentChipsTo(messageNode, attachments) {
+  if (!attachments || !attachments.length) return;
+  const row = document.createElement("span");
+  row.className = "message-attachments";
+  attachments.forEach((attachment) => {
+    const chip = document.createElement("span");
+    chip.className = "message-attachment";
+    chip.textContent = `${attachmentIcon(attachment.kind)} ${attachment.name}`;
+    row.appendChild(chip);
+  });
+  messageNode.appendChild(row);
+}
+
+const interviewAttachmentPicker = createAttachmentPicker({
+  input: document.getElementById("interviewFileInput"),
+  button: document.getElementById("interviewAttachButton"),
+  chips: document.getElementById("interviewAttachmentChips"),
+  dropzone: document.getElementById("interviewComposer"),
+  pasteTarget: document.getElementById("interviewInput"),
+  onError(message) {
+    interviewHint.textContent = message;
+  }
+});
+
+const revisionAttachmentPicker = createAttachmentPicker({
+  input: document.getElementById("revisionFileInput"),
+  button: document.getElementById("revisionAttachButton"),
+  chips: document.getElementById("revisionAttachmentChips"),
+  dropzone: document.getElementById("revisionComposer"),
+  pasteTarget: document.getElementById("revisionInput"),
+  onError(message) {
+    appendRevisionMessage("assistant", message);
+  }
+});
+
 /* ---------- Post-generation revision chat ---------- */
 
 const revisionPanel = document.getElementById("revisionPanel");
@@ -1756,7 +1966,13 @@ revisionComposer.addEventListener("submit", async (event) => {
   if (revisionBusy || !revisionJobId) return;
   const message = revisionInput.value.trim();
   if (!message) return;
-  appendRevisionMessage("user", message);
+  if (revisionAttachmentPicker.hasPendingUploads()) {
+    appendRevisionMessage("assistant", "附件还在上传中，请稍候再发送。");
+    return;
+  }
+  const attachmentIds = revisionAttachmentPicker.ids();
+  const userMessage = appendRevisionMessage("user", message);
+  appendAttachmentChipsTo(userMessage, revisionAttachmentPicker.summaries());
   const pending = appendRevisionMessage("assistant", "正在规划并修改对应页面…", {pending: true});
   revisionInput.value = "";
   setRevisionBusy(true);
@@ -1766,9 +1982,11 @@ revisionComposer.addEventListener("submit", async (event) => {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         message,
-        page_numbers: livePreviewSelectedSlide ? [livePreviewSelectedSlide] : null
+        page_numbers: livePreviewSelectedSlide ? [livePreviewSelectedSlide] : null,
+        attachment_ids: attachmentIds
       })
     });
+    revisionAttachmentPicker.clear();
     scheduleRevisionPoll(revisionJobId, revision.revision_id, 1200);
   } catch (error) {
     pending.remove();

@@ -289,8 +289,15 @@ class HttpLLMClient:
             self._client = None
 
     def _build_request(
-        self, system: str, user: str, max_output_tokens: int
+        self,
+        system: str,
+        user: str,
+        max_output_tokens: int,
+        *,
+        images: list[tuple[str, str]] | None = None,
     ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        """images: (media_type, base64_data) pairs attached to the user turn."""
+
         raise NotImplementedError
 
     def _parse_response(self, payload: dict[str, Any]) -> tuple[str, int, int]:
@@ -304,11 +311,15 @@ class HttpLLMClient:
         user: str,
         max_output_tokens: int | None = None,
         context: Any = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> Any:
         del context  # structured context is for the mock client only
         self.usage.check_budget()
         url, headers, body = self._build_request(
-            system, user, max_output_tokens or self.config.max_output_tokens
+            system,
+            user,
+            max_output_tokens or self.config.max_output_tokens,
+            images=images,
         )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
@@ -351,13 +362,30 @@ class OpenAICompatClient(HttpLLMClient):
     """Chat-completions client for OpenAI and any OpenAI-compatible endpoint."""
 
     def _build_request(
-        self, system: str, user: str, max_output_tokens: int
+        self,
+        system: str,
+        user: str,
+        max_output_tokens: int,
+        *,
+        images: list[tuple[str, str]] | None = None,
     ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        user_content: Any = user
+        if images:
+            user_content = [
+                *(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{media_type};base64,{data}"},
+                    }
+                    for media_type, data in images
+                ),
+                {"type": "text", "text": user},
+            ]
         body: dict[str, Any] = {
             "model": self.config.model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": user_content},
             ],
             "max_tokens": max_output_tokens,
             "response_format": {"type": "json_object"},
@@ -387,12 +415,33 @@ class AnthropicClient(HttpLLMClient):
     """Messages-API client for Anthropic models."""
 
     def _build_request(
-        self, system: str, user: str, max_output_tokens: int
+        self,
+        system: str,
+        user: str,
+        max_output_tokens: int,
+        *,
+        images: list[tuple[str, str]] | None = None,
     ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        user_content: Any = user
+        if images:
+            user_content = [
+                *(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": data,
+                        },
+                    }
+                    for media_type, data in images
+                ),
+                {"type": "text", "text": user},
+            ]
         body: dict[str, Any] = {
             "model": self.config.model,
             "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": [{"role": "user", "content": user_content}],
             "max_tokens": max_output_tokens,
         }
         if self.config.temperature is not None:

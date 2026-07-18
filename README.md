@@ -22,9 +22,11 @@
 | 全页 QA、自动修复、hard quality gate | 已完成 |
 | 生成中逐页预览、可见区域缩略图加载、跟随最新页面 | 已完成 |
 | 成片后自然语言修改：指定页面或全局主题，重新 QA 并覆盖导出 | 已完成 |
+| 对话附件：PDF / DOCX / MD / TXT 摘要，PNG / JPG / WEBP 视觉理解与页面引用 | 已完成 |
 | SQLite 演示历史、job、进度、取消、恢复、artifact 下载 | 已完成 |
 | OpenAI-compatible / Anthropic BYOK | CLI 与服务端环境变量可用 |
-| PDF / DOCX / MD / TXT 提炼 | v2 CLI 可用，Web 尚未接上传 |
+| PDF / DOCX / MD / TXT 提炼 | v2 CLI 与 Web 对话附件可用 |
+| 用户图片理解与页面资产引用 | v2 Web 创建与成片修改可用 |
 | Tavily 联网搜索 | v2 CLI 可用，Web 尚未接搜索开关 |
 | PPT Master handoff / execution / local export / output registration | legacy long-deck 路线可用 |
 | 通用 LLM tool calling；不支持 RAG；不支持多租户 | 尚未实现 |
@@ -59,6 +61,8 @@
 
 Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供快捷选项，同时保留自由输入；信息充分后进入生成确认。结构化 Brief 只作为内部生成契约和恢复依据，不再让普通用户填写右侧表单。
 
+创建和成片修改对话都支持按钮选择、拖拽或粘贴附件。PDF、DOCX、Markdown 和 TXT 会在本地提取文本摘要；PNG、JPG、JPEG 和 WEBP 会发送给支持视觉输入的模型生成描述和图中文字，并复制到 job 的 `assets/` 目录。页面设计模型只会引用已登记的文件名，renderer 再把对应图片放入可编辑幻灯片；单文件限制为 20MB，每条对话最多 5 个附件。
+
 | 对话创建 | 实时生成工作台 |
 | --- | --- |
 | ![Conversational presentation creation](docs/readme/web-conversational-create.jpg) | ![Live slide generation studio](docs/readme/web-live-studio.jpg) |
@@ -71,7 +75,7 @@ Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句
 
 生成开始后，页面会逐步出现在左侧缩略图和中央画布中。缩略图只加载当前滚动区域附近的页面，因此 100 页任务不会同时创建 100 个 iframe；用户可以手动查看任意已生成页面，也可以继续跟随最新页面。
 
-成片生成后，用户可以继续用自然语言提出修改，例如“第 5 页改成对比图表”或“全稿换成深蓝科技风并隐藏页码”。修订编排器会先生成结构化修改计划，只重做受影响页面或主题，再重新汇总 DeckDesign、执行全页 QA 并原位更新 PPTX；无法执行的请求会明确说明，不会把未修改的文件伪报为成功。
+成片生成后，用户可以继续用自然语言提出修改，例如“第 5 页改成对比图表”“把附件里的架构图放到第 8 页”或“全稿换成深蓝科技风并隐藏页码”。修订编排器会先生成结构化修改计划，只重做受影响页面或主题，再重新汇总 DeckDesign、执行全页 QA 并原位更新 PPTX；无法执行的请求会明确说明，不会把未修改的文件伪报为成功。
 
 ![Conversational revisions after generation](docs/readme/web-agent-revision.jpg)
 
@@ -95,6 +99,7 @@ Web 工作台还包括：
 - 五阶段任务进度与前端平滑运行计时。
 - 临时请求失败后自动继续轮询。
 - 对话状态、内部 Brief 与 job 关联恢复。
+- 创建与修订对话中的文档、图片附件上传和状态提示。
 - 生成前大纲、逐页脚本和 speaker notes 编辑确认。
 - v2 checkpoint 页面生成后立即进入 storyboard。
 - 真实 SVG / PageDesign HTML 单页预览与视觉高光页选择。
@@ -109,7 +114,7 @@ Web 工作台还包括：
 
 ~~~mermaid
 flowchart TD
-    A["自然语言需求 / 文档摘要"] --> B["对话式需求访谈"]
+    A["自然语言需求 / 文档 / 用户图片"] --> B["对话式需求访谈"]
     B --> C["内部结构化 Brief"]
     C --> D{"Web 页数路由"}
     D -->|"1-3"| E["v1 DeckBrief + DeckPlan"]
@@ -161,7 +166,7 @@ flowchart TD
 v2 是当前 100 页主线：
 
 ~~~text
-Prompt / source digest / optional search
+Prompt / source digest / image digest / optional search
                 ↓
 ContentBrief → ThemeSpec → DeckOutline → DeckSkeleton
                 ↓
@@ -205,6 +210,7 @@ DeckDesign JSON → editable PPTX → artifacts
 | &lt;name&gt;_qa_report.json | 全页 QA、自动修复与 fallback 记录 |
 | &lt;name&gt;_run_report.json | 调用次数、token、成本估算、阶段耗时和逐页状态 |
 | checkpoints/ | 断点续跑所需的阶段与逐页数据 |
+| assets/ | 已登记并可被页面 `ImageItem` 引用的用户图片 |
 
 修订记录另外保存在 SQLite `deck_revisions` 表中；每次成功修订都会更新 design、QA report、run report 和 PPTX artifact，同时保留用户请求、Agent 回复和受影响页码。
 
@@ -262,13 +268,14 @@ uv run python scripts/register_ppt_master_output.py --job-id ... --output-dir ..
 
 | 能力 | 实现方式 | Web | CLI |
 | --- | --- | ---: | ---: |
-| PDF / DOCX / MD / TXT | 本地解析后生成最多 24k 字符 digest | 尚未接入 | 已支持 |
+| PDF / DOCX / MD / TXT | 本地解析后生成文本 digest，作为需求与修订依据 | 已支持 | 已支持 |
+| PNG / JPG / JPEG / WEBP | 多模态模型生成图片描述和 OCR 摘要，原图进入 job assets | 已支持 | `BuildRequest.image_paths` |
 | Tavily 搜索 | Python 直接调用 Tavily API，结果注入 brief | 尚未接入 | 已支持 |
-| LLM provider | OpenAI-compatible / Anthropic JSON generation | 服务端环境变量 | BYOK 参数 |
+| LLM provider | OpenAI-compatible / Anthropic JSON 与图片输入 | 服务端环境变量 | BYOK 参数 |
 | 通用 function calling | 未实现 | 否 | 否 |
 | 不支持 RAG / vector database | 未实现 | 否 | 否 |
 
-Tavily 是编排器明确调用的搜索适配器，不是模型自主选择工具。目前项目属于结构化 workflow agent，不是通用 ReAct/tool-calling agent。
+Tavily 是编排器明确调用的搜索适配器，不是模型自主选择工具。图片上传不支持 image-to-PPT：模型负责理解图片和决定是否引用，现有 renderer 负责把原图作为页面资产放入 PPTX。目前项目属于结构化 workflow agent，不是通用 ReAct/tool-calling agent。
 
 ## 快速开始
 
@@ -396,11 +403,13 @@ ppt-agent v2 preview   Render DeckDesign as browser HTML
 | POST /api/presentation-interviews | 开始自适应需求访谈 |
 | POST /api/presentation-interviews/{id}/messages | 回答当前问题并继续收敛 Brief |
 | GET /api/presentation-interviews/{id} | 恢复 SQLite 中的访谈状态 |
+| POST /api/uploads?filename=... | 上传单个文档或图片，返回 `upload_id` |
+| GET /api/uploads/{upload_id} | 下载已上传的原始附件 |
 | POST /api/deck-plans | 为 4-100 页任务生成可编辑大纲和逐页脚本 |
 | GET /api/deck-plans/{plan_id} | 查询规划状态或恢复待确认计划 |
 | PUT /api/deck-plans/{plan_id} | 保存用户编辑后的章节和页面脚本 |
 | POST /api/deck-plans/{plan_id}/confirm | 确认计划、写入 checkpoint 并启动生成 |
-| POST /api/jobs/{job_id}/revisions | 用自然语言修改已完成的 v2 演示 |
+| POST /api/jobs/{job_id}/revisions | 用自然语言和可选附件修改已完成的 v2 演示 |
 | GET /api/jobs/{job_id}/revisions | 查询该演示的修订历史 |
 | GET /api/presentations | SQLite 演示历史、筛选和最终 PPTX 下载入口 |
 | GET /api/jobs/{job_id}/preview-slides | 可用预览页清单 |
@@ -428,9 +437,9 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 ## 当前限制
 
 - 最高页数承诺为 100；200 页没有真实验证，因此已从产品和 CLI 上限移除。
-- Web UI 尚未接入文件上传和联网搜索开关。
+- Web UI 尚未接入联网搜索开关。
 - Web UI 不允许用户直接填写 API key。
-- 不支持 image-to-PPT 或 image-to-editable-PPT。
+- 图片附件只能作为内容依据或页面素材，不支持从一张截图自动重建整页可编辑 PPT。
 - 没有通用 LLM tool calling；不支持 RAG、向量数据库或多 Agent runtime。
 - 没有登录、多租户、云端队列或生产级权限系统。
 - v2 100 页与 PPT Master 当前是两条独立视觉生成路线。
@@ -455,7 +464,7 @@ src/ppt_agent/
 ├── ppt_master_*.py            # handoff, execution, project, runner, output
 └── v2/
     ├── orchestrator.py        # 100-page pipeline
-    ├── providers.py           # OpenAI-compatible / Anthropic BYOK
+    ├── providers.py           # OpenAI-compatible / Anthropic JSON 与视觉输入
     ├── planning.py            # brief, outline, skeleton, page briefs
     ├── revise.py              # 结构化修订计划、局部重设计和重新导出
     ├── ir.py                  # PageDesign / DeckDesign
@@ -476,7 +485,7 @@ docs/design/                   # UI visual QA evidence
 当前验证基线：
 
 ~~~text
-489 passed
+496 passed
 uv sync
 uv lock --check
 uv run pytest

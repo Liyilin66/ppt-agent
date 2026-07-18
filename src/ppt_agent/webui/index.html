@@ -149,8 +149,11 @@
                 </div>
                 <form id="revisionComposer" class="revision-composer">
                   <label class="sr-only" for="revisionInput">告诉 Agent 想修改什么</label>
-                  <textarea id="revisionInput" placeholder="例如：第 5 页信息太密，改成一张对比图表；整体配色换成深蓝科技感。"></textarea>
+                  <div id="revisionAttachmentChips" class="attachment-chips" hidden></div>
+                  <textarea id="revisionInput" placeholder="例如：第 5 页信息太密，改成一张对比图表；把附件里的架构图放到第 8 页。图片和文件可直接粘贴或拖进来。"></textarea>
                   <div class="revision-actions">
+                    <input id="revisionFileInput" type="file" multiple accept=".pdf,.docx,.md,.txt,.png,.jpg,.jpeg,.webp" hidden>
+                    <button id="revisionAttachButton" class="secondary-button attach-button" type="button" title="发送图片或文件（PDF/DOCX/MD/TXT/PNG/JPG，单个 ≤20MB）">📎 附件</button>
                     <button id="revisionQuotePageButton" class="secondary-button" type="button" hidden>引用第 1 页</button>
                     <span class="revision-actions-spacer"></span>
                     <button id="sendRevisionButton" class="primary-button" type="submit">发送修改请求</button>
@@ -249,9 +252,12 @@
                     </section>
                     <form id="interviewComposer" class="interview-composer">
                       <label class="sr-only" for="interviewInput">告诉 Agent 你的演示需求</label>
+                      <div id="interviewAttachmentChips" class="attachment-chips" hidden></div>
                       <textarea id="interviewInput" required placeholder="例如：我想做一份给大学生看的生态环境保护演示，但还不知道从哪里开始。"></textarea>
                       <div class="composer-actions">
-                        <span id="interviewHint">描述越具体，Agent 需要追问的问题越少。</span>
+                        <input id="interviewFileInput" type="file" multiple accept=".pdf,.docx,.md,.txt,.png,.jpg,.jpeg,.webp" hidden>
+                        <button id="interviewAttachButton" class="secondary-button attach-button" type="button" title="发送图片或文件（PDF/DOCX/MD/TXT/PNG/JPG，单个 ≤20MB）">📎 附件</button>
+                        <span id="interviewHint">描述越具体，Agent 需要追问的问题越少；图片和文件可直接粘贴或拖进来。</span>
                         <button id="sendInterviewButton" class="primary-button" type="submit">发送给 Agent</button>
                       </div>
                     </form>

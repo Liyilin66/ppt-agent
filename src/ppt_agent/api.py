@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import logging
 import math
@@ -13,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
@@ -67,6 +69,7 @@ from ppt_agent.ppt_master_runner import (
 )
 from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
 from ppt_agent.requirements_interview import (
+    InterviewAttachment,
     InterviewMessage,
     PresentationInterviewDecision,
     PresentationInterviewState,
@@ -84,6 +87,8 @@ from ppt_agent.v2.planning import (
     editable_plan_from_skeleton,
     skeleton_from_editable_plan,
 )
+from ppt_agent.v2 import prompts as v2_prompts
+from ppt_agent.v2.intake import ingest_sources as v2_ingest_sources
 from ppt_agent.v2.revise import RevisionError, revise_deck as revise_v2_deck
 from ppt_agent.v2.design import ThemeSpec as V2ThemeSpec
 from ppt_agent.v2.ir import DeckDesign as V2DeckDesign
@@ -173,6 +178,7 @@ class CreateLongDeckJobRequest(StrictModel):
     batch_size: int = Field(default=2, ge=1, le=10)
     max_batch_attempts: int = Field(default=1, ge=1, le=3)
     interview_id: str | None = Field(default=None, min_length=1, max_length=64)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
 def _uses_v2_generation(payload: CreateLongDeckJobRequest) -> bool:
@@ -199,9 +205,107 @@ class ConfirmDeckPlanRequest(StrictModel):
     plan: EditableDeckPlan | None = None
 
 
+UPLOAD_MAX_BYTES = 20 * 1024 * 1024
+UPLOAD_DOCUMENT_SUFFIXES = {".pdf", ".docx", ".md", ".txt"}
+UPLOAD_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+UPLOAD_IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+MAX_MESSAGE_ATTACHMENTS = 5
+
+
+class UploadResponse(StrictModel):
+    upload_id: str
+    name: str
+    kind: Literal["document", "image"]
+    size: int
+
+
+def _safe_upload_name(filename: str) -> str:
+    name = Path(filename).name.strip().replace("\x00", "")
+    return name or "upload"
+
+
+def _upload_kind(suffix: str) -> str | None:
+    if suffix in UPLOAD_DOCUMENT_SUFFIXES:
+        return "document"
+    if suffix in UPLOAD_IMAGE_SUFFIXES:
+        return "image"
+    return None
+
+
+def _resolve_upload(uploads_root: Path, upload_id: str) -> Path | None:
+    if not re.fullmatch(r"[0-9a-f]{32}", upload_id or ""):
+        return None
+    upload_dir = uploads_root / upload_id
+    if not upload_dir.is_dir():
+        return None
+    files = [path for path in upload_dir.iterdir() if path.is_file()]
+    return files[0] if files else None
+
+
+def _split_attachment_paths(
+    uploads_root: Path, attachment_ids: list[str]
+) -> tuple[list[str], list[str]]:
+    """(document_paths, image_paths) for the resolvable attachment ids."""
+
+    documents: list[str] = []
+    images: list[str] = []
+    for upload_id in attachment_ids:
+        path = _resolve_upload(uploads_root, upload_id)
+        if path is None:
+            continue
+        kind = _upload_kind(path.suffix.lower())
+        if kind == "document":
+            documents.append(str(path))
+        elif kind == "image":
+            images.append(str(path))
+    return documents, images
+
+
+def _attachment_digest_text(path: Path, *, client, language: str = "zh-CN") -> str:
+    """Compact text digest of an uploaded file, for chat/prompt injection."""
+
+    suffix = path.suffix.lower()
+    if _upload_kind(suffix) == "document":
+        result = v2_ingest_sources([str(path)])
+        digest = (result.digest or "").strip()
+        return digest[:2400] or "(文档已上传，但未能提取文本)"
+    if client is None:
+        return "(图片已上传，未能生成内容描述)"
+    media_type = UPLOAD_IMAGE_MEDIA_TYPES.get(suffix, "image/png")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    try:
+        payload = asyncio.run(
+            client.complete_json(
+                task="image_digest",
+                system=v2_prompts.IMAGE_DIGEST_SYSTEM,
+                user=v2_prompts.build_image_digest_user_prompt(
+                    name=path.name, language=language
+                ),
+                context={"name": path.name},
+                images=[(media_type, encoded)],
+            )
+        )
+        description = str(payload.get("description") or "").strip()
+        extracted = str(payload.get("extracted_text") or "").strip()
+        parts = [description]
+        if extracted:
+            parts.append(f"图中文字: {extracted}")
+        combined = "\n".join(part for part in parts if part)
+        return combined or "(图片已上传)"
+    except Exception as exc:  # noqa: BLE001 - digest is best-effort
+        logger.warning("image_digest_failed name=%s error=%s", path.name, sanitize_error_message(exc))
+        return "(图片已上传，未能生成内容描述)"
+
+
 class CreateDeckRevisionRequest(StrictModel):
     message: str = Field(..., min_length=1, max_length=4000)
     page_numbers: list[int] | None = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=MAX_MESSAGE_ATTACHMENTS)
 
 
 class DeckRevisionResponse(StrictModel):
@@ -352,11 +456,13 @@ class PresentationHistoryResponse(StrictModel):
 
 class StartPresentationInterviewRequest(StrictModel):
     message: str = Field(..., min_length=1, max_length=6000)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class ContinuePresentationInterviewRequest(StrictModel):
     message: str = Field(..., min_length=1, max_length=6000)
     selected_option_id: str | None = Field(default=None, min_length=1, max_length=40)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 def _create_chat_model():
@@ -1611,11 +1717,16 @@ def _run_v2_long_deck_job(
 
     try:
         _write_long_deck_request_artifact(payload, output_dir)
+        document_paths, image_paths = _split_attachment_paths(
+            jobs_root.parent / "uploads", payload.attachment_ids
+        )
         result: V2BuildResult = build_v2_deck(
             V2BuildRequest(
                 prompt=_v2_long_deck_prompt(payload),
                 page_count=payload.slide_count,
                 language=payload.language,
+                source_paths=document_paths,
+                image_paths=image_paths,
                 output_dir=str(output_dir),
                 deck_name="generated_long_deck_v2",
                 resume=resume,
@@ -1715,11 +1826,16 @@ def _run_deck_plan(
         )
 
     try:
+        document_paths, image_paths = _split_attachment_paths(
+            plans_root.parent / "uploads", payload.attachment_ids
+        )
         result = plan_v2_deck(
             V2BuildRequest(
                 prompt=_v2_long_deck_prompt(payload),
                 page_count=payload.slide_count,
                 language=payload.language,
+                source_paths=document_paths,
+                image_paths=image_paths,
                 output_dir=str(output_dir),
                 deck_name="deck_plan",
                 concurrency=_env_int("PPT_AGENT_V2_CONCURRENCY", DEFAULT_V2_CONCURRENCY),
@@ -1805,8 +1921,12 @@ def _run_deck_revision(
     client,
     message: str,
     page_numbers: list[int] | None,
+    attachment_ids: list[str] | None = None,
 ) -> None:
     output_dir = jobs_root / job_id
+    document_paths, image_paths = _split_attachment_paths(
+        jobs_root.parent / "uploads", attachment_ids or []
+    )
 
     def progress_logger(text: str) -> None:
         logger.info(
@@ -1824,6 +1944,7 @@ def _run_deck_revision(
             message=message,
             client=client,
             selected_pages=page_numbers,
+            attachment_paths=[*document_paths, *image_paths],
             concurrency=_env_int("PPT_AGENT_V2_CONCURRENCY", DEFAULT_V2_CONCURRENCY),
             progress=progress_logger,
         )
@@ -2046,6 +2167,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
     app.state.job_store = store or JobStore(root / "jobs.sqlite3")
     app.state.jobs_root = jobs_root
     app.state.plans_root = root / "plans"
+    app.state.uploads_root = root / "uploads"
     _backfill_presentation_request_history(app.state.job_store, jobs_root)
 
     app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="static")
@@ -2057,6 +2179,71 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/api/uploads", response_model=UploadResponse, status_code=201)
+    async def create_upload(
+        request: Request,
+        filename: str = Query(..., min_length=1, max_length=255),
+    ) -> UploadResponse:
+        safe_name = _safe_upload_name(filename)
+        kind = _upload_kind(Path(safe_name).suffix.lower())
+        if kind is None:
+            raise HTTPException(
+                status_code=415,
+                detail="Unsupported file type; allowed: pdf, docx, md, txt, png, jpg, webp.",
+            )
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="Empty upload body.")
+        if len(body) > UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {UPLOAD_MAX_BYTES // (1024 * 1024)}MB upload limit.",
+            )
+        upload_id = uuid.uuid4().hex
+        upload_dir = app.state.uploads_root / upload_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        (upload_dir / safe_name).write_bytes(body)
+        return UploadResponse(
+            upload_id=upload_id, name=safe_name, kind=kind, size=len(body)
+        )
+
+    @app.get("/api/uploads/{upload_id}")
+    def get_upload(upload_id: str) -> FileResponse:
+        path = _resolve_upload(app.state.uploads_root, upload_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Upload not found.")
+        return FileResponse(path, filename=path.name)
+
+    def _interview_attachments(attachment_ids: list[str]) -> list[InterviewAttachment]:
+        if not attachment_ids:
+            return []
+        client = None
+        needs_vision = any(
+            (path := _resolve_upload(app.state.uploads_root, upload_id)) is not None
+            and _upload_kind(path.suffix.lower()) == "image"
+            for upload_id in attachment_ids
+        )
+        if needs_vision:
+            try:
+                client = _create_v2_model_client()
+            except Exception:  # noqa: BLE001 - vision digest is best-effort
+                client = None
+        attachments: list[InterviewAttachment] = []
+        for upload_id in attachment_ids[:MAX_MESSAGE_ATTACHMENTS]:
+            path = _resolve_upload(app.state.uploads_root, upload_id)
+            if path is None:
+                continue
+            kind = _upload_kind(path.suffix.lower())
+            if kind is None:
+                continue
+            digest = _attachment_digest_text(path, client=client)
+            attachments.append(
+                InterviewAttachment(
+                    upload_id=upload_id, name=path.name, kind=kind, digest=digest[:4000]
+                )
+            )
+        return attachments
 
     @app.post(
         "/api/presentation-interviews",
@@ -2070,7 +2257,11 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
         try:
             model = _create_interview_chat_model()
-            user_message = InterviewMessage(role="user", content=payload.message.strip())
+            user_message = InterviewMessage(
+                role="user",
+                content=payload.message.strip(),
+                attachments=_interview_attachments(payload.attachment_ids),
+            )
             decision = run_requirements_interview_turn(
                 model,
                 [user_message],
@@ -2126,6 +2317,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             role="user",
             content=payload.message.strip(),
             selected_option_id=payload.selected_option_id,
+            attachments=_interview_attachments(payload.attachment_ids),
         )
         model_messages = [*state.messages, user_message]
         try:
@@ -2406,6 +2598,13 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
         job = app.state.job_store.create_job(job_type="long_deck_v2")
         _seed_plan_checkpoints(app.state.jobs_root / job.job_id, brief, skeleton)
+        plan_image_digests = (
+            app.state.plans_root / plan_id / "checkpoints" / "image_digests.json"
+        )
+        if plan_image_digests.is_file():
+            (app.state.jobs_root / job.job_id / "checkpoints" / "image_digests.json").write_bytes(
+                plan_image_digests.read_bytes()
+            )
         _save_presentation_request_snapshot(app.state.job_store, job.job_id, request_payload)
         app.state.job_store.update_long_deck_progress(
             job.job_id,
@@ -2487,6 +2686,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             client,
             payload.message,
             payload.page_numbers,
+            payload.attachment_ids,
         )
         return _deck_revision_response(record)
 

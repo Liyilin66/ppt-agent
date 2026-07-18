@@ -26,6 +26,7 @@ from ppt_agent.v2.ir import (
     ChartItem,
     Frame,
     IconItem,
+    ImageItem,
     PageDesign,
     ShapeItem,
     TableItem,
@@ -114,7 +115,7 @@ def _content_coverage(elements: list, *, y_from: float, y_to: float) -> float:
     boxes = [
         element.frame
         for element in elements
-        if isinstance(element, (TextItem, IconItem, ChartItem, TableItem))
+        if isinstance(element, (TextItem, IconItem, ChartItem, TableItem, ImageItem))
     ]
     if not boxes or y_to <= y_from:
         return 0.0

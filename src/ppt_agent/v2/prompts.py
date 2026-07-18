@@ -157,6 +157,10 @@ _ELEMENT_SCHEMA_TEMPLATE = """ELEMENT TYPES (each needs a unique "id"; sizes/pos
           "categories":[str,...],"series":[{{"name":str,"values":[num,...]}}],
           "show_legend":bool,"show_data_labels":bool}}
 - table: {{"type":"table","id":str,"frame":...,"headers":[str,...],"rows":[[str,...],...]}}
+- image: {{"type":"image","id":str,"frame":...,"src":<EXACT file name from AVAILABLE
+          IMAGES>,"label":str}} — only when the prompt lists AVAILABLE IMAGES; never
+          invent src values. Contain-fit into the frame; keep the frame's aspect
+          close to the image's.
 
 COLOR ROLES (the ONLY colors allowed; never write hex values):
 background, surface, surface_alt, primary, primary_soft, secondary, accent,
@@ -221,6 +225,22 @@ def build_page_design_system(language: str) -> str:
     )
 
 
+def format_available_images_block(available_images: list[dict] | None) -> str:
+    if not available_images:
+        return ""
+    lines = []
+    for item in available_images:
+        size = ""
+        if item.get("width") and item.get("height"):
+            size = f" ({item['width']}x{item['height']}px)"
+        lines.append(f"- {item['src']}{size}: {item.get('description', '')}".rstrip())
+    return (
+        "AVAILABLE IMAGES (user-provided files; place with the \"image\" element "
+        "ONLY where one genuinely supports this page's brief — most pages should "
+        "use none):\n" + "\n".join(lines) + "\n\n"
+    )
+
+
 def build_page_design_user_prompt(
     *,
     brief: ContentBrief,
@@ -231,6 +251,7 @@ def build_page_design_user_prompt(
     page_number: int,
     total_pages: int,
     neighbor_titles: list[str],
+    available_images: list[dict] | None = None,
 ) -> str:
     neighbors = "; ".join(neighbor_titles) or "(none)"
     return (
@@ -240,6 +261,7 @@ def build_page_design_user_prompt(
         f"Audience: {brief.audience} | Tone: {brief.tone}\n\n"
         f"DECK STYLE SIGNATURE (every page must express it):\n"
         f"{theme.style.as_prompt_block()}\n\n"
+        f"{format_available_images_block(available_images)}"
         f"PAGE BRIEF\nTitle: {page_brief.title}\n"
         f"Summary: {page_brief.summary}\n"
         f"Points: {json.dumps(page_brief.points, ensure_ascii=False)}\n"
@@ -402,6 +424,7 @@ def build_revision_plan_user_prompt(
     message: str,
     deck_summary: str,
     selected_pages: list[int] | None = None,
+    attachments_note: str = "",
 ) -> str:
     selected = (
         f"Pages the user currently has selected: {selected_pages}\n"
@@ -410,6 +433,7 @@ def build_revision_plan_user_prompt(
     )
     return (
         f"DECK STRUCTURE:\n{deck_summary}\n\n"
+        f"{attachments_note}"
         f"{selected}"
         f"USER CHANGE REQUEST:\n{message.strip()}\n\n"
         "Plan the revision now. Return ONLY the JSON object."
@@ -454,4 +478,24 @@ def append_revision_block(
         f"REVISION REQUEST FOR THIS SLIDE:\n{instruction.strip()}\n"
         "Redesign the slide applying this revision. Keep everything the request "
         "does not touch close to the current design. Return ONLY the JSON object."
+    )
+
+
+IMAGE_DIGEST_SYSTEM = """You are the research assistant of a presentation studio.
+Look at the attached image and report what a slide writer needs from it.
+Reply with ONLY a JSON object:
+{"description": str, "extracted_text": str}
+Rules:
+- description: 2-4 sentences, in the language given by the user prompt, covering
+  what the image shows, any data/figures it contains, and what it could support
+  in a presentation.
+- extracted_text: any legible text/numbers in the image, transcribed compactly;
+  empty string if none."""
+
+
+def build_image_digest_user_prompt(*, name: str, language: str) -> str:
+    return (
+        f"Image file name: {name}\n"
+        f"Write the description in: {language}\n"
+        "Analyze the attached image now. Return ONLY the JSON object."
     )

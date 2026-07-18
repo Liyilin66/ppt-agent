@@ -755,3 +755,71 @@ class TestRevisionHonesty:
             for page in content_pages
         )
         assert "已更新第" in result.reply
+
+
+class TestImageAttachments:
+    def _png(self, tmp_path: Path, name: str = "figure.png") -> Path:
+        from PIL import Image
+
+        path = tmp_path / name
+        Image.new("RGB", (8, 6), color=(20, 60, 120)).save(path)
+        return path
+
+    def test_build_digests_and_stages_user_images(self, tmp_path: Path) -> None:
+        png = self._png(tmp_path)
+        request = _request(
+            tmp_path, page_count=12, deck_name="deck", image_paths=[str(png)]
+        )
+        result = build_deck(request, MockLLMClient(), progress=lambda _: None)
+        assert result.status == "succeeded"
+        output_dir = Path(request.output_dir)
+        assert (output_dir / "assets" / "figure.png").is_file()
+        digests = json.loads(
+            (output_dir / "checkpoints" / "image_digests.json").read_text(encoding="utf-8")
+        )
+        assert digests[0]["src"] == "figure.png"
+        assert digests[0]["width"] == 8
+        brief = json.loads(
+            (output_dir / "checkpoints" / "brief.json").read_text(encoding="utf-8")
+        )
+        assert "figure.png" in (brief.get("source_digest") or "")
+
+    def test_available_images_reach_page_prompts(self) -> None:
+        from ppt_agent.v2 import prompts
+        from ppt_agent.v2.design import BUILTIN_THEMES
+        from ppt_agent.v2.planning import ContentBrief, PageBrief
+
+        prompt = prompts.build_page_design_user_prompt(
+            brief=ContentBrief(topic="主题", deck_title="标题"),
+            theme=BUILTIN_THEMES["aurora"],
+            deck_title="标题",
+            section_title="章节",
+            page_brief=PageBrief(title="页"),
+            page_number=5,
+            total_pages=12,
+            neighbor_titles=[],
+            available_images=[{"src": "figure.png", "description": "架构示意图", "width": 800, "height": 600}],
+        )
+        assert "AVAILABLE IMAGES" in prompt
+        assert "figure.png (800x600px): 架构示意图" in prompt
+
+    def test_revision_attachment_merges_into_assets(self, tmp_path: Path) -> None:
+        from ppt_agent.v2.revise import revise_deck
+
+        request = _request(tmp_path, page_count=12, deck_name="deck")
+        build_deck(request, MockLLMClient(), progress=lambda _: None)
+        output_dir = Path(request.output_dir)
+        png = self._png(tmp_path, "new_chart.png")
+        result = revise_deck(
+            output_dir=output_dir, deck_name="deck",
+            message="第 5 页放上我这张新图",
+            client=MockLLMClient(),
+            attachment_paths=[str(png)],
+            progress=lambda _: None,
+        )
+        assert result.revised_pages == [5]
+        assert (output_dir / "assets" / "new_chart.png").is_file()
+        digests = json.loads(
+            (output_dir / "checkpoints" / "image_digests.json").read_text(encoding="utf-8")
+        )
+        assert any(entry["src"] == "new_chart.png" for entry in digests)

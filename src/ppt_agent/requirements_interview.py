@@ -88,11 +88,21 @@ class PresentationInterviewDecision(StrictModel):
         return self
 
 
+class InterviewAttachment(StrictModel):
+    """An uploaded file referenced by a chat message, with its text digest."""
+
+    upload_id: str = Field(..., min_length=1, max_length=64)
+    name: str = Field(..., min_length=1, max_length=255)
+    kind: Literal["document", "image"]
+    digest: str = Field(default="", max_length=4000)
+
+
 class InterviewMessage(StrictModel):
     message_id: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=1)
     role: InterviewRole
     content: str = Field(..., min_length=1, max_length=6000)
     selected_option_id: str | None = Field(default=None, min_length=1, max_length=40)
+    attachments: list[InterviewAttachment] = Field(default_factory=list, max_length=5)
     created_at: str = Field(default_factory=utc_now_iso)
 
 
@@ -115,14 +125,23 @@ def build_requirements_interview_prompt(
     messages: list[InterviewMessage],
     previous_brief: PresentationBriefDraft | None = None,
 ) -> str:
-    conversation = [
-        {
+    conversation = []
+    for message in messages:
+        entry: dict = {
             "role": message.role,
             "content": message.content,
             "selected_option_id": message.selected_option_id,
         }
-        for message in messages
-    ]
+        if message.attachments:
+            entry["attachments"] = [
+                {
+                    "name": attachment.name,
+                    "kind": attachment.kind,
+                    "content_digest": attachment.digest or "(no digest)",
+                }
+                for attachment in message.attachments
+            ]
+        conversation.append(entry)
     return f"""You are the requirements interview agent inside ppt-agent.
 
 Your job is to turn a user's natural-language request into an implementation-ready presentation brief.
@@ -136,6 +155,11 @@ Previous brief draft:
 
 Decision rules:
 - Preserve every confirmed fact from the conversation and previous brief.
+- Messages may carry "attachments" with a content_digest of an uploaded document
+  or image. Treat digests as source material: fold their facts into the brief
+  (topic, content focus, user_requirements) instead of asking about what they
+  already answer. Mention in user_requirements that the uploaded materials
+  should ground the deck content.
 - Ask only about information that materially changes content, structure, visual design, or delivery.
 - Ask exactly one question per clarifying turn. Never bundle multiple questions.
 - Provide 2-4 concise, mutually exclusive options tailored to that question.

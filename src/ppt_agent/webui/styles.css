@@ -1579,6 +1579,109 @@ select option { background: var(--surface-solid); color: var(--text); }
   opacity: 0.6;
 }
 
+/* --- chat attachments --- */
+
+.attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 100%;
+}
+
+.attachment-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.attachment-chip.is-uploading { opacity: 0.65; }
+
+.attachment-chip.is-error {
+  border-color: rgba(251, 113, 133, 0.45);
+  color: var(--danger);
+}
+
+.attachment-chip button {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  box-shadow: none;
+}
+
+.attachment-chip button:hover:not(:disabled) {
+  color: var(--danger);
+  background: transparent;
+  border: none;
+}
+
+.attach-button { flex-shrink: 0; }
+
+.interview-composer,
+.revision-composer {
+  position: relative;
+  border-radius: var(--radius-md);
+  transition: box-shadow 0.15s ease;
+}
+
+.interview-composer.is-dragover,
+.revision-composer.is-dragover {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 28px rgba(139, 124, 247, 0.35);
+}
+
+.interview-composer.is-dragover::after,
+.revision-composer.is-dragover::after {
+  content: "松开即可添加附件";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent-line);
+  border-radius: var(--radius-md);
+  background: rgba(13, 16, 24, 0.82);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-attachment {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11.5px;
+  color: var(--text-2);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- post-generation revision chat --- */
 
 .revision-panel {

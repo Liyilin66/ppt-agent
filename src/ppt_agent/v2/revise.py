@@ -26,6 +26,7 @@ from ppt_agent.models import StrictModel
 from ppt_agent.v2 import prompts
 from ppt_agent.v2.design import ThemeSpec, normalize_theme
 from ppt_agent.v2.ir import DeckDesign, PageDesign
+from ppt_agent.v2.intake import ingest_sources
 from ppt_agent.v2.orchestrator import (
     PageOutcome,
     Progress,
@@ -33,6 +34,8 @@ from ppt_agent.v2.orchestrator import (
     _Checkpoints,
     _design_anchor_page,
     _design_content_page,
+    _image_dimensions,
+    _stage_image_assets,
 )
 from ppt_agent.v2.planning import ContentBrief, DeckSkeleton, PageBrief, PageSlot
 from ppt_agent.v2.providers import LLMClient
@@ -105,6 +108,7 @@ async def revise_deck_async(
     message: str,
     client: LLMClient,
     selected_pages: list[int] | None = None,
+    attachment_paths: list[str] | None = None,
     concurrency: int = 6,
     progress: Progress = print,
 ) -> ReviseResult:
@@ -118,6 +122,83 @@ async def revise_deck_async(
     )
     slot_map: dict[int, PageSlot] = {slot.page_number: slot for slot in skeleton.slots}
 
+    # 0. Attachments: documents become planner reference text; images are
+    # vision-digested and staged so redesigned pages can place them.
+    from ppt_agent.v2.orchestrator import _IMAGE_MEDIA_TYPES
+
+    attachment_paths = attachment_paths or []
+    doc_paths = [
+        item for item in attachment_paths
+        if Path(item).suffix.lower() in (".pdf", ".docx", ".md", ".txt")
+    ]
+    image_paths = [
+        item for item in attachment_paths
+        if Path(item).suffix.lower() in _IMAGE_MEDIA_TYPES
+    ]
+    attachments_note = ""
+    if doc_paths:
+        digest = ingest_sources(doc_paths).digest.strip()
+        if digest:
+            attachments_note += (
+                f"Reference documents uploaded with this request:\n{digest[:4000]}\n\n"
+            )
+    image_entries: list[dict[str, Any]] = list(checkpoints.load("image_digests.json") or [])
+    if image_paths:
+        import base64 as _base64
+
+        staged = _stage_image_assets(image_paths, output_root)
+        known = {entry["src"] for entry in image_entries}
+        new_entries: list[dict[str, Any]] = []
+        for name, path in staged.items():
+            if name in known:
+                continue
+            width, height = _image_dimensions(path)
+            entry: dict[str, Any] = {
+                "src": name, "width": width, "height": height,
+                "description": "", "extracted_text": "",
+            }
+            try:
+                payload = await client.complete_json(
+                    task="image_digest",
+                    system=prompts.IMAGE_DIGEST_SYSTEM,
+                    user=prompts.build_image_digest_user_prompt(
+                        name=name, language=brief.language
+                    ),
+                    context={"name": name},
+                    images=[
+                        (
+                            _IMAGE_MEDIA_TYPES.get(path.suffix.lower(), "image/png"),
+                            _base64.b64encode(path.read_bytes()).decode("ascii"),
+                        )
+                    ],
+                )
+                entry["description"] = str(payload.get("description") or "").strip()
+                entry["extracted_text"] = str(payload.get("extracted_text") or "").strip()
+            except (ValidationError, ValueError, RuntimeError) as exc:
+                progress(f"[revise] image digest for {name} skipped: {str(exc)[:120]}")
+            image_entries.append(entry)
+            new_entries.append(entry)
+        if new_entries:
+            checkpoints.save("image_digests.json", image_entries)
+            attachments_note += (
+                "New image assets uploaded with this request (pages may place them "
+                "via the image element):\n"
+                + "\n".join(
+                    f"- {entry['src']}: {entry.get('description', '')}"
+                    for entry in new_entries
+                )
+                + "\n\n"
+            )
+    available_images = [
+        {
+            "src": entry["src"],
+            "description": entry.get("description", ""),
+            "width": entry.get("width"),
+            "height": entry.get("height"),
+        }
+        for entry in image_entries
+    ] or None
+
     # 1. Plan the revision.
     plan_payload = await client.complete_json(
         task="revision_plan",
@@ -126,6 +207,7 @@ async def revise_deck_async(
             message=message,
             deck_summary=_deck_summary(skeleton),
             selected_pages=selected_pages,
+            attachments_note=attachments_note,
         ),
         context={
             "message": message,
@@ -264,6 +346,7 @@ async def revise_deck_async(
                 progress=progress,
                 revision_instruction=instruction,
                 current_page_json=current_page_json,
+                available_images=available_images,
             )
         else:
             await _design_anchor_page(
@@ -360,7 +443,9 @@ async def revise_deck_async(
     qa_report_path.write_text(qa_summary.model_dump_json(indent=2), encoding="utf-8")
 
     qa_error_pages = sum(1 for result in qa_results if result.errors)
-    pptx_path = render_deck(deck, output_root / f"{deck_name}.pptx")
+    pptx_path = render_deck(
+        deck, output_root / f"{deck_name}.pptx", assets_dir=output_root / "assets"
+    )
     progress(f"[revise] deck re-rendered: {pptx_path}")
 
     theme_summary = "、".join(theme_change_labels) or "视觉设置"
@@ -391,6 +476,7 @@ def revise_deck(
     message: str,
     client: LLMClient,
     selected_pages: list[int] | None = None,
+    attachment_paths: list[str] | None = None,
     concurrency: int = 6,
     progress: Progress = print,
 ) -> ReviseResult:
@@ -403,6 +489,7 @@ def revise_deck(
             message=message,
             client=client,
             selected_pages=selected_pages,
+            attachment_paths=attachment_paths,
             concurrency=concurrency,
             progress=progress,
         )

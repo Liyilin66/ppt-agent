@@ -45,8 +45,9 @@ class MockLLMClient:
         user: str,
         max_output_tokens: int | None = None,
         context: Any = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> Any:
-        del system, user, max_output_tokens
+        del system, user, max_output_tokens, images
         if self.latency_seconds:
             await asyncio.sleep(self.latency_seconds)
         context = context or {}
@@ -64,6 +65,12 @@ class MockLLMClient:
             return self._anchor_design(context)
         if task == "page_repair":
             return context.get("page_payload", {})
+        if task == "image_digest":
+            name = str((context or {}).get("name", "图片"))
+            return {
+                "description": f"「{name}」的示意图：展示了与主题相关的结构与数据要点。",
+                "extracted_text": "",
+            }
         if task == "revision_plan":
             return self._revision_plan(context)
         if task == "theme_revise":
