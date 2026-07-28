@@ -749,15 +749,19 @@ def test_index_page_patch_path_is_optional_json_placeholder(tmp_path: Path) -> N
 
 
 def test_create_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PPT_AGENT_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = _client(tmp_path).post("/api/jobs", json=_job_payload())
 
     assert response.status_code == 503
-    assert "OPENAI_API_KEY is not set" in response.json()["detail"]
+    assert "PPT_AGENT_API_KEY or OPENAI_API_KEY is not set" in response.json()["detail"]
 
 
 def test_requirements_interview_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PPT_AGENT_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = _client(tmp_path).post(
@@ -766,11 +770,13 @@ def test_requirements_interview_without_api_key_returns_clear_error(tmp_path: Pa
     )
 
     assert response.status_code == 503
-    assert "OPENAI_API_KEY is not set" in response.json()["detail"]
+    assert "PPT_AGENT_API_KEY or OPENAI_API_KEY is not set" in response.json()["detail"]
 
 
 def test_requirements_interview_model_uses_low_latency_gpt55_defaults(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PPT_AGENT_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     monkeypatch.delenv("PPT_AGENT_INTERVIEW_REASONING_EFFORT", raising=False)
     monkeypatch.delenv("PPT_AGENT_INTERVIEW_MAX_TOKENS", raising=False)
@@ -781,6 +787,20 @@ def test_requirements_interview_model_uses_low_latency_gpt55_defaults(monkeypatc
     assert model.reasoning_effort == "low"
     assert model.max_tokens == 1800
     assert model.max_retries == 1
+
+
+def test_openai_chat_model_prefers_ppt_agent_byok_aliases(monkeypatch) -> None:
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "ppt-agent-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
+    monkeypatch.setenv("PPT_AGENT_MODEL", "gpt-5.5")
+    monkeypatch.setenv("OPENAI_MODEL", "legacy-model")
+    monkeypatch.setenv("PPT_AGENT_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://legacy.test/v1")
+
+    model = api._create_interview_chat_model()
+
+    assert model.model_name == "gpt-5.5"
+    assert str(model.openai_api_base) == "https://example.test/v1"
 
 
 def test_requirements_interview_persists_adaptive_question_and_options(
@@ -846,12 +866,14 @@ def test_ready_requirements_interview_can_continue_with_natural_language_adjustm
 
 
 def test_create_long_deck_job_without_api_key_returns_clear_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PPT_AGENT_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = _client(tmp_path).post("/api/long-deck-jobs", json=_long_deck_payload())
 
     assert response.status_code == 503
-    assert "OPENAI_API_KEY is not set" in response.json()["detail"]
+    assert "PPT_AGENT_API_KEY or OPENAI_API_KEY is not set" in response.json()["detail"]
 
 
 def test_create_job_success_returns_job_id(tmp_path: Path, monkeypatch) -> None:
@@ -2372,3 +2394,137 @@ def test_interview_message_carries_attachment_digest(tmp_path: Path, monkeypatch
     message = state.json()["messages"][0]
     assert message["attachments"][0]["name"] == "brief.txt"
     assert "环保行动指南" in message["attachments"][0]["digest"]
+
+
+def _install_fake_rebuild_backend(monkeypatch, captured: dict | None = None):
+    from ppt_agent.v2.rebuild import RebuildResult
+
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+
+    def fake_rebuild_v2_deck(*, items, output_dir, client, deck_name="generated_long_deck_v2",
+                             deck_title="图片重建", language="zh-CN", concurrency=4, progress=print):
+        if captured is not None:
+            captured["rebuild_items"] = [(Path(i.image_path).name, i.route) for i in items]
+            captured["deck_title"] = deck_title
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{deck_name}_design.json").write_text(json.dumps({"pages": len(items)}), encoding="utf-8")
+        (out / f"{deck_name}_qa_report.json").write_text(json.dumps({
+            "total_pages": len(items), "pages_with_errors": 0, "pages_with_warnings": 0,
+            "auto_fix_count": 0, "repaired_pages": [], "fallback_pages": [], "results": [],
+        }), encoding="utf-8")
+        (out / f"{deck_name}.pptx").write_bytes(b"rebuilt pptx")
+        progress("[theme] extracted (motif: top_rule)")
+        progress(f"[design] {len(items)}/{len(items)} content pages done")
+        progress("[render] editable deck written")
+        return RebuildResult(
+            status="succeeded", pptx_path=str(out / f"{deck_name}.pptx"),
+            deck_design_path=str(out / f"{deck_name}_design.json"),
+            qa_report_path=str(out / f"{deck_name}_qa_report.json"),
+            page_count=len(items), qa_error_pages=0, rebuilt_pages=len(items),
+            fallback_pages=0, usage={"estimated_cost_usd": 0.3},
+        )
+
+    monkeypatch.setattr(api, "rebuild_v2_deck", fake_rebuild_v2_deck)
+
+
+def _upload_test_image(client, tmp_path: Path, name: str) -> str:
+    from PIL import Image
+
+    path = tmp_path / name
+    Image.new("RGB", (6, 4), color=(10, 20, 30)).save(path)
+    response = client.post(f"/api/uploads?filename={name}", content=path.read_bytes())
+    assert response.status_code == 201
+    return response.json()["upload_id"]
+
+
+def test_image_analysis_endpoint(tmp_path: Path, monkeypatch) -> None:
+    from ppt_agent.v2.mock import MockLLMClient
+
+    monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
+    monkeypatch.setattr(api, "_create_v2_model_client", lambda: MockLLMClient())
+    client = _client(tmp_path)
+
+    slide_id = _upload_test_image(client, tmp_path, "slide_deck.png")
+    body = client.post("/api/image-analyses", json={"upload_id": slide_id}).json()
+    assert body["category"] == "slide"
+    assert body["suggested_route"] == "rebuild"
+
+    pet_id = _upload_test_image(client, tmp_path, "pet_cat.png")
+    body = client.post("/api/image-analyses", json={"upload_id": pet_id}).json()
+    assert body["category"] == "unrelated"
+    assert body["suggested_route"] is None
+
+    missing = client.post("/api/image-analyses", json={"upload_id": "deadbeefdeadbeefdeadbeefdeadbeef"})
+    assert missing.status_code == 404
+
+
+def test_image_rebuild_job_lifecycle(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_rebuild_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+
+    slide_id = _upload_test_image(client, tmp_path, "slide_one.png")
+    chart_id = _upload_test_image(client, tmp_path, "chart.png")
+    created = client.post(
+        "/api/image-rebuild-jobs",
+        json={
+            "items": [
+                {"upload_id": slide_id, "route": "rebuild"},
+                {"upload_id": chart_id, "route": "design_from_content"},
+            ],
+            "deck_title": "截图还原测试",
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    assert captured["rebuild_items"] == [
+        ("slide_one.png", "rebuild"), ("chart.png", "design_from_content"),
+    ]
+    assert captured["deck_title"] == "截图还原测试"
+
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["status"] == "succeeded"
+    assert job["job_type"] == "image_rebuild"
+    assert job["total_batches"] == 2
+
+    history = client.get("/api/presentations").json()
+    entry = next(item for item in history["items"] if item["job_id"] == job_id)
+    assert entry["topic"] == "截图还原测试"
+    assert entry["pptx_download_url"]
+
+
+def test_image_rebuild_job_rejects_non_image(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_rebuild_backend(monkeypatch)
+    client = _client(tmp_path)
+    doc = client.post("/api/uploads?filename=notes.md", content=b"# x").json()
+    response = client.post(
+        "/api/image-rebuild-jobs",
+        json={"items": [{"upload_id": doc["upload_id"], "route": "rebuild"}]},
+    )
+    assert response.status_code == 415
+
+
+def test_dotenv_file_loads_without_overriding_exports(tmp_path: Path, monkeypatch) -> None:
+    import os
+
+    from ppt_agent.runtime import load_dotenv_file
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PPT_AGENT_TEST_KEY", raising=False)
+    monkeypatch.setenv("PPT_AGENT_EXPORTED", "from-shell")
+    (tmp_path / ".env").write_text(
+        "# comment\n"
+        "PPT_AGENT_TEST_KEY=sk-from-file\n"
+        'PPT_AGENT_QUOTED="hello world"\n'
+        "export PPT_AGENT_EXPORTED=from-file\n",
+        encoding="utf-8",
+    )
+    loaded = load_dotenv_file()
+    assert "PPT_AGENT_TEST_KEY" in loaded
+    assert os.environ["PPT_AGENT_TEST_KEY"] == "sk-from-file"
+    assert os.environ["PPT_AGENT_QUOTED"] == "hello world"
+    assert os.environ["PPT_AGENT_EXPORTED"] == "from-shell"  # export wins
+    monkeypatch.delenv("PPT_AGENT_TEST_KEY")
+    monkeypatch.delenv("PPT_AGENT_QUOTED")

@@ -61,7 +61,11 @@ from ppt_agent.v2.planning import (
     reconcile_page_briefs,
     section_start_pages,
 )
-from ppt_agent.v2.providers import BudgetExceededError, LLMClient
+from ppt_agent.v2.providers import (
+    BudgetExceededError,
+    LLMClient,
+    encode_image_for_vision,
+)
 from ppt_agent.v2.qa import DeckQASummary, PageQAResult, review_page, summarize
 from ppt_agent.v2.render import render_deck
 from ppt_agent.v2.search import SearchProvider, format_search_digest
@@ -235,12 +239,7 @@ async def _run_image_digest_stage(
                     name=name, language=request.language or "zh-CN"
                 ),
                 context={"name": name},
-                images=[
-                    (
-                        _IMAGE_MEDIA_TYPES.get(path.suffix.lower(), "image/png"),
-                        _base64.b64encode(path.read_bytes()).decode("ascii"),
-                    )
-                ],
+                images=[encode_image_for_vision(path)],
             )
             entry["description"] = str(payload.get("description") or "").strip()
             entry["extracted_text"] = str(payload.get("extracted_text") or "").strip()

@@ -75,7 +75,65 @@ class MockLLMClient:
             return self._revision_plan(context)
         if task == "theme_revise":
             return self._theme_revise(context)
+        if task == "image_classify":
+            return self._image_classify(context)
+        if task == "theme_from_images":
+            theme = self._theme(context)
+            theme["name"] = "extracted-from-images"
+            return theme
+        if task == "image_page":
+            return self._image_page(context)
         raise ValueError(f"MockLLMClient does not know task '{task}'")
+
+    def _image_classify(self, context: dict[str, Any]) -> dict[str, Any]:
+        name = str((context or {}).get("name", "image.png")).lower()
+        if any(word in name for word in ("slide", "ppt", "deck", "poster")):
+            category, reasoning = "slide", "这张图本身就是一页完整的演示页面。"
+        elif any(word in name for word in ("selfie", "pet", "cat", "dog", "scenery", "photo")):
+            category, reasoning = "unrelated", "这张图片不像演示页面，也没有可直接使用的信息。"
+        else:
+            category, reasoning = "informative", "这张图不是完整的 PPT 页面，但包含可用于演示的信息。"
+        return {
+            "category": category,
+            "confidence": 0.9,
+            "reasoning": reasoning,
+            "description": f"「{name}」的内容示意。",
+            "extracted_text": "示例文字 123" if category != "unrelated" else "",
+            "title_guess": "图片内容标题",
+        }
+
+    def _image_page(self, context: dict[str, Any]) -> dict[str, Any]:
+        route = str((context or {}).get("route", "design_from_content"))
+        name = str((context or {}).get("name", "image.png"))
+        page_number = int((context or {}).get("page_number", 1))
+        elements: list[dict[str, Any]] = [
+            {"type": "text", "id": "rebuild_title", "frame": {"x": 64, "y": 48, "w": 900, "h": 60},
+             "text": f"重建页 · {name}", "role": "title"},
+            {"type": "shape", "id": "rebuild_card", "frame": {"x": 64, "y": 150, "w": 700, "h": 420},
+             "shape": "rounded_rectangle", "fill": "surface"},
+            {"type": "text", "id": "rebuild_body", "frame": {"x": 96, "y": 182, "w": 640, "h": 200},
+             "text": "重建正文要点\n结构与文字均可编辑", "role": "body", "bullet": "dot"},
+            {"type": "text", "id": f"route_tag_{route}", "frame": {"x": 96, "y": 600, "w": 500, "h": 28},
+             "text": f"route:{route}", "role": "caption"},
+        ]
+        if route == "rebuild":
+            elements.append(
+                {"type": "image", "id": "rebuild_photo", "frame": {"x": 820, "y": 150, "w": 380, "h": 420},
+                 "src": "crop:0.55,0.2,0.4,0.6", "label": "照片区域"}
+            )
+        elif route == "embed_with_notes":
+            elements.append(
+                {"type": "image", "id": "embedded_original", "frame": {"x": 820, "y": 150, "w": 380, "h": 420},
+                 "src": name, "label": "原图"}
+            )
+        return {
+            "role": "content",
+            "title": f"重建页 {page_number}",
+            "background": "background",
+            "show_chrome": False,
+            "elements": elements,
+            "speaker_notes": f"这一页来自图片 {name} 的 {route} 路线。",
+        }
 
     def _brief(self, context: dict[str, Any]) -> dict[str, Any]:
         prompt = str(context.get("user_prompt", "未命名主题")).strip()

@@ -237,6 +237,12 @@ const viewMetadata = {
     description: "通过对话把想法变成可执行的演示需求。",
     context: "需求访谈"
   },
+  rebuild: {
+    eyebrow: "Image understanding & rebuild",
+    title: "图片重建",
+    description: "判断图片类型，把演示页面重建为可编辑 PPT。",
+    context: "图片理解"
+  },
   outline: {
     eyebrow: "Outline & script",
     title: "大纲脚本",
@@ -1894,7 +1900,7 @@ function updateRevisionQuoteButton() {
 function updateRevisionPanel(job) {
   const eligible = Boolean(
     job
-    && job.job_type === "long_deck_v2"
+    && (job.job_type === "long_deck_v2" || job.job_type === "image_rebuild")
     && (job.status === "succeeded" || job.status === "failed_quality_gate")
   );
   revisionPanel.hidden = !eligible;
@@ -2006,6 +2012,242 @@ revisionQuotePageButton.addEventListener("click", () => {
 
 liveSlideThumbnails.addEventListener("click", () => {
   setTimeout(updateRevisionQuoteButton, 0);
+});
+
+/* ---------- Image understanding & rebuild ---------- */
+
+const rebuildDropzone = document.getElementById("rebuildDropzone");
+const rebuildFileInput = document.getElementById("rebuildFileInput");
+const rebuildCards = document.getElementById("rebuildCards");
+const rebuildFooter = document.getElementById("rebuildFooter");
+const rebuildCountChip = document.getElementById("rebuildCountChip");
+const rebuildDeckTitle = document.getElementById("rebuildDeckTitle");
+const startRebuildButton = document.getElementById("startRebuildButton");
+
+const REBUILD_ROUTES = [
+  {value: "rebuild", label: "重建为可编辑页面"},
+  {value: "design_from_content", label: "根据图片内容设计一页"},
+  {value: "embed_with_notes", label: "把图片放入 PPT 并补充解读"},
+  {value: "style_reference", label: "参考图片的视觉风格"},
+  {value: "extract_text", label: "只提取文字和数据"}
+];
+
+const REBUILD_CATEGORY_META = {
+  slide: {label: "演示页面", tone: "success"},
+  informative: {label: "含可用信息", tone: "info"},
+  unrelated: {label: "与演示无关", tone: "warning"}
+};
+
+let rebuildItems = [];
+
+function rebuildReadyItems() {
+  return rebuildItems.filter((item) => item.upload_id && !item.error && item.route);
+}
+
+function renderRebuildCards() {
+  rebuildCards.replaceChildren();
+  rebuildItems.forEach((item, index) => {
+    const card = document.createElement("article");
+    card.className = "rebuild-card";
+
+    const thumb = document.createElement("div");
+    thumb.className = "rebuild-thumb";
+    if (item.upload_id) {
+      const img = document.createElement("img");
+      img.src = `/api/uploads/${item.upload_id}`;
+      img.alt = item.name;
+      thumb.appendChild(img);
+    }
+
+    const body = document.createElement("div");
+    body.className = "rebuild-card-body";
+
+    const head = document.createElement("div");
+    head.className = "rebuild-card-head";
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    head.appendChild(name);
+    if (item.analysis) {
+      const meta = REBUILD_CATEGORY_META[item.analysis.category] || REBUILD_CATEGORY_META.informative;
+      const badge = document.createElement("span");
+      badge.className = "rebuild-badge";
+      badge.dataset.tone = meta.tone;
+      badge.textContent = meta.label;
+      head.appendChild(badge);
+    } else if (!item.error) {
+      const badge = document.createElement("span");
+      badge.className = "rebuild-badge";
+      badge.dataset.tone = "pending";
+      badge.textContent = item.upload_id ? "识别中…" : "上传中…";
+      head.appendChild(badge);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "rebuild-remove";
+    remove.textContent = "×";
+    remove.title = "移除这张图片";
+    remove.addEventListener("click", () => {
+      rebuildItems.splice(index, 1);
+      renderRebuildCards();
+    });
+    head.appendChild(remove);
+    body.appendChild(head);
+
+    const note = document.createElement("p");
+    note.className = "rebuild-card-note";
+    if (item.error) {
+      note.textContent = item.error;
+      card.classList.add("is-error");
+    } else if (item.analysis) {
+      note.textContent = item.analysis.category === "unrelated"
+        ? "这张图片不像演示页面。你希望把它作为页面素材、根据它创作内容，还是仅参考视觉风格？不选择用途就不会生成。"
+        : (item.analysis.reasoning || item.analysis.description || "");
+    } else {
+      note.textContent = "Agent 正在判断图片类型…";
+    }
+    body.appendChild(note);
+
+    if (item.analysis && !item.error) {
+      const select = document.createElement("select");
+      select.className = "rebuild-route-select";
+      const routes = item.analysis.category === "slide"
+        ? REBUILD_ROUTES
+        : REBUILD_ROUTES.filter((route) => route.value !== "rebuild");
+      if (item.analysis.category === "unrelated") {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "请选择用途（否则不生成）";
+        select.appendChild(placeholder);
+      }
+      routes.forEach((route) => {
+        const option = document.createElement("option");
+        option.value = route.value;
+        const recommended = (
+          (route.value === "rebuild" && item.analysis.category === "slide")
+          || (route.value === "design_from_content" && item.analysis.category === "informative")
+        );
+        option.textContent = `${route.label}${recommended ? "（推荐）" : ""}`;
+        select.appendChild(option);
+      });
+      select.value = item.route || "";
+      select.addEventListener("input", () => {
+        item.route = select.value || null;
+        updateRebuildFooter();
+      });
+      body.appendChild(select);
+    }
+
+    card.append(thumb, body);
+    rebuildCards.appendChild(card);
+  });
+  updateRebuildFooter();
+}
+
+function updateRebuildFooter() {
+  const total = rebuildItems.length;
+  rebuildCountChip.textContent = `${total} 张图片`;
+  rebuildFooter.hidden = total === 0;
+  const ready = rebuildReadyItems().length;
+  const pending = rebuildItems.some((item) => !item.error && (!item.upload_id || !item.analysis));
+  startRebuildButton.disabled = ready === 0 || pending;
+  startRebuildButton.textContent = pending
+    ? "识别中…"
+    : ready > 0
+      ? `开始重建（${ready} 页）`
+      : "开始重建";
+}
+
+async function addRebuildFile(file) {
+  if (rebuildItems.length >= 10) return;
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) return;
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    rebuildItems.push({name: file.name, error: "超过 20MB 限制", upload_id: null, route: null});
+    renderRebuildCards();
+    return;
+  }
+  const item = {name: file.name, upload_id: null, analysis: null, route: null, error: null};
+  rebuildItems.push(item);
+  renderRebuildCards();
+  try {
+    const uploadResponse = await fetch(`/api/uploads?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      body: file
+    });
+    const uploaded = await uploadResponse.json();
+    if (!uploadResponse.ok) throw new Error(uploaded.detail || "上传失败");
+    item.upload_id = uploaded.upload_id;
+    item.name = uploaded.name;
+    renderRebuildCards();
+    const analysis = await requestJson("/api/image-analyses", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({upload_id: item.upload_id})
+    });
+    item.analysis = analysis;
+    item.route = analysis.suggested_route || null;
+  } catch (error) {
+    item.error = `处理失败：${error.message}`;
+  }
+  renderRebuildCards();
+}
+
+async function addRebuildFiles(fileList) {
+  for (const file of Array.from(fileList || [])) {
+    await addRebuildFile(normalizedAttachmentFile(file));
+  }
+}
+
+rebuildDropzone.addEventListener("click", () => rebuildFileInput.click());
+rebuildFileInput.addEventListener("change", async () => {
+  const files = Array.from(rebuildFileInput.files || []);
+  rebuildFileInput.value = "";
+  await addRebuildFiles(files);
+});
+rebuildDropzone.addEventListener("dragover", (event) => {
+  if (!event.dataTransfer?.types?.includes("Files")) return;
+  event.preventDefault();
+  rebuildDropzone.classList.add("is-dragover");
+});
+rebuildDropzone.addEventListener("dragleave", () => {
+  rebuildDropzone.classList.remove("is-dragover");
+});
+rebuildDropzone.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  rebuildDropzone.classList.remove("is-dragover");
+  await addRebuildFiles(event.dataTransfer?.files);
+});
+document.addEventListener("paste", async (event) => {
+  if (activeView !== "rebuild") return;
+  const files = Array.from(event.clipboardData?.files || []);
+  if (!files.length) return;
+  event.preventDefault();
+  await addRebuildFiles(files);
+});
+
+startRebuildButton.addEventListener("click", async () => {
+  const items = rebuildReadyItems().map((item) => ({
+    upload_id: item.upload_id,
+    route: item.route
+  }));
+  if (!items.length) return;
+  startRebuildButton.disabled = true;
+  try {
+    const job = await requestJson("/api/image-rebuild-jobs", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        items,
+        deck_title: rebuildDeckTitle.value.trim() || "图片重建"
+      })
+    });
+    rebuildItems = [];
+    renderRebuildCards();
+    prepareJobWorkspace(items.length);
+    await trackCreatedJob(job);
+  } catch (error) {
+    startRebuildButton.disabled = false;
+    alert(`创建重建任务失败：${error.message}`);
+  }
 });
 
 /* ---------- Pre-generation outline & script confirmation ---------- */

@@ -136,3 +136,35 @@ def invoke_with_timeout(
     if status == "error":
         raise payload
     return payload
+
+
+def load_dotenv_file(path: "str | None" = None) -> list[str]:
+    """Load KEY=VALUE pairs from a .env file into os.environ.
+
+    Existing environment variables always win, so an exported key overrides
+    the file. Lines starting with '#' and blank lines are ignored; values may
+    be wrapped in single or double quotes. Returns the keys that were set.
+    """
+
+    import os
+    from pathlib import Path
+
+    env_path = Path(path) if path else Path.cwd() / ".env"
+    if not env_path.is_file():
+        return []
+    loaded: list[str] = []
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded

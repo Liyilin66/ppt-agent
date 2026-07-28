@@ -1,6 +1,6 @@
 # ppt-agent
 
-一个本地优先的 AI Presentation Agent：把一句话需求、详细 prompt 或文档资料，转化为可先确认大纲、生成中逐页预览、成片后继续对话修改的可编辑 PowerPoint。
+一个本地优先的 AI Presentation Agent：把一句话需求、详细 prompt、文档资料或参考图片，转化为可先确认大纲、生成中逐页预览、成片后继续对话修改的可编辑 PowerPoint。
 
 当前产品主线已经验证到 **100 页**。Web UI 提供统一的 1-100 页对话创建入口：1-3 页进入快速管线，4-100 页进入 v2 自由布局管线。legacy 30 页批次与 PPT Master recovery 作为兼容和恢复路径继续保留，但不再要求普通用户理解 batch、重试次数或 QA 阈值。
 
@@ -23,6 +23,7 @@
 | 生成中逐页预览、可见区域缩略图加载、跟随最新页面 | 已完成 |
 | 成片后自然语言修改：指定页面或全局主题，重新 QA 并覆盖导出 | 已完成 |
 | 对话附件：PDF / DOCX / MD / TXT 摘要，PNG / JPG / WEBP 视觉理解与页面引用 | 已完成 |
+| 图片理解与可编辑页面重建：先分类，再重建、提炼、嵌入或参考风格 | 已完成 |
 | SQLite 演示历史、job、进度、取消、恢复、artifact 下载 | 已完成 |
 | OpenAI-compatible / Anthropic BYOK | CLI 与服务端环境变量可用 |
 | PDF / DOCX / MD / TXT 提炼 | v2 CLI 与 Web 对话附件可用 |
@@ -79,6 +80,22 @@ Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句
 
 ![Conversational revisions after generation](docs/readme/web-agent-revision.jpg)
 
+### 图片理解与可编辑页面重建
+
+独立的“图片转可编辑 PPT”工作台支持点击、拖拽或粘贴图片。Agent 不会把任何图片都机械地描成一页：它先通过视觉模型判断图片属于完整演示页、可用于演示的信息图片，还是与演示无关的普通图片，再给出适合的处理路线。
+
+![Image understanding and editable slide rebuild](docs/readme/web-image-rebuild.jpg)
+
+| 图片与用户意图 | 默认处理 |
+| --- | --- |
+| PPT 截图、AI 生成演示页、信息图、海报式页面 | 重建标题、正文、形状、表格和图表为原生可编辑元素 |
+| 产品截图、流程图、数据图、白板、文档照片 | 根据内容重新设计，或保留原图并补充可编辑解读 |
+| 只需要图片中的文字或数据 | OCR 后重建为文本、表格或图表 |
+| 只想参考配色与构图 | 提取主题和视觉语言，不复制原内容 |
+| 自拍、宠物、风景等无明确演示用途的图片 | 默认不生成，等待用户明确选择嵌入、内容设计或风格参考 |
+
+一次最多处理 10 张图，每张图对应一页。页面结构、文字、形状、表格和可识别图表尽量重建为 PowerPoint 原生元素；照片和复杂插画区域仍然保留为裁剪后的位图，因此“可编辑”不等于把每个像素或照片中的物体都矢量化。若模型重建失败，系统会保留原图作为 fallback，并把 QA 问题写入报告，不会伪报完全重建成功。
+
 | SQLite 演示历史 | 交付中心 |
 | --- | --- |
 | ![SQLite presentation history](docs/readme/web-presentation-history.jpg) | ![Presentation delivery center](docs/readme/web-delivery-center.jpg) |
@@ -99,7 +116,7 @@ Web 工作台还包括：
 - 五阶段任务进度与前端平滑运行计时。
 - 临时请求失败后自动继续轮询。
 - 对话状态、内部 Brief 与 job 关联恢复。
-- 创建与修订对话中的文档、图片附件上传和状态提示。
+- 创建、修订和图片重建中的文档/图片上传、拖拽、粘贴和状态提示。
 - 生成前大纲、逐页脚本和 speaker notes 编辑确认。
 - v2 checkpoint 页面生成后立即进入 storyboard。
 - 真实 SVG / PageDesign HTML 单页预览与视觉高光页选择。
@@ -298,13 +315,19 @@ uv run pytest
 
 ### 启动 Web UI
 
-Web UI 不接收用户输入 API key，key 只从服务端环境变量读取：
+Web UI 不接收用户输入 API key。项目启动时会读取根目录 `.env`，已导出的系统环境变量优先级更高；`.env` 已被 Git 忽略：
 
 ~~~bash
-export OPENAI_API_KEY="..."
-export OPENAI_BASE_URL="https://your-openai-compatible-endpoint/v1"
-export OPENAI_MODEL="gpt-5.5"
+PPT_AGENT_API_KEY=sk-你的key
 
+# OpenAI-compatible 代理按需设置：
+# PPT_AGENT_BASE_URL=https://your-openai-compatible-endpoint/v1
+# PPT_AGENT_MODEL=gpt-5.5
+~~~
+
+启动服务：
+
+~~~bash
 export PPT_MASTER_DIR="/Users/you/Documents/ppt-master"  # optional
 export LONG_DECK_JOB_TIMEOUT_SECONDS=7200
 
@@ -405,6 +428,8 @@ ppt-agent v2 preview   Render DeckDesign as browser HTML
 | GET /api/presentation-interviews/{id} | 恢复 SQLite 中的访谈状态 |
 | POST /api/uploads?filename=... | 上传单个文档或图片，返回 `upload_id` |
 | GET /api/uploads/{upload_id} | 下载已上传的原始附件 |
+| POST /api/image-analyses | 对上传图片分类、描述、OCR，并返回推荐处理路线 |
+| POST /api/image-rebuild-jobs | 按用户确认的路线创建图片重建 job |
 | POST /api/deck-plans | 为 4-100 页任务生成可编辑大纲和逐页脚本 |
 | GET /api/deck-plans/{plan_id} | 查询规划状态或恢复待确认计划 |
 | PUT /api/deck-plans/{plan_id} | 保存用户编辑后的章节和页面脚本 |
@@ -439,7 +464,8 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 - 最高页数承诺为 100；200 页没有真实验证，因此已从产品和 CLI 上限移除。
 - Web UI 尚未接入联网搜索开关。
 - Web UI 不允许用户直接填写 API key。
-- 图片附件只能作为内容依据或页面素材，不支持从一张截图自动重建整页可编辑 PPT。
+- 图片重建依赖支持视觉输入的模型；结构和文字可编辑，但照片与复杂插画区域仍是位图。
+- 截图中不可辨认的字体、数据或遮挡内容只能近似恢复；重建结果必须结合 QA 报告和预览检查。
 - 没有通用 LLM tool calling；不支持 RAG、向量数据库或多 Agent runtime。
 - 没有登录、多租户、云端队列或生产级权限系统。
 - v2 100 页与 PPT Master 当前是两条独立视觉生成路线。
@@ -452,7 +478,7 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 src/ppt_agent/
 ├── api.py                     # FastAPI + Web workspace + job endpoints
 ├── webui/                     # 独立、无框架依赖的 Web 产品界面
-│   ├── index.html             # 五个产品视图和语义结构
+│   ├── index.html             # 六个产品视图和语义结构
 │   ├── styles.css             # 深色设计系统与响应式布局
 │   └── app.js                 # 对话、任务轮询、实时预览和历史交互
 ├── requirements_interview.py  # 自适应对话访谈与内部 Brief
@@ -467,6 +493,7 @@ src/ppt_agent/
     ├── providers.py           # OpenAI-compatible / Anthropic JSON 与视觉输入
     ├── planning.py            # brief, outline, skeleton, page briefs
     ├── revise.py              # 结构化修订计划、局部重设计和重新导出
+    ├── rebuild.py             # 图片分类后的可编辑页面重建与 fallback
     ├── ir.py                  # PageDesign / DeckDesign
     ├── qa.py                  # page QA and deterministic repair
     ├── render.py              # editable PPTX renderer
@@ -485,7 +512,7 @@ docs/design/                   # UI visual QA evidence
 当前验证基线：
 
 ~~~text
-496 passed
+505 passed
 uv sync
 uv lock --check
 uv run pytest

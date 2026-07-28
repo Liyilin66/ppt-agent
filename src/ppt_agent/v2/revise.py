@@ -38,7 +38,7 @@ from ppt_agent.v2.orchestrator import (
     _stage_image_assets,
 )
 from ppt_agent.v2.planning import ContentBrief, DeckSkeleton, PageBrief, PageSlot
-from ppt_agent.v2.providers import LLMClient
+from ppt_agent.v2.providers import LLMClient, encode_image_for_vision
 from ppt_agent.v2.qa import PageQAResult, review_page, summarize
 from ppt_agent.v2.render import render_deck
 
@@ -165,12 +165,7 @@ async def revise_deck_async(
                         name=name, language=brief.language
                     ),
                     context={"name": name},
-                    images=[
-                        (
-                            _IMAGE_MEDIA_TYPES.get(path.suffix.lower(), "image/png"),
-                            _base64.b64encode(path.read_bytes()).decode("ascii"),
-                        )
-                    ],
+                    images=[encode_image_for_vision(path)],
                 )
                 entry["description"] = str(payload.get("description") or "").strip()
                 entry["extracted_text"] = str(payload.get("extracted_text") or "").strip()

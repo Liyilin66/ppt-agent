@@ -499,3 +499,150 @@ def build_image_digest_user_prompt(*, name: str, language: str) -> str:
         f"Write the description in: {language}\n"
         "Analyze the attached image now. Return ONLY the JSON object."
     )
+
+
+IMAGE_CLASSIFY_SYSTEM = """You are the intake analyst of a presentation studio.
+Look at the attached image and decide how it relates to slide making.
+Reply with ONLY a JSON object:
+{"category": "slide|informative|unrelated", "confidence": 0.0-1.0,
+ "reasoning": str, "description": str, "extracted_text": str,
+ "title_guess": str}
+Categories:
+- "slide": the image IS a complete presentation page — a PPT screenshot, an
+  AI-generated slide, an infographic or poster-style page with deliberate
+  title/body/visual layout.
+- "informative": not a finished slide, but it carries content usable in a
+  presentation — product screenshots, flowcharts, data charts, whiteboard
+  photos, diagrams, documents.
+- "unrelated": no presentation-usable information — selfies, pets, scenery,
+  random photos.
+Rules:
+- reasoning: ONE short sentence for the end user, in the language given in the
+  user prompt, explaining the judgement.
+- description: 2-4 sentences on what the image shows (same language).
+- extracted_text: legible text/numbers transcribed compactly; "" if none.
+- title_guess: a short title for this image's content (same language)."""
+
+
+def build_image_classify_user_prompt(*, name: str, language: str) -> str:
+    return (
+        f"Image file name: {name}\n"
+        f"Write reasoning/description in: {language}\n"
+        "Classify the attached image now. Return ONLY the JSON object."
+    )
+
+
+THEME_FROM_IMAGES_SYSTEM = (
+    THEME_SYSTEM
+    + """
+
+You are EXTRACTING the theme from the attached reference image(s) instead of
+inventing one: sample the dominant background, primary brand color, secondary
+and accent hues, and text colors directly from the images (adjusted only as
+needed to satisfy the contrast rules). The style signature should describe the
+composition/decoration language actually visible in the images so rebuilt pages
+feel native to them."""
+)
+
+
+def build_theme_from_images_user_prompt(*, names: list[str], language: str) -> str:
+    listed = "\n".join(f"- {name}" for name in names)
+    return (
+        f"Reference images:\n{listed}\n"
+        f"Language context: {language}\n"
+        "Extract the JSON theme from the attached image(s) now."
+    )
+
+
+_REBUILD_ROUTE_BRIEFS = {
+    "rebuild": """ASSIGNMENT: faithful EDITABLE REBUILD of the attached slide image.
+- Reproduce the layout: same title, same text (verbatim, fix obvious OCR noise),
+  same visual hierarchy, positions proportional to the original on the
+  1280x720 canvas.
+- Recreate shapes, cards, charts and tables as native elements (charts need the
+  visible data values; estimate honestly from the image).
+- Photographic or illustration regions can NOT become editable shapes: cover
+  each with an image element whose src is "crop:x,y,w,h" using coordinates
+  normalized 0-1 relative to the original image; it will be cropped from the
+  source automatically. Use at most 4 crop regions.
+- Map colors to the closest theme color roles.""",
+    "design_from_content": """ASSIGNMENT: design ONE NEW slide from the information in the attached image.
+- Do NOT copy the layout. Understand the content, then reorganize it into a
+  titled, well-structured page (points, stats, chart/table if the image
+  contains real data) following the deck style signature.""",
+    "embed_with_notes": """ASSIGNMENT: design ONE slide that PRESENTS the attached image itself.
+- Place the original image prominently with an image element whose src is
+  exactly the provided file name (never "crop:...").
+- Surround it with editable interpretation: a title, 2-4 takeaway points or
+  annotations, and one conclusion line. The image is the exhibit; your text
+  explains it.""",
+    "style_reference": """ASSIGNMENT: design ONE style-sample slide in the visual style of the attached
+image, without copying its content.
+- Show off the extracted theme: a hero title, subtitle, two or three sample
+  cards/stats with placeholder-but-plausible copy about the style itself
+  (e.g. what the palette and composition communicate).
+- Do NOT reproduce any concrete text, data or subject matter from the image.""",
+    "extract_text": """ASSIGNMENT: design ONE slide holding ONLY the text/data extracted from the
+attached image.
+- Transcribe headings, bullet text, figures; rebuild tables as table elements
+  and charted data as chart elements with the visible values.
+- Add NO new content beyond a minimal organizing title. No decorative
+  storytelling; this is a faithful, editable transcription.""",
+}
+
+
+def build_image_page_user_prompt(
+    *,
+    route: str,
+    theme: ThemeSpec,
+    name: str,
+    page_number: int,
+    total_pages: int,
+    language: str,
+    user_note: str | None = None,
+) -> str:
+    assignment = _REBUILD_ROUTE_BRIEFS.get(route, _REBUILD_ROUTE_BRIEFS["design_from_content"])
+    note = f"\nUser note for this image: {user_note.strip()}" if user_note else ""
+    return (
+        f"Source image file: {name} (page {page_number}/{total_pages})\n"
+        f"Slide language: {language}\n"
+        f"Theme mood: {theme.mood} (motif: {theme.motif}; colors come from roles only)\n\n"
+        f"DECK STYLE SIGNATURE:\n{theme.style.as_prompt_block()}\n\n"
+        f"{assignment}{note}\n\n"
+        "Design this one slide now. Return ONLY the JSON object."
+    )
+
+
+IMAGE_PAGE_SYSTEM_TEMPLATE = (
+    """You are the slide reconstruction specialist of a presentation studio.
+You look at ONE attached source image and produce ONE slide as a JSON layout on
+a 1280x720 canvas (x grows right, y grows down). Reply with ONLY a JSON object:
+{{"role": "content", "title": str, "background": <color role>,
+  "background_gradient": {{"start": <color role>, "end": <color role>, "angle_deg": 0-359}} (optional),
+  "show_chrome": false,
+  "elements": [ <element>, ... ], "speaker_notes": str}}
+
+"""
+    + _ELEMENT_SCHEMA_TEMPLATE
+    + """
+
+RECONSTRUCTION RULES:
+1. Follow the ASSIGNMENT in the user message exactly — it defines whether you
+   faithfully rebuild, redesign, embed, style-sample or transcribe.
+2. Honest editability: text, shapes, charts and tables become native editable
+   elements; photographic regions stay images (via "crop:x,y,w,h" src values,
+   normalized 0-1 against the source image) — never fake a photo with shapes.
+3. The full canvas is yours (show_chrome is false); keep text inside
+   x:32..1248, y:24..696 so nothing clips.
+4. Colors come from theme roles only. Text must stay readable on its backdrop.
+5. Charts/tables need real values visible in the image; never invent numbers in
+   faithful modes. 4-18 elements. speaker_notes: 1-3 sentences in the slide
+   language describing this page.
+6. All visible copy in {language}."""
+)
+
+
+def build_image_page_system(language: str) -> str:
+    return IMAGE_PAGE_SYSTEM_TEMPLATE.format(
+        icons=icon_catalog_for_prompt(), language=language
+    )

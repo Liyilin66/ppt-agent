@@ -67,7 +67,12 @@ from ppt_agent.ppt_master_runner import (
     register_ppt_master_runner_result_artifact,
     run_ppt_master_local_export,
 )
-from ppt_agent.runtime import StageEvent, sanitize_error_message, observed_stage
+from ppt_agent.runtime import (
+    StageEvent,
+    load_dotenv_file,
+    observed_stage,
+    sanitize_error_message,
+)
 from ppt_agent.requirements_interview import (
     InterviewAttachment,
     InterviewMessage,
@@ -89,6 +94,12 @@ from ppt_agent.v2.planning import (
 )
 from ppt_agent.v2 import prompts as v2_prompts
 from ppt_agent.v2.intake import ingest_sources as v2_ingest_sources
+from ppt_agent.v2.rebuild import (
+    ROUTE_LABELS as REBUILD_ROUTE_LABELS,
+    RebuildItem,
+    RebuildRoute,
+    rebuild_deck as rebuild_v2_deck,
+)
 from ppt_agent.v2.revise import RevisionError, revise_deck as revise_v2_deck
 from ppt_agent.v2.design import ThemeSpec as V2ThemeSpec
 from ppt_agent.v2.ir import DeckDesign as V2DeckDesign
@@ -96,6 +107,7 @@ from ppt_agent.v2.ir import PageDesign as V2PageDesign
 from ppt_agent.v2.preview import page_to_embedded_html as v2_page_to_embedded_html
 from ppt_agent.v2.providers import (
     ProviderError as V2ProviderError,
+    encode_image_for_vision,
     UsageMeter as V2UsageMeter,
     build_client as build_v2_client,
     ensure_pricing as ensure_v2_pricing,
@@ -276,8 +288,7 @@ def _attachment_digest_text(path: Path, *, client, language: str = "zh-CN") -> s
         return digest[:2400] or "(文档已上传，但未能提取文本)"
     if client is None:
         return "(图片已上传，未能生成内容描述)"
-    media_type = UPLOAD_IMAGE_MEDIA_TYPES.get(suffix, "image/png")
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    media_type, encoded = encode_image_for_vision(path)
     try:
         payload = asyncio.run(
             client.complete_json(
@@ -300,6 +311,35 @@ def _attachment_digest_text(path: Path, *, client, language: str = "zh-CN") -> s
     except Exception as exc:  # noqa: BLE001 - digest is best-effort
         logger.warning("image_digest_failed name=%s error=%s", path.name, sanitize_error_message(exc))
         return "(图片已上传，未能生成内容描述)"
+
+
+class ImageAnalysisRequest(StrictModel):
+    upload_id: str = Field(..., min_length=1, max_length=64)
+    language: str = Field(default="zh-CN", min_length=1)
+
+
+class ImageAnalysisResponse(StrictModel):
+    upload_id: str
+    name: str
+    category: Literal["slide", "informative", "unrelated"]
+    confidence: float = Field(..., ge=0, le=1)
+    reasoning: str = ""
+    description: str = ""
+    extracted_text: str = ""
+    title_guess: str = ""
+    suggested_route: str | None = None
+
+
+class ImageRebuildItemRequest(StrictModel):
+    upload_id: str = Field(..., min_length=1, max_length=64)
+    route: RebuildRoute
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CreateImageRebuildJobRequest(StrictModel):
+    items: list[ImageRebuildItemRequest] = Field(..., min_length=1, max_length=10)
+    deck_title: str = Field(default="图片重建", min_length=1, max_length=80)
+    language: str = Field(default="zh-CN", min_length=1)
 
 
 class CreateDeckRevisionRequest(StrictModel):
@@ -465,12 +505,49 @@ class ContinuePresentationInterviewRequest(StrictModel):
     attachment_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
+def _configured_openai_api_key() -> str:
+    """Resolve the server-side BYOK key while preserving legacy env compatibility."""
+
+    return (
+        os.getenv("PPT_AGENT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
+
+
+def _configured_openai_model() -> str:
+    return (
+        os.getenv("PPT_AGENT_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or DEFAULT_MODEL
+    ).strip()
+
+
+def _configured_openai_base_url() -> str:
+    return (
+        os.getenv("PPT_AGENT_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or ""
+    ).strip()
+
+
+def _require_server_api_key() -> None:
+    if not _configured_openai_api_key():
+        raise HTTPException(
+            status_code=503,
+            detail="PPT_AGENT_API_KEY or OPENAI_API_KEY is not set on the server.",
+        )
+
+
 def _create_chat_model():
     from langchain_openai import ChatOpenAI
 
-    kwargs = {"model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL)}
-    if os.getenv("OPENAI_BASE_URL"):
-        kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
+    kwargs = {
+        "model": _configured_openai_model(),
+        "api_key": _configured_openai_api_key(),
+    }
+    if base_url := _configured_openai_base_url():
+        kwargs["base_url"] = base_url
     return ChatOpenAI(**kwargs)
 
 
@@ -478,13 +555,14 @@ def _create_interview_chat_model():
     from langchain_openai import ChatOpenAI
 
     kwargs = {
-        "model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL),
+        "model": _configured_openai_model(),
+        "api_key": _configured_openai_api_key(),
         "reasoning_effort": os.getenv("PPT_AGENT_INTERVIEW_REASONING_EFFORT", "low"),
         "max_completion_tokens": _env_int("PPT_AGENT_INTERVIEW_MAX_TOKENS", 1800),
         "max_retries": 1,
     }
-    if os.getenv("OPENAI_BASE_URL"):
-        kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
+    if base_url := _configured_openai_base_url():
+        kwargs["base_url"] = base_url
     return ChatOpenAI(**kwargs)
 
 
@@ -1980,6 +2058,94 @@ def _run_deck_revision(
         store.update_deck_revision(revision_id, status="failed", error_message=error_message)
 
 
+def _run_image_rebuild_job(
+    store: JobStore,
+    jobs_root: Path,
+    job_id: str,
+    client,
+    items: list[RebuildItem],
+    *,
+    deck_title: str,
+    language: str,
+) -> None:
+    output_dir = jobs_root / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    store.update_job(job_id, status="running", current_stage="v2_intake")
+    total = len(items)
+
+    def progress_logger(message: str) -> None:
+        if store.is_cancel_requested(job_id):
+            raise _V2JobCancelled("image rebuild was cancelled.")
+        design_match = re.match(r"^\[design\] (\d+)/(\d+) content pages done$", message)
+        current_stage = None
+        completed_pages = None
+        if design_match:
+            completed_pages = min(int(design_match.group(1)), total)
+            current_stage = f"generating_v2_page_{completed_pages}_of_{total}"
+        elif message.startswith("[theme]"):
+            current_stage = "v2_theme"
+        elif message.startswith("[render]"):
+            current_stage = "v2_rendering_complete"
+        if current_stage is not None or completed_pages is not None:
+            store.update_long_deck_progress(
+                job_id,
+                current_stage=current_stage,
+                total_batches=total,
+                completed_batches=completed_pages,
+            )
+        logger.info(
+            "image_rebuild_stage %s",
+            json.dumps({"job_id": job_id, "message": message}, ensure_ascii=False),
+        )
+
+    try:
+        result = rebuild_v2_deck(
+            items=items,
+            output_dir=output_dir,
+            client=client,
+            deck_title=deck_title,
+            language=language,
+            progress=progress_logger,
+        )
+        _register_job_artifacts(store, job_id, output_dir)
+        qa_score = _read_v2_qa_score(Path(result.qa_report_path))
+        store.update_long_deck_progress(
+            job_id,
+            total_batches=total,
+            completed_batches=result.page_count,
+            failed_batches=0,
+        )
+        # Rebuild is confirm-by-preview: QA findings are advisory, never a gate.
+        store.update_job(
+            job_id,
+            status="succeeded",
+            error_message=None,
+            accepted=True,
+            qa_score=qa_score,
+            current_stage="v2_completed",
+        )
+    except _V2JobCancelled as exc:
+        if output_dir.exists():
+            _register_job_artifacts(store, job_id, output_dir)
+        store.update_job(
+            job_id,
+            status="cancelled",
+            error_message=str(exc),
+            accepted=False,
+            current_stage="v2_cancelled",
+        )
+    except Exception as exc:
+        error_message = sanitize_error_message(exc)
+        logger.error("image_rebuild_failed job_id=%s error=%s", job_id, error_message)
+        store.update_job(
+            job_id,
+            status="failed",
+            error_message=error_message,
+            accepted=False,
+            current_stage="v2_failed",
+        )
+
+
 def _run_long_deck_job(
     store: JobStore,
     jobs_root: Path,
@@ -2160,6 +2326,9 @@ def _run_long_deck_job(
 
 
 def create_app(data_dir: str | Path | None = None, store: JobStore | None = None) -> FastAPI:
+    loaded_env_keys = load_dotenv_file()
+    if loaded_env_keys:
+        logger.info("dotenv_loaded keys=%s", ",".join(loaded_env_keys))
     app = FastAPI(title="ppt-agent API")
     root = Path(data_dir) if data_dir is not None else Path(os.getenv("PPT_AGENT_DATA_DIR", DEFAULT_DATA_DIR))
     jobs_root = root / "jobs"
@@ -2253,8 +2422,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
     def start_presentation_interview(
         payload: StartPresentationInterviewRequest,
     ) -> PresentationInterviewState:
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+        _require_server_api_key()
         try:
             model = _create_interview_chat_model()
             user_message = InterviewMessage(
@@ -2310,8 +2478,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         state = _presentation_interview_state_from_record(record)
         if state.turn_count >= 20:
             raise HTTPException(status_code=409, detail="Presentation interview reached its safety turn limit.")
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+        _require_server_api_key()
 
         user_message = InterviewMessage(
             role="user",
@@ -2349,8 +2516,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
 
     @app.post("/api/jobs", response_model=CreateJobResponse, status_code=202)
     def create_job(payload: CreateJobRequest, background_tasks: BackgroundTasks) -> CreateJobResponse:
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+        _require_server_api_key()
 
         try:
             model = _create_chat_model()
@@ -2413,8 +2579,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             )
             return CreateJobResponse(job_id=job.job_id, status=job.status)
 
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set on the server.")
+        _require_server_api_key()
 
         try:
             model = _create_chat_model()
@@ -2633,6 +2798,120 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         )
         return CreateJobResponse(job_id=job.job_id, status=job.status)
 
+    @app.post("/api/image-analyses", response_model=ImageAnalysisResponse)
+    def analyze_image(payload: ImageAnalysisRequest) -> ImageAnalysisResponse:
+        path = _resolve_upload(app.state.uploads_root, payload.upload_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Upload not found.")
+        if _upload_kind(path.suffix.lower()) != "image":
+            raise HTTPException(status_code=415, detail="Only images can be analyzed.")
+        try:
+            client = _create_v2_model_client()
+        except (V2ProviderError, ValueError) as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not initialize the v2 model provider: {detail}",
+            ) from exc
+        media_type, encoded = encode_image_for_vision(path)
+        try:
+            analysis = asyncio.run(
+                client.complete_json(
+                    task="image_classify",
+                    system=v2_prompts.IMAGE_CLASSIFY_SYSTEM,
+                    user=v2_prompts.build_image_classify_user_prompt(
+                        name=path.name, language=payload.language
+                    ),
+                    context={"name": path.name},
+                    images=[(media_type, encoded)],
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - surface as a clean API error
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=502, detail=f"Image analysis failed: {detail}"
+            ) from exc
+        category = str(analysis.get("category") or "informative")
+        if category not in ("slide", "informative", "unrelated"):
+            category = "informative"
+        suggested = {
+            "slide": "rebuild",
+            "informative": "design_from_content",
+            "unrelated": None,
+        }[category]
+        return ImageAnalysisResponse(
+            upload_id=payload.upload_id,
+            name=path.name,
+            category=category,  # type: ignore[arg-type]
+            confidence=max(0.0, min(1.0, float(analysis.get("confidence") or 0.5))),
+            reasoning=str(analysis.get("reasoning") or ""),
+            description=str(analysis.get("description") or ""),
+            extracted_text=str(analysis.get("extracted_text") or ""),
+            title_guess=str(analysis.get("title_guess") or ""),
+            suggested_route=suggested,
+        )
+
+    @app.post(
+        "/api/image-rebuild-jobs", response_model=CreateJobResponse, status_code=202
+    )
+    def create_image_rebuild_job(
+        payload: CreateImageRebuildJobRequest,
+        background_tasks: BackgroundTasks,
+    ) -> CreateJobResponse:
+        items: list[RebuildItem] = []
+        for entry in payload.items:
+            path = _resolve_upload(app.state.uploads_root, entry.upload_id)
+            if path is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Upload '{entry.upload_id}' not found."
+                )
+            if _upload_kind(path.suffix.lower()) != "image":
+                raise HTTPException(
+                    status_code=415, detail=f"'{path.name}' is not an image."
+                )
+            items.append(
+                RebuildItem(image_path=str(path), route=entry.route, note=entry.note)
+            )
+        try:
+            client = _create_v2_model_client()
+        except (V2ProviderError, ValueError) as exc:
+            detail = sanitize_error_message(exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not initialize the v2 model provider: {detail}",
+            ) from exc
+
+        job = app.state.job_store.create_job(job_type="image_rebuild")
+        routes_summary = "；".join(
+            f"{Path(item.image_path).name}→{REBUILD_ROUTE_LABELS.get(item.route, item.route)}"
+            for item in items
+        )
+        app.state.job_store.save_presentation_request(
+            job.job_id,
+            topic=payload.deck_title,
+            audience="图片理解与页面重建",
+            user_requirements=f"图片重建（{len(items)} 张）：{routes_summary}"[:2000],
+            slide_count=len(items),
+        )
+        app.state.job_store.update_long_deck_progress(
+            job.job_id,
+            current_stage="v2_intake",
+            total_batches=len(items),
+            completed_batches=0,
+            failed_batches=0,
+        )
+        background_tasks.add_task(
+            _run_image_rebuild_job,
+            app.state.job_store,
+            app.state.jobs_root,
+            job.job_id,
+            client,
+            items,
+            deck_title=payload.deck_title,
+            language=payload.language,
+        )
+        return CreateJobResponse(job_id=job.job_id, status=job.status)
+
     @app.post(
         "/api/jobs/{job_id}/revisions",
         response_model=DeckRevisionResponse,
@@ -2647,7 +2926,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         job = store.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
-        if job.job_type != "long_deck_v2":
+        if job.job_type not in {"long_deck_v2", "image_rebuild"}:
             raise HTTPException(
                 status_code=400,
                 detail="Only v2 presentations support conversational revisions.",
@@ -2872,7 +3151,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found.")
         job_dir = app.state.jobs_root / job_id
-        if job.job_type == "long_deck_v2":
+        if job.job_type in ("long_deck_v2", "image_rebuild"):
             numbers, update_token = _v2_preview_available_slide_numbers(job_dir)
             preview_kind = "v2_html" if numbers else "none"
             highlights = list(_cached_v2_visual_highlights(str(job_dir.resolve()), update_token))
@@ -2906,7 +3185,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             raise HTTPException(status_code=404, detail="Slide preview not found.")
 
         job_dir = app.state.jobs_root / job_id
-        if job.job_type == "long_deck_v2":
+        if job.job_type in ("long_deck_v2", "image_rebuild"):
             preview = _v2_preview_page(job_dir, slide_number)
             if preview is None:
                 raise HTTPException(status_code=404, detail="Slide preview not found.")

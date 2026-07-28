@@ -252,11 +252,13 @@ class LLMClient(Protocol):
         user: str,
         max_output_tokens: int | None = None,
         context: Any = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> Any:
         """Run one JSON task and return the parsed payload.
 
         ``context`` carries structured task inputs; HTTP clients ignore it,
         the deterministic mock uses it instead of parsing prompt text.
+        ``images`` contains ``(media_type, base64_data)`` vision inputs.
         """
         ...  # pragma: no cover
 
@@ -476,3 +478,64 @@ def build_client(
     if config.protocol == "anthropic":
         return AnthropicClient(config, usage=usage)
     return OpenAICompatClient(config, usage=usage)
+
+
+VISION_MAX_EDGE_PX = 1568
+VISION_JPEG_QUALITY = 85
+
+
+def encode_image_for_vision(
+    path: "str | os.PathLike[str]",
+    *,
+    max_edge: int = VISION_MAX_EDGE_PX,
+    jpeg_quality: int = VISION_JPEG_QUALITY,
+) -> tuple[str, str]:
+    """(media_type, base64) for a vision call, downscaled and recompressed.
+
+    Phone photos arrive at 4000px+/many MB; sending them raw blows past
+    provider read timeouts and wastes vision tokens. Anything larger than
+    ``max_edge`` on its long side is resized and re-encoded as JPEG. Falls
+    back to the original bytes if Pillow cannot process the file.
+    """
+
+    import base64 as _base64
+    import io
+    from pathlib import Path as _Path
+
+    file_path = _Path(path)
+    suffix = file_path.suffix.lower()
+    fallback_media = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }.get(suffix, "image/png")
+    raw = file_path.read_bytes()
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(raw)) as image:
+            width, height = image.size
+            needs_resize = max(width, height) > max_edge
+            needs_recompress = len(raw) > 600_000
+            if not needs_resize and not needs_recompress:
+                return fallback_media, _base64.b64encode(raw).decode("ascii")
+            if needs_resize:
+                scale = max_edge / max(width, height)
+                image = image.resize(
+                    (max(1, round(width * scale)), max(1, round(height * scale)))
+                )
+            if image.mode in ("RGBA", "LA", "P"):
+                from PIL import Image as _Image
+
+                background = _Image.new("RGB", image.size, (255, 255, 255))
+                converted = image.convert("RGBA")
+                background.paste(converted, mask=converted.split()[-1])
+                image = background
+            elif image.mode != "RGB":
+                image = image.convert("RGB")
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+            return "image/jpeg", _base64.b64encode(buffer.getvalue()).decode("ascii")
+    except Exception:  # noqa: BLE001 - fall back to the untouched bytes
+        return fallback_media, _base64.b64encode(raw).decode("ascii")

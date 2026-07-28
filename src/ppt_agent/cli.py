@@ -294,6 +294,9 @@ def _qa_score(value: str) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from ppt_agent.runtime import load_dotenv_file
+
+    load_dotenv_file()
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
