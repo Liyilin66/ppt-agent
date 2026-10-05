@@ -82,3 +82,33 @@ def test_stream_reassembles_json_and_keeps_final_usage(tmp_path):
         assert client.usage.input_tokens == 10
         assert client.pending_payload['usage']['completion_tokens'] == 5
     asyncio.run(verify())
+
+
+def test_production_prefix_changes_only_section_source(tmp_path):
+    docs = [{'doc_id': 'doc1', 'pages': [
+        {'pdf_page': n, 'text': 'routine'} for n in range(1, 64)
+    ]}]
+    docs[0]['pages'][-1]['text'] = 'projectalpha UNIQUE_LAST_PAGE'
+    client = RoutedClient(ProviderConfig(model='gpt-5.6-terra', api_key='test-key'),
+                          'D', docs, OfficialBudget(3), tmp_path, {}, full_prefix=False)
+    sent = []
+    def respond(request):
+        body = json.loads(request.content)
+        sent.append(body['messages'][1]['content'])
+        return httpx.Response(200, json={
+            'model': 'gpt-5.6-terra',
+            'choices': [{'message': {'content': '{}'}}],
+            'usage': {'prompt_tokens': 10, 'completion_tokens': 5},
+        })
+    async def verify():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+            client._client = http
+            await client.complete_json(task='brief', system='system', user='SHORT_PREFIX')
+            await client.complete_json(task='outline', system='system', user='ORIGINAL_OUTLINE')
+            await client.complete_json(task='section_pages', system='system',
+                user='Deck\nSource digest: SHORT\n\nSection: projectalpha',
+                context={'section': {'title': 'projectalpha', 'goal': '', 'talking_points': []}})
+        assert sent[:2] == ['SHORT_PREFIX', 'ORIGINAL_OUTLINE']
+        assert 'UNIQUE_LAST_PAGE' in sent[2]
+        assert 'Source digest: SHORT' not in sent[2]
+    asyncio.run(verify())

@@ -79,3 +79,14 @@ Brief and regenerates the failed Outline. Expanded B and D both use streaming;
 their folders are suffixed `_stream`. Report this transport difference when
 comparing small and expanded cases. No production code is changed. If the final
 stream usage or expected model is missing, halt rather than undercount cost.
+
+## Authorized final supplement
+
+Both expanded full-prefix Outline attempts failed at approximately 125 seconds.
+Do not retry either B attempt. First finish the free B/C/D audits. Then run
+`--supplement-d-large` exactly once: a fresh production Brief/Outline (original
+source truncation), followed by BM25 section excerpts over the same three reports.
+No shared B checkpoints, no full-prefix replacement, no request retries. A timeout
+ends this supplement. Preserve the prior $1.69892 budget booking including unknown
+failed-call reserves. Report this prefix change explicitly: small D versus large D
+is not a pure corpus-size comparison. Large C remains untested.

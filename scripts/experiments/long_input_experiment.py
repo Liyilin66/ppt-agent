@@ -64,7 +64,7 @@ class OfficialBudget:
 
 
 class RoutedClient(OpenAICompatClient):
-    def __init__(self, config, arm, docs, budget, output, model_identity, streaming=False):
+    def __init__(self, config, arm, docs, budget, output, model_identity, streaming=False, full_prefix=True):
         super().__init__(config, usage=UsageMeter())
         self.arm, self.docs, self.budget, self.output = arm, docs, budget, output
         self.model_identity = model_identity
@@ -77,6 +77,7 @@ class RoutedClient(OpenAICompatClient):
         self.pending_payload = None
         self.halted = False
         self.streaming = streaming
+        self.full_prefix = full_prefix
 
     def _build_request(self, system, user, max_output_tokens, *, images=None):
         url, headers, body = super()._build_request(system, user, max_output_tokens, images=images)
@@ -157,12 +158,12 @@ class RoutedClient(OpenAICompatClient):
         if self.halted:
             raise RuntimeError('Client stopped after an invalid response.')
         source_info = {'strategy': 'production_unmodified'}
-        if self.arm != 'A' and task == 'brief':
+        if self.arm != 'A' and self.full_prefix and task == 'brief':
             user = (f"User request:\n{context['user_prompt'].strip()}\n\n"
                     f"Planned deck length: {context['page_count']} slides.\n\n"
                     f'Source document digest:\n{self.full_source}')
             source_info = {'strategy': 'full_prefix', 'characters': len(self.full_source)}
-        elif self.arm != 'A' and task == 'outline':
+        elif self.arm != 'A' and self.full_prefix and task == 'outline':
             brief = ContentBrief.model_validate(context['brief']).model_copy(update={'source_digest': self.full_source})
             user = prompts.build_outline_user_prompt(brief, content_budget=context['content_budget'])
             source_info = {'strategy': 'full_prefix', 'characters': len(self.full_source)}
@@ -217,7 +218,8 @@ class RoutedClient(OpenAICompatClient):
             save(self.output / 'calls.json', self.records)
 
 
-async def run_arm(name, strategy, docs, config, budget, identity, out, prompt, prefix=None, streaming=False):
+async def run_arm(name, strategy, docs, config, budget, identity, out, prompt, prefix=None,
+                  streaming=False, production_prefix=False):
     folder = out / name
     if folder.exists():
         raise RuntimeError(f'{name} already exists; do not overwrite or rerun.')
@@ -229,7 +231,8 @@ async def run_arm(name, strategy, docs, config, budget, identity, out, prompt, p
             source = prefix / 'checkpoints' / file
             if source.exists():
                 shutil.copy2(source, target / file)
-    client = RoutedClient(config, strategy, docs, budget, folder, identity, streaming=streaming)
+    client = RoutedClient(config, strategy, docs, budget, folder, identity,
+                          streaming=streaming, full_prefix=not production_prefix)
     request = BuildRequest(prompt=prompt, page_count=20, language='zh-CN',
                            source_paths=[x['path'] for x in docs], enable_search=False,
                            output_dir=str(folder), resume=bool(prefix), concurrency=1,
@@ -237,7 +240,8 @@ async def run_arm(name, strategy, docs, config, budget, identity, out, prompt, p
     started = time.perf_counter()
     meta = {'arm': name, 'strategy': strategy, 'shared_prefix': prefix.name if prefix else None,
             'model_requested': config.model, 'request': request.model_dump(mode='json'),
-            'transport': 'streaming' if streaming else 'nonstream'}
+            'transport': 'streaming' if streaming else 'nonstream',
+            'prefix_policy': 'production_limits' if production_prefix else 'full/shared'}
     try:
         result = await plan_deck_async(request, client, progress=lambda x: print(f'[{name}] {x}', flush=True))
         save(folder / 'plan.json', result.model_dump(mode='json'))
@@ -261,6 +265,8 @@ async def run_arm(name, strategy, docs, config, budget, identity, out, prompt, p
 
 
 async def experiment(args):
+    if args.supplement_d_large:
+        return await supplement_d_large(args)
     if args.recover_streaming:
         return await recover_streaming(args)
     out = Path(args.output)
@@ -348,6 +354,38 @@ async def recover_streaming(args):
         save(out / 'recovery.json', recovery)
 
 
+async def supplement_d_large(args):
+    out = Path(args.output)
+    manifest = json.loads((out / 'manifest.json').read_text())
+    recovery = json.loads((out / 'recovery.json').read_text())
+    if args.model != manifest['model'] or args.budget != recovery['limit_usd']:
+        raise RuntimeError('Supplement cannot change the model or approved official-price cap.')
+    docs = read_documents([Path(x['path']) for x in manifest['large']])
+    if [x['sha256'] for x in docs] != [x['sha256'] for x in manifest['large']]:
+        raise RuntimeError('Frozen sources changed.')
+    load_dotenv_file(str(ROOT / '.env'))
+    config = provider_config_from_env().model_copy(update={
+        'model': args.model, 'max_output_tokens': 4096, 'max_retries': 0,
+        'timeout_seconds': 300, 'input_cost_per_mtok_usd': 2.0, 'output_cost_per_mtok_usd': 12.0,
+    })
+    budget = OfficialBudget(args.budget)
+    budget.spent = recovery['official_budget_booked_usd']
+    identity = {'model': args.model}
+    receipt = {'design': 'production Brief/Outline limits; only chapter requests use BM25',
+               'prior_booked_usd': budget.spent, 'limit_usd': budget.limit,
+               'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()}
+    try:
+        await run_arm('D_large_production_prefix', 'D', docs, config, budget, identity,
+                      out, manifest['prompt'], production_prefix=True)
+        receipt['status'] = 'succeeded'
+    except Exception:
+        receipt['status'] = 'failed_no_retry'
+        raise
+    finally:
+        receipt['official_budget_booked_usd'] = budget.spent
+        save(out / 'supplement.json', receipt)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', default=str(DEFAULT_OUT))
@@ -355,4 +393,5 @@ if __name__ == '__main__':
     parser.add_argument('--budget', type=float, default=3.0)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--recover-streaming', action='store_true')
+    parser.add_argument('--supplement-d-large', action='store_true')
     asyncio.run(experiment(parser.parse_args()))
