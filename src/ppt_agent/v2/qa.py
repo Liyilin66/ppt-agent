@@ -19,7 +19,7 @@ from ppt_agent.v2.design import (
     best_text_color,
     contrast_ratio,
 )
-from ppt_agent.v2.icons import ICON_GLYPHS
+from ppt_agent.v2.icons import ICON_GLYPHS, canonical_icon_name
 from ppt_agent.v2.ir import (
     CANVAS_HEIGHT,
     CANVAS_WIDTH,
@@ -350,17 +350,27 @@ def review_page(page: PageDesign, theme: ThemeSpec) -> tuple[PageDesign, PageQAR
             )
         )
 
-    # Unknown icons degrade to a dot; surface it so the model can pick better.
-    for element in elements:
-        if isinstance(element, IconItem) and element.name.strip().lower() not in ICON_GLYPHS:
-            issues.append(
-                QAIssue(
-                    code="unknown_icon",
-                    severity="warning",
-                    element_id=element.id,
-                    message=f"Icon '{element.name}' is not in the catalog; a dot is used",
-                )
+    # Off-catalog icon names: rewrite the ones we recognise, report the rest.
+    # A name that survives both stages renders as a dot, which reads as a blank
+    # blob at icon sizes — so it is worth surfacing rather than hiding.
+    for index, element in enumerate(elements):
+        if not isinstance(element, IconItem):
+            continue
+        if element.name.strip().lower() in ICON_GLYPHS:
+            continue
+        canonical = canonical_icon_name(element.name)
+        if canonical in ICON_GLYPHS:
+            elements[index] = element.model_copy(update={"name": canonical})
+            fixes.append(f"mapped icon '{element.name}' to '{canonical}'")
+            continue
+        issues.append(
+            QAIssue(
+                code="unknown_icon",
+                severity="warning",
+                element_id=element.id,
+                message=f"Icon '{element.name}' is not in the catalog; a dot is used",
             )
+        )
 
     fixed_page = page.model_copy(update={"elements": elements})
     return fixed_page, PageQAResult(

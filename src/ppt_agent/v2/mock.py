@@ -83,6 +83,8 @@ class MockLLMClient:
             return theme
         if task == "image_page":
             return self._image_page(context)
+        if task == "image_content":
+            return self._image_content(context)
         raise ValueError(f"MockLLMClient does not know task '{task}'")
 
     def _image_classify(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -134,6 +136,52 @@ class MockLLMClient:
             "elements": elements,
             "speaker_notes": f"这一页来自图片 {name} 的 {route} 路线。",
         }
+
+    def _image_content(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Content-only payload for the templated rebuild routes.
+
+        The layout cycles with the page number so an offline run exercises every
+        archetype the typesetter can draw.
+        """
+
+        route = str((context or {}).get("route", "design_from_content"))
+        name = str((context or {}).get("name", "image.png"))
+        page_number = int((context or {}).get("page_number", 1))
+        layout = ["spec_cards", "points", "compare", "flow"][(page_number - 1) % 4]
+        payload: dict[str, Any] = {
+            "title": f"图片要点 · {name}",
+            "kicker": "图片理解",
+            "subtitle": "以下内容从图片中提取，界面元素已剔除。",
+            "layout": layout,
+            "facts": [],
+            "sections": [],
+            "compare": [],
+            "callout": {"heading": "阅读提醒", "points": ["示例内容，仅用于离线验证"]},
+            "subject_crop": None,
+            "speaker_notes": f"这一页来自图片 {name} 的 {route} 路线。",
+        }
+        if layout == "spec_cards":
+            payload["facts"] = [
+                {"value": "128", "label": "样例指标"},
+                {"value": "96%", "label": "覆盖率"},
+                {"value": "3 类", "label": "内容类型"},
+            ]
+        if layout == "compare":
+            payload["compare"] = [
+                {"heading": "现状", "icon": "target",
+                 "points": ["示例左侧要点一", "示例左侧要点二"]},
+                {"heading": "改进后", "icon": "growth",
+                 "points": ["示例右侧要点一", "示例右侧要点二"]},
+            ]
+        else:
+            payload["sections"] = [
+                {"heading": "结构", "icon": "layers", "body": "图片中的结构信息被整理成可编辑的段落。"},
+                {"heading": "数据", "icon": "chart", "body": "图片中出现的数字保留原值，未出现的不编造。"},
+                {"heading": "结论", "icon": "check", "body": "结论一句话收束，避免堆砌界面文案。"},
+            ]
+        if route == "embed_with_notes":
+            payload["subject_crop"] = None
+        return payload
 
     def _brief(self, context: dict[str, Any]) -> dict[str, Any]:
         prompt = str(context.get("user_prompt", "未命名主题")).strip()

@@ -37,11 +37,20 @@ class TestRebuildDeck:
         assert len(Presentation(result.pptx_path).slides) == 3
         design = json.loads(Path(result.deck_design_path).read_text(encoding="utf-8"))
         assert design["theme"]["name"] == "extracted-from-images"
-        routes = [
-            next(e["text"] for e in page["elements"] if e["id"].startswith("route_tag_"))
-            for page in design["pages"]
-        ]
-        assert routes == ["route:rebuild", "route:design_from_content", "route:embed_with_notes"]
+
+        # "rebuild" is faithful, so the model still places its own elements.
+        faithful = design["pages"][0]
+        assert any(e["id"] == "route_tag_rebuild" for e in faithful["elements"])
+
+        # The understanding routes are typeset from extracted content instead.
+        for page in design["pages"][1:]:
+            ids = {e["id"] for e in page["elements"]}
+            assert "hdr_title" in ids
+            assert not any(name.startswith("route_tag_") for name in ids)
+
+        # embed_with_notes shows the original image itself, never a crop.
+        embedded = design["pages"][2]
+        assert [e["src"] for e in embedded["elements"] if e["type"] == "image"] == ["photo.png"]
 
     def test_crop_regions_become_real_assets(self, tmp_path: Path) -> None:
         result = rebuild_deck(

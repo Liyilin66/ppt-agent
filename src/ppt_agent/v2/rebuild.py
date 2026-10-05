@@ -30,6 +30,12 @@ from pydantic import Field, ValidationError
 from ppt_agent.models import StrictModel
 from ppt_agent.v2 import prompts
 from ppt_agent.v2.design import ThemeSpec, get_builtin_theme, normalize_theme
+from ppt_agent.v2.image_layout import (
+    TEMPLATE_ROUTES,
+    ImageSlideContent,
+    build_slide,
+    refine_crop,
+)
 from ppt_agent.v2.ir import (
     CANVAS_HEIGHT,
     CANVAS_WIDTH,
@@ -230,6 +236,123 @@ async def rebuild_deck_async(
     completed = 0
     lock = asyncio.Lock()
 
+    async def build_templated_page(
+        index: int, item: RebuildItem
+    ) -> tuple[PageDesign | None, int]:
+        """Content from the model, every frame computed by the typesetter."""
+
+        attempts = 0
+        for attempt in range(2):
+            attempts += 1
+            try:
+                payload = await client.complete_json(
+                    task="image_content",
+                    system=prompts.build_image_content_system(language),
+                    user=prompts.build_image_content_user_prompt(
+                        route=item.route,
+                        name=asset_names[index],
+                        page_number=index,
+                        total_pages=total,
+                        language=language,
+                        user_note=item.note,
+                    ),
+                    context={
+                        "route": item.route,
+                        "name": asset_names[index],
+                        "page_number": index,
+                    },
+                    images=[_encode_image(Path(item.image_path))],
+                )
+                content = ImageSlideContent.model_validate(
+                    {
+                        key: value
+                        for key, value in dict(payload).items()
+                        if key in ImageSlideContent.model_fields
+                    }
+                )
+            except BudgetExceededError:
+                progress(f"[rebuild] budget reached; page {index} embeds the original")
+                return None, attempts
+            except (ValidationError, ValueError, RuntimeError) as exc:
+                progress(
+                    f"[rebuild] page {index} content attempt {attempt + 1} failed: "
+                    f"{str(exc)[:140]}"
+                )
+                continue
+
+            source = Path(item.image_path)
+            image_src: str | None = None
+            if item.route == "embed_with_notes":
+                image_src = asset_names[index]
+            elif content.subject_crop is not None:
+                cropped = f"subject_p{index:03d}.png"
+                if refine_crop(source, content.subject_crop, assets_dir / cropped):
+                    image_src = cropped
+                else:
+                    progress(f"[rebuild] page {index} subject crop discarded")
+            page = build_slide(content, page_number=index, image_src=image_src)
+            progress(
+                f"[rebuild] page {index} typeset as {content.effective_layout()}"
+                f" ({len(content.facts)} facts, {len(content.sections)} sections)"
+            )
+            return page, attempts
+        return None, attempts
+
+    async def build_model_placed_page(
+        index: int, item: RebuildItem
+    ) -> tuple[PageDesign | None, int]:
+        """Free layout: the model positions every element itself.
+
+        Kept for the routes that genuinely need arbitrary coordinates — a
+        faithful rebuild has to land text where the source has it.
+        """
+
+        source = Path(item.image_path)
+        attempts = 0
+        for attempt in range(2):
+            attempts += 1
+            try:
+                payload = await client.complete_json(
+                    task="image_page",
+                    system=prompts.build_image_page_system(language),
+                    user=prompts.build_image_page_user_prompt(
+                        route=item.route,
+                        theme=theme,
+                        name=asset_names[index],
+                        page_number=index,
+                        total_pages=total,
+                        language=language,
+                        user_note=item.note,
+                    ),
+                    context={
+                        "route": item.route,
+                        "name": asset_names[index],
+                        "page_number": index,
+                    },
+                    images=[_encode_image(source)],
+                )
+                normalized = normalize_page_payload(dict(payload), page_number=index)
+                normalized = {
+                    key: value
+                    for key, value in normalized.items()
+                    if key in _PAGE_DESIGN_FIELDS
+                }
+                normalized["page_number"] = index
+                normalized["role"] = "content"
+                normalized["show_chrome"] = False
+                normalized.setdefault("title", source.stem)
+                page = PageDesign.model_validate(normalized)
+            except BudgetExceededError:
+                progress(f"[rebuild] budget reached; page {index} embeds the original")
+                return None, attempts
+            except (ValidationError, ValueError, RuntimeError) as exc:
+                progress(
+                    f"[rebuild] page {index} attempt {attempt + 1} failed: {str(exc)[:140]}"
+                )
+                continue
+            return _apply_crop_regions(page, source, assets_dir, page_number=index), attempts
+        return None, attempts
+
     async def build_page(index: int, item: RebuildItem) -> tuple[PageDesign, Any, PageOutcome]:
         nonlocal completed
         source = Path(item.image_path)
@@ -237,51 +360,14 @@ async def rebuild_deck_async(
         page: PageDesign | None = None
         attempts = 0
         async with semaphore:
-            for attempt in range(2):
-                attempts += 1
-                try:
-                    payload = await client.complete_json(
-                        task="image_page",
-                        system=prompts.build_image_page_system(language),
-                        user=prompts.build_image_page_user_prompt(
-                            route=item.route,
-                            theme=theme,
-                            name=asset_names[index],
-                            page_number=index,
-                            total_pages=total,
-                            language=language,
-                            user_note=item.note,
-                        ),
-                        context={
-                            "route": item.route,
-                            "name": asset_names[index],
-                            "page_number": index,
-                        },
-                        images=[_encode_image(source)],
-                    )
-                    normalized = normalize_page_payload(dict(payload), page_number=index)
-                    normalized = {
-                        key: value
-                        for key, value in normalized.items()
-                        if key in _PAGE_DESIGN_FIELDS
-                    }
-                    normalized["page_number"] = index
-                    normalized["role"] = "content"
-                    normalized["show_chrome"] = False
-                    normalized.setdefault("title", source.stem)
-                    page = PageDesign.model_validate(normalized)
-                    break
-                except BudgetExceededError:
-                    progress(f"[rebuild] budget reached; page {index} embeds the original")
-                    break
-                except (ValidationError, ValueError, RuntimeError) as exc:
-                    progress(
-                        f"[rebuild] page {index} attempt {attempt + 1} failed: {str(exc)[:140]}"
-                    )
+            if item.route in TEMPLATE_ROUTES:
+                page, attempts = await build_templated_page(index, item)
+            else:
+                page, attempts = await build_model_placed_page(index, item)
             if page is None:
                 status = "fallback"
                 page = _fallback_embed_page(item, index, asset_names[index])
-            page = _apply_crop_regions(page, source, assets_dir, page_number=index)
+                page = _apply_crop_regions(page, source, assets_dir, page_number=index)
             # QA is advisory here: a faithful reconstruction is never replaced,
             # deterministic fixes still apply and issues land in the report.
             page, qa_result = review_page(page, theme)

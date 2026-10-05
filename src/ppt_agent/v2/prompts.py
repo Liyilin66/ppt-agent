@@ -646,3 +646,120 @@ def build_image_page_system(language: str) -> str:
     return IMAGE_PAGE_SYSTEM_TEMPLATE.format(
         icons=icon_catalog_for_prompt(), language=language
     )
+
+
+IMAGE_CONTENT_SYSTEM_TEMPLATE = (
+    """You are the content editor of a presentation studio.
+You look at ONE source image — usually a phone screenshot, chat log, article,
+product page or poster — and extract ONLY what belongs on a professional slide.
+You never decide layout, position, size or colour: a separate typesetter does
+that. Your entire job is deciding WHAT is worth presenting, and saying it well.
+
+EXCLUDE. The following is host-application or storefront furniture, not content.
+It must never appear in your output, in any field:
+- status bar (clock, battery, wifi, signal), navigation bars, tab bars, menus
+- buttons and calls to action ("查看更多商品", "立即购买", "发消息", "看直播")
+- prices, currency amounts, discounts, coupons, "到手价", sales counts ("已售1000+")
+- promotional mechanics: gifts with purchase ("单笔满6盒赠..."), lotteries,
+  loyalty points, live-stream perks, countdowns, rankings invented by the seller
+  ("销量NO.1")
+- shipping and logistics badges ("运费险", "18:00前下单，预计后天送达")
+- shop, seller, platform and channel names ("京东健康", "格物海外专营店")
+- avatars, input boxes, scroll hints, watermarks, share/like/comment counts
+- the host application's own name and disclaimers ("AI 生成可能有误 注意核实")
+Anything obscured by a finger or cursor, cropped by a screen edge, or otherwise
+not fully legible: DROP it. Never guess a value you cannot read in full.
+
+KEEP: what the subject is, what it is made of or how it works, real measured
+numbers, properties, instructions, advice, caveats and warnings.
+
+Choose ONE layout that fits what the image actually contains:
+- "spec_cards"  a subject with measurable specs — headline numbers plus a few
+                explanatory sections, optionally with a photo of the subject
+- "points"      explanation, advice or a list of ideas with no headline numbers
+- "compare"     two alternatives, sides or before/after states
+- "flow"        an ordered process, timeline or set of steps
+
+Return ONLY this JSON object:
+{{
+  "title": str,                 // the subject itself, not the app's phrasing
+  "kicker": str,                // 2-6 word category line, may be ""
+  "subtitle": str,              // one sentence on why this matters, may be ""
+  "layout": "spec_cards" | "points" | "compare" | "flow",
+  "facts": [ {{"value": str, "label": str}} ],
+  "sections": [ {{"heading": str, "icon": str, "body": str}} ],
+  "compare": [ {{"heading": str, "icon": str, "points": [str] }} ],
+  "callout": {{"heading": str, "points": [str]}} | null,
+  "subject_crop": {{"x": float, "y": float, "w": float, "h": float}} | null,
+  "speaker_notes": str
+}}
+
+Field rules:
+- facts: 0-4 entries, ONLY numbers fully visible in the image. "value" is short
+  ("900mg", "150 粒"); "label" names what it measures. Required for spec_cards,
+  omit for the other layouts unless real numbers exist.
+- sections: 2-4 entries for spec_cards / points / flow (for flow they are the
+  ordered steps, in order). Each "body" is one or two sentences, no bullet
+  characters, no line breaks, at most about 90 characters.
+- compare: exactly 2 entries when layout is "compare", each with 2-4 short
+  points; leave it empty for every other layout.
+- callout: caveats, risks or "read this before acting" notes ABOUT THE SUBJECT.
+  At most 3 points, each one short clause. Never describe your own work here —
+  no notes about what you excluded, what the source page contained, or how you
+  read the image. null when the image carries no such warning.
+- icon: one name from this catalog: {icons}
+- subject_crop: a TIGHT normalized 0-1 box around the MAIN photographic subject
+  — the product, object or person itself. Its edges must not reach any text,
+  badge, button or other interface near the subject: whatever is inside this box
+  ends up on the slide as pixels, so anything you were told to exclude must stay
+  outside it. Small errors are corrected automatically, but a loose box that
+  swallows surrounding text cannot be recovered. Use null unless there is a real
+  photograph worth keeping — diagrams, charts, posters made of text, and
+  screenshots of text have none.
+- speaker_notes: 1-3 sentences in {language} describing this page.
+- All visible copy in {language}. No coordinates, no colours, no layout hints."""
+)
+
+
+def build_image_content_system(language: str) -> str:
+    return IMAGE_CONTENT_SYSTEM_TEMPLATE.format(
+        icons=icon_catalog_for_prompt(), language=language
+    )
+
+
+_CONTENT_ROUTE_BRIEFS = {
+    "design_from_content": (
+        "The slide should present the information in this image on its own terms."
+        " Reorganize it; do not mirror the source layout."
+    ),
+    "extract_text": (
+        "Transcribe only: keep the image's own headings, text and figures, add no"
+        " interpretation, no new claims and no persuasive framing. Prefer the"
+        ' "points" layout unless the image is genuinely a spec sheet, a'
+        " comparison or an ordered process."
+    ),
+    "embed_with_notes": (
+        "The original image will be shown alongside your text as an exhibit, so"
+        " write text that explains and interprets it rather than repeating every"
+        " label. Always provide subject_crop as null — the whole image is used."
+    ),
+}
+
+
+def build_image_content_user_prompt(
+    *,
+    route: str,
+    name: str,
+    page_number: int,
+    total_pages: int,
+    language: str,
+    user_note: str | None = None,
+) -> str:
+    brief = _CONTENT_ROUTE_BRIEFS.get(route, _CONTENT_ROUTE_BRIEFS["design_from_content"])
+    note = f"\nUser note for this image: {user_note.strip()}" if user_note else ""
+    return (
+        f"Source image file: {name} (page {page_number}/{total_pages})\n"
+        f"Slide language: {language}\n\n"
+        f"{brief}{note}\n\n"
+        "Extract the slide content from this image. Return ONLY the JSON object."
+    )

@@ -96,6 +96,10 @@ Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句
 
 一次最多处理 10 张图，每张图对应一页。页面结构、文字、形状、表格和可识别图表尽量重建为 PowerPoint 原生元素；照片和复杂插画区域仍然保留为裁剪后的位图，因此“可编辑”不等于把每个像素或照片中的物体都矢量化。若模型重建失败，系统会保留原图作为 fallback，并把 QA 问题写入报告，不会伪报完全重建成功。
 
+**两条不同的出图路径。** 忠实重建（以及风格参考）需要任意坐标，仍由模型自己摆放元素。而“根据内容设计一页”“仅提取文字”“嵌入并补充解读”这三条路线走模板化排版：模型只输出内容结构（标题、可核对的数字、2–4 段要点、提醒），四套版式（数据卡 / 要点 / 对比 / 流程）由代码按实际文字量计算每个框的位置和字号。这样做的原因是视觉模型不擅长像素级排版——放手让它算坐标会得到装不下正文的框、视觉重量完全相同的卡片和贴着画布边缘的文字。
+
+模板化路线同时会主动剔除来源图里的**界面与营销元素**：状态栏、导航、按钮、价格、销量、满赠、运费、店铺名，以及被手指遮挡或截断因而无法确认的内容。产品照片通过一步确定性的裁剪收紧提取（放大候选框后按连通区域定位主体，再用面积、长宽比和色彩丰富度校验）；无法可靠定位时**宁可不放图**，而不是把一块截图贴到页面上——那会把上面刚剔除的内容以像素形式带回来。
+
 | SQLite 演示历史 | 交付中心 |
 | --- | --- |
 | ![SQLite presentation history](docs/readme/web-presentation-history.jpg) | ![Presentation delivery center](docs/readme/web-delivery-center.jpg) |
@@ -494,6 +498,7 @@ src/ppt_agent/
     ├── planning.py            # brief, outline, skeleton, page briefs
     ├── revise.py              # 结构化修订计划、局部重设计和重新导出
     ├── rebuild.py             # 图片分类后的可编辑页面重建与 fallback
+    ├── image_layout.py        # 图片内容的确定性排版：四套版式、裁剪收紧与校验
     ├── ir.py                  # PageDesign / DeckDesign
     ├── qa.py                  # page QA and deterministic repair
     ├── render.py              # editable PPTX renderer
