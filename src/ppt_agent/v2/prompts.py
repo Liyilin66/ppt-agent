@@ -24,6 +24,7 @@ Rules:
   user asks for another language.
 - deck_title: punchy, <= 40 characters, in the slide language.
 - key_points: 5-12 concrete points that the deck must cover.
+- key_points must not introduce specific numbers absent from both the source material and the user request.
 - Never invent facts that contradict the provided source material."""
 
 
@@ -81,7 +82,10 @@ Rules:
 - points: 2-5 per page, each <= 60 characters, in the slide language.
 - layout_hint variety matters: across the section, mix at least 3 different hints.
 - data_idea: only when the section genuinely benefits from a chart/table; include
-  plausible concrete numbers (they may come from the brief digest).
+  only numbers explicitly present in the source digest or user request. When no
+  data is available, describe what the chart should communicate without numeric values,
+  or clearly label any illustrative values as "假设" or "示意" in the data_idea
+  and slide-visible copy. Never present these values as observed facts.
 - speaker_notes: 2-4 spoken sentences the presenter reads aloud for this page,
   in the slide language; conversational, not a copy of the bullet points.
 - Every slide-visible string in the slide language from the brief."""
@@ -196,7 +200,9 @@ COMPOSITION RULES:
    band, split, stacked rows, oversized numeral, big quote, chart-dominant) while
    staying inside the deck style signature.
 8. Numbers: use stat/stat_label roles for KPI figures. Charts only when the brief
-   provides or implies real numbers; 3-8 categories max.
+   provides real numbers; 3-8 categories max. Every numeric value in stats, charts and tables
+   must come from this page's brief; preserve any "假设" or "示意" labels.
+   When the page brief contains no numbers, use a non-numeric layout instead.
 9. FILL THE CANVAS: content must cover well over half of the usable area and the
    bottom half must never be left empty. When the brief is light, enlarge cards,
    typography and spacing to fill the page — never shrink everything into one

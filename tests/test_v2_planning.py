@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from ppt_agent.v2 import prompts
 from ppt_agent.v2.planning import (
     DeckOutline,
     EditableDeckPlan,
@@ -19,6 +20,27 @@ from ppt_agent.v2.planning import (
     section_start_pages,
     skeleton_from_editable_plan,
 )
+
+
+class TestNumericGroundingPrompts:
+    def test_section_data_ideas_require_supported_or_labelled_numbers(self) -> None:
+        policy = prompts.SECTION_PAGES_SYSTEM
+        assert "plausible concrete numbers" not in policy
+        assert "source digest or user request" in policy
+        assert "without numeric values" in policy
+        assert '"假设" or "示意"' in policy
+
+    def test_page_numbers_must_come_from_the_page_brief(self) -> None:
+        policy = prompts.PAGE_DESIGN_SYSTEM_TEMPLATE
+        assert "or implies" not in policy
+        assert "Every numeric value in stats, charts and tables" in policy
+        assert "this page's brief" in policy
+        assert "non-numeric layout" in policy
+
+    def test_brief_key_points_cannot_introduce_unsupported_numbers(self) -> None:
+        policy = prompts.BRIEF_SYSTEM
+        assert "key_points must not introduce specific numbers" in policy
+        assert "both the source material and the user request" in policy
 
 
 def _outline(page_counts: list[int]) -> DeckOutline:
