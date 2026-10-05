@@ -63,3 +63,19 @@ selection but may transmit facts through outline talking points: trace those
 packets rather than attributing every hit to the chapter excerpt. BM25 is lexical,
 not semantic/vector RAG. Chapter alignment and cross-report year conflicts must
 be reported. Smaller/full-text cases may not justify adding retrieval.
+
+## Recorded transport recovery
+
+The original expanded B Outline request returned Cloudflare HTTP 524 after
+125.085 seconds (the client timeout was 300 seconds). Its usage was unavailable;
+the reserved official-price upper bound remains in the global budget. Four
+small-corpus arms are retained without rerunning. The failed expanded attempt
+is retained as a failure, not scored as zero recall.
+
+Recovery uses `--recover-streaming`: identical source hashes, prompt, model,
+temperature, reasoning setting and output cap; only HTTP transport changes to
+Chat Completions SSE with `include_usage`. It reuses the successful expanded
+Brief and regenerates the failed Outline. Expanded B and D both use streaming;
+their folders are suffixed `_stream`. Report this transport difference when
+comparing small and expanded cases. No production code is changed. If the final
+stream usage or expected model is missing, halt rather than undercount cost.
