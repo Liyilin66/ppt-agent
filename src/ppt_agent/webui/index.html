@@ -248,6 +248,8 @@
                         <div><span>视觉方向</span><strong id="confirmationVisual">待确认</strong></div>
                       </div>
                       <label class="plan-field">排版方式<select id="layoutEngine"><option value="typeset">智能排版</option><option value="free">自由布局（旧版）</option></select></label>
+                      <label class="plan-field"><span><input id="enableSearch" type="checkbox" disabled> 联网补充资料</span></label>
+                      <p id="searchConfigHint" class="hint">请在 .env 中配置 TAVILY_API_KEY 并重启服务器。</p>
                       <div class="confirmation-actions">
                         <button id="continueInterviewButton" class="secondary-button" type="button">继续调整</button>
                         <button id="skipOutlineButton" class="secondary-button" type="button">跳过确认，直接生成</button>
@@ -351,6 +353,8 @@
                   <label class="plan-field">排版方式<select id="planLayoutEngine"><option value="typeset">智能排版</option><option value="free">自由布局（旧版）</option></select></label>
                   <p id="planStyleReason" class="hint"></p>
                 </div>
+                <label class="plan-field"><span><input id="planEnableSearch" type="checkbox" disabled> 联网补充资料</span></label>
+                <p id="planSearchConfigHint" class="hint">请在 .env 中配置 TAVILY_API_KEY 并重启服务器。</p>
                 <div id="planSections" class="plan-sections"></div>
                 <div class="plan-footer">
                   <p id="planPageSummary" class="hint"></p>

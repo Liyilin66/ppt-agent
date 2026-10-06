@@ -92,6 +92,7 @@ from ppt_agent.v2.planning import (
     editable_plan_from_skeleton,
     skeleton_from_editable_plan,
 )
+from ppt_agent.v2.search import default_search_provider
 from ppt_agent.v2 import prompts as v2_prompts
 from ppt_agent.v2.intake import ingest_sources as v2_ingest_sources
 from ppt_agent.v2.rebuild import (
@@ -193,6 +194,12 @@ class CreateLongDeckJobRequest(StrictModel):
     attachment_ids: list[str] = Field(default_factory=list, max_length=20)
     layout_engine: Literal["typeset", "free"] = "typeset"
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
+    enable_search: bool = False
+
+
+def _require_search_available(enabled: bool) -> None:
+    if enabled and not os.environ.get("TAVILY_API_KEY", "").strip():
+        raise HTTPException(status_code=503, detail="联网补充资料未配置：请在 .env 中设置 TAVILY_API_KEY 并重启服务器。")
 
 
 def _uses_v2_generation(payload: CreateLongDeckJobRequest) -> bool:
@@ -216,6 +223,7 @@ class UpdateDeckPlanRequest(StrictModel):
 
 
 class ConfirmDeckPlanRequest(StrictModel):
+    enable_search: bool | None = None
     plan: EditableDeckPlan | None = None
     layout_engine: Literal["typeset", "free"] | None = None
 
@@ -1825,6 +1833,7 @@ def _run_v2_long_deck_job(
                 language=payload.language,
                 layout_engine=payload.layout_engine,
                 style_profile=payload.style_profile,
+                enable_search=payload.enable_search,
                 source_paths=document_paths,
                 image_paths=image_paths,
                 output_dir=str(output_dir),
@@ -1835,6 +1844,7 @@ def _run_v2_long_deck_job(
                 qa_gate="strict",
             ),
             client,
+            search_provider=default_search_provider() if payload.enable_search else None,
             progress=progress_logger,
         )
         _register_job_artifacts(store, job_id, output_dir)
@@ -1936,6 +1946,7 @@ def _run_deck_plan(
                 language=payload.language,
                 layout_engine=payload.layout_engine,
                 style_profile=payload.style_profile,
+                enable_search=payload.enable_search,
                 source_paths=document_paths,
                 image_paths=image_paths,
                 output_dir=str(output_dir),
@@ -1944,6 +1955,7 @@ def _run_deck_plan(
                 budget_usd=_env_float("PPT_AGENT_V2_BUDGET_USD", DEFAULT_V2_BUDGET_USD),
             ),
             client,
+            search_provider=default_search_provider() if payload.enable_search else None,
             progress=progress_logger,
         )
         editable = editable_plan_from_skeleton(result.skeleton).model_copy(
@@ -2379,6 +2391,10 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/capabilities")
+    def capabilities() -> dict[str, bool]:
+        return {"search_available": bool(os.environ.get("TAVILY_API_KEY", "").strip())}
+
     @app.post("/api/uploads", response_model=UploadResponse, status_code=201)
     async def create_upload(
         request: Request,
@@ -2580,6 +2596,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         payload: CreateLongDeckJobRequest,
         background_tasks: BackgroundTasks,
     ) -> CreateJobResponse:
+        _require_search_available(payload.enable_search)
         if _uses_v2_generation(payload):
             try:
                 client = _create_v2_model_client()
@@ -2691,6 +2708,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         payload: CreateLongDeckJobRequest,
         background_tasks: BackgroundTasks,
     ) -> DeckPlanResponse:
+        _require_search_available(payload.enable_search)
         if payload.slide_count < 4:
             raise HTTPException(
                 status_code=400,
@@ -2786,6 +2804,9 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             }
         )
 
+        stored_request = CreateLongDeckJobRequest.model_validate_json(record.request_json)
+        search_enabled = payload.enable_search if payload is not None and payload.enable_search is not None else stored_request.enable_search
+        _require_search_available(search_enabled)
         try:
             client = _create_v2_model_client()
         except (V2ProviderError, ValueError) as exc:
@@ -2796,6 +2817,7 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             ) from exc
 
         request_updates = {
+            "enable_search": search_enabled,
             "slide_count": skeleton.total_pages,
             "deck_type": "visual_design_v2",
             "style_profile": editable.deck_type,

@@ -1064,6 +1064,7 @@ function buildLongDeckPayload() {
     slide_count: Number(document.getElementById("long_slide_count").value),
     language: "zh-CN",
     deck_type: "visual_design_v2",
+    enable_search: document.getElementById("enableSearch").checked,
     layout_engine: document.getElementById("layoutEngine").value,
     user_requirements: document.getElementById("long_user_requirements").value.trim(),
     interview_id: activeInterviewId,
@@ -2478,6 +2479,7 @@ function renderPlanEditor() {
   planDeckSubtitle.value = activePlan.subtitle || "";
   planStyleProfile.value = activePlan.deck_type || "corporate";
   planLayoutEngine.value = document.getElementById("layoutEngine").value;
+  document.getElementById("planEnableSearch").checked = document.getElementById("enableSearch").checked;
   planStyleReason.textContent = activePlan.deck_type_reason || "根据受众、目的与语气选择风格，可在此调整。";
   planSections.replaceChildren();
   activePlan.sections.forEach((section, sectionIndex) => {
@@ -2519,6 +2521,7 @@ function applyPlanState(plan) {
   if (plan.status === "ready") {
     activePlan = plan.plan;
     document.getElementById("layoutEngine").value = plan.request?.layout_engine || "typeset";
+    document.getElementById("enableSearch").checked = Boolean(plan.request?.enable_search) && !document.getElementById("enableSearch").disabled;
     renderPlanEditor();
     return;
   }
@@ -2561,7 +2564,7 @@ async function confirmDeckPlan() {
     const job = await requestJson(`/api/deck-plans/${activePlanId}/confirm`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({plan: activePlan, layout_engine: document.getElementById("layoutEngine").value})
+      body: JSON.stringify({plan: activePlan, layout_engine: document.getElementById("layoutEngine").value, enable_search: document.getElementById("planEnableSearch").checked})
     });
     localStorage.removeItem(activePlanStorageKey);
     longSlideCount.value = String(total);
@@ -2830,3 +2833,28 @@ window.addEventListener("load", () => {
     errorMessage.textContent = error.message;
   });
 });
+
+async function loadSearchCapabilities() {
+  let available = false;
+  try {
+    const capabilities = await requestJson("/api/capabilities");
+    available = capabilities.search_available === true;
+  } catch (_) { /* Leave search disabled if configuration cannot be checked. */ }
+  for (const id of ["enableSearch", "planEnableSearch"]) {
+    const control = document.getElementById(id);
+    control.disabled = !available;
+    if (!available) control.checked = false;
+  }
+  for (const id of ["searchConfigHint", "planSearchConfigHint"]) {
+    document.getElementById(id).textContent = available
+      ? "开启后将检索网页资料，并将网址作为页面证据。"
+      : "请在 .env 中配置 TAVILY_API_KEY 并重启服务器。";
+  }
+}
+document.getElementById("enableSearch").addEventListener("change", () => {
+  document.getElementById("planEnableSearch").checked = document.getElementById("enableSearch").checked;
+});
+document.getElementById("planEnableSearch").addEventListener("change", () => {
+  document.getElementById("enableSearch").checked = document.getElementById("planEnableSearch").checked;
+});
+loadSearchCapabilities();

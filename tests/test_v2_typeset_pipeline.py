@@ -82,7 +82,7 @@ def test_ordered_content_finishes_before_ordered_layout(tmp_path, monkeypatch):
     events = []
     total = len(planned.skeleton.content_slots())
     def spy(content, profile, **kwargs):
-        assert len(client.completed) == total
+        assert len(set(client.completed)) == total
         calls.append((kwargs['page_number'], list(kwargs['history'])))
         return original(content, profile, **kwargs)
     monkeypatch.setattr(pipeline, 'typeset_page', spy)

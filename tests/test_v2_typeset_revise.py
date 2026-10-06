@@ -25,9 +25,9 @@ def deck(tmp_path):
     cp = _Checkpoints(tmp_path / 'checkpoints', resume=True)
     brief = ContentBrief(topic='topic', deck_title='Deck')
     skeleton = DeckSkeleton(deck_title='Deck', language='zh-CN', total_pages=4, outline=DeckOutline(
-        deck_title='Deck', sections=[SectionOutline(title='S1', content_pages=1)]),
+        deck_title='Deck', sections=[SectionOutline(title='Section', content_pages=1)]),
         slots=[PageSlot(page_number=1,kind='cover'),PageSlot(page_number=2,kind='toc'),
-               PageSlot(page_number=3,kind='content',section_index=0,section_title='S1',brief=PageBrief(title='Content',points=['One','Two'])),
+               PageSlot(page_number=3,kind='content',section_index=0,section_title='Section',brief=PageBrief(title='Content',points=['One','Two'])),
                PageSlot(page_number=4,kind='closing')])
     cp.save('brief.json',brief.model_dump(mode='json'))
     cp.save('skeleton_with_briefs.json',skeleton.model_dump(mode='json'))
@@ -129,7 +129,7 @@ def test_neighbor_content_reused_and_all_pages_retypeset_in_order(deck, monkeypa
     from ppt_agent.v2 import typeset_pipeline
     root, cp = deck
     skeleton = DeckSkeleton.model_validate(cp.load('skeleton_with_briefs.json'))
-    neighbor = PageSlot(page_number=4,kind='content',section_index=0,section_title='S1',brief=PageBrief(title='Neighbor',points=['One','Two']))
+    neighbor = PageSlot(page_number=4,kind='content',section_index=0,section_title='Section',brief=PageBrief(title='Neighbor',points=['One','Two']))
     skeleton = skeleton.model_copy(update={'total_pages':5,'slots':skeleton.slots[:3]+[neighbor,PageSlot(page_number=5,kind='closing')]})
     cp.save('skeleton_with_briefs.json',skeleton.model_dump(mode='json'))
     _cache(cp,3,'Original content')
@@ -152,7 +152,7 @@ def test_model_unchanged_content_is_not_reported_as_edit(deck):
     root, cp = deck
     _cache(cp,3,'Original content')
     cache = cp.load('typeset/content_003.json')
-    cache['content']['kicker'] = 'S1'
+    cache['content']['kicker'] = 'Section'
     cp.save('typeset/content_003.json',cache)
     class UnchangedPlanner(EditingPlanner):
         async def complete_json(self, **kwargs):
@@ -229,7 +229,7 @@ def test_history_relayout_neighbor_new_loss_rejects_entire_revision(deck,monkeyp
     from ppt_agent.v2 import typeset_pipeline
     root,cp=deck
     skeleton=DeckSkeleton.model_validate(cp.load('skeleton_with_briefs.json'))
-    neighbor=PageSlot(page_number=4,kind='content',section_index=0,section_title='S1',brief=PageBrief(title='Neighbor',points=['One','Two']))
+    neighbor=PageSlot(page_number=4,kind='content',section_index=0,section_title='Section',brief=PageBrief(title='Neighbor',points=['One','Two']))
     skeleton=skeleton.model_copy(update={'total_pages':5,'slots':skeleton.slots[:3]+[neighbor,PageSlot(page_number=5,kind='closing')]})
     cp.save('skeleton_with_briefs.json',skeleton.model_dump(mode='json'))
     _cache(cp,3,'Original content')

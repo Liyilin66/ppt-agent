@@ -6,6 +6,7 @@ from collections import Counter
 import re
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -95,6 +96,54 @@ def source_is_valid(source, references, page_counts=None, allowed_pages=None):
     return bool(names or spans)
 
 
+def cited_evidence(source, packet):
+    """Restrict numeric checks to excerpts actually named by the citation."""
+    from ppt_agent.v2.evidence import EvidencePacket
+    if packet is None or not source:
+        return EvidencePacket()
+    blocks = []
+    matches = list(re.finditer(r'^\[(.+?) \| (PDF|logical|web) p(\d+)\]\n', packet.text, re.M))
+    for index, match in enumerate(matches):
+        name, kind, number = match[1], match[2], int(match[3])
+        allowed = {name: [number]}
+        # Ask whether each supplied page is part of the full source citation by parsing its named ranges.
+        if kind == 'web':
+            included = name in re.findall(r'https?://[^\s；;，,）)]+', source)
+        else:
+            included = False
+            for clause in re.split(r'[;；]', source):
+                if name not in clause:
+                    continue
+                page_text = clause.replace(name, '')
+                page_text = re.sub(r'\bp(?:ages?)?\.?\s*(\d+)', lambda m: '第'+m[1]+'页', page_text, flags=re.I)
+                for expression in re.findall(r'(?:第\s*)?(\d+(?:[-–—]\d+)?(?:[,，、/]\d+(?:[-–—]\d+)?)*)\s*页', page_text):
+                    for span in re.split(r'[,，、/]', expression):
+                        nums = [int(n) for n in re.findall(r'\d+', span)]
+                        included |= nums[0] <= number <= nums[-1]
+        if included:
+            end = matches[index+1].start() if index+1 < len(matches) else len(packet.text)
+            blocks.append(packet.text[match.start():end])
+    return EvidencePacket(text='\n'.join(blocks), references=packet.references,
+                          page_counts=packet.page_counts, allowed_pages=packet.allowed_pages,
+                          strategy=packet.strategy, chunk_ids=packet.chunk_ids)
+
+
+def display_source(source, website_titles):
+    if not source:
+        return None
+    result = []
+    for clause in re.split(r'[;；]', source):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if clause.startswith(('https://', 'http://')):
+            result.append(urlparse(clause).netloc + ' · ' + (website_titles.get(clause) or '网页资料'))
+        else:
+            clause = re.sub(r'第\s*([^页]+)\s*页', lambda m: '第 ' + m[1].strip() + ' 页', clause)
+            result.append(clause)
+    return '；'.join(result) or None
+
+
 def diversity_statistics(contents, slots):
     counts = Counter(content.archetype for content in contents)
     total = len(contents)
@@ -129,6 +178,9 @@ def packet_citation(packet):
     """Declare delivered evidence ranges; do not invent a claim-level provenance."""
     clauses = []
     for name, pages in packet.allowed_pages.items():
+        if name.startswith(('https://', 'http://')):
+            clauses.append(name)
+            continue
         ordered = sorted(set(pages))
         if not ordered:
             continue
@@ -237,6 +289,8 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     invalid_sources = 0
     empty_sources = 0
     attempts = 0
+    numeric_failures = []
+    numeric_candidate = None
     parsed = None
     for _ in range(2):
         attempts += 1
@@ -256,6 +310,12 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 raise ValueError('archetype violates deck diversity; choose from ' + str(diversity['allowed_archetypes']))
             if parsed.archetype == 'chart' and len(parsed.categories) != len(parsed.values):
                 raise ValueError('categories and values must have identical lengths')
+            from ppt_agent.v2.evidence_check import check_content_numbers
+            numeric_issues = check_content_numbers(parsed, cited_evidence(parsed.source, evidence))
+            if numeric_issues:
+                numeric_candidate = parsed
+                numeric_failures.append({'attempt': attempts, 'issues': numeric_issues})
+                raise ValueError('Numeric evidence check failed: ' + json.dumps(numeric_issues, ensure_ascii=False))
             break
         except BudgetExceededError as exc:
             errors.append({'attempt': attempts, 'kind': 'budget', 'error': str(exc)})
@@ -268,7 +328,14 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
             user += '\nPrevious output failed validation. Correct these specific errors:\n' + str(exc)
     fallback = parsed is None
     if fallback:
-        parsed = fallback_content(slot)
+        parsed = numeric_candidate if numeric_candidate is not None else fallback_content(slot)
+    from ppt_agent.v2.evidence_check import check_content_numbers, sanitize_content_numbers
+    final_issues = check_content_numbers(parsed, cited_evidence(parsed.source, evidence))
+    removed = []
+    if final_issues:
+        parsed, removed = sanitize_content_numbers(parsed, final_issues)
+    if check_content_numbers(parsed, cited_evidence(parsed.source, evidence)):
+        raise ValueError('Numeric cleanup did not eliminate unsupported numbers; refusing export')
     if not parsed.kicker and slot.section_title:
         parsed = parsed.model_copy(update={'kicker': slot.section_title[:24]})
     if page_brief.speaker_notes:
@@ -276,7 +343,10 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
               'validation_errors': errors, 'archetype': parsed.archetype,
               'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources,
-              'evidence': evidence.to_dict() if evidence is not None else None}
+              'evidence': evidence.to_dict() if evidence is not None else None,
+              'numeric_check': {'blocked_attempts': len(numeric_failures), 'failures': numeric_failures,
+                                'passed_after_retry': bool(numeric_failures and not fallback),
+                                'removed': removed}}
     checkpoints.save(name, {'content': parsed.model_dump(mode='json'), 'record': record})
     return parsed, record
 
@@ -348,6 +418,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             references_for_page, page_counts_for_page = packet.references, packet.page_counts
         else:
             references_for_page, page_counts_for_page = references, page_counts
+        from ppt_agent.v2.evidence_check import check_content_numbers, sanitize_content_numbers
+        issues = check_content_numbers(content, cited_evidence(content.source, packet))
+        if issues:
+            content, removed = sanitize_content_numbers(content, issues)
+            check_record = dict(record.get('numeric_check', {}))
+            check_record['removed'] = check_record.get('removed', []) + removed
+            check_record['cached_cleanup'] = True
+            record = {**record, 'numeric_check': check_record}
         content, format_notes = normalize_chart_format(content)
         if format_notes:
             record = {**record, 'format_normalizations': record.get('format_normalizations', []) + format_notes}
@@ -372,20 +450,28 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         progress(f'[content] page {slot.page_number} ready')
     content_seconds = time.perf_counter() - started
     sections = _skeleton_sections(skeleton)
+    website_titles = {doc['name']: doc.get('title', '') for doc in evidence_store.documents
+                      if doc.get('page_kind') == 'web'} if evidence_store is not None else {}
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     seen_titles = set()
     final_contents = []
     for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
         if slot.kind == 'content':
             content, record = results[slot.page_number]
+            display_copy = content.model_copy(update={'source': display_source(content.source, website_titles)})
+            record = {**record, 'source_display': display_copy.source}
             try:
-                page, notes = typeset_page(content, profile, page_number=slot.page_number,
+                page, notes = typeset_page(display_copy, profile, page_number=slot.page_number,
                                           deck_title=skeleton.deck_title, history=history)
             except ValueError as exc:
                 # A legal schema may still be too dense for a composition.
                 # Keep the failure visible and degrade this page only, offline.
                 record = {**record, 'fallback': True, 'layout_errors': [str(exc)]}
                 content = fallback_content(slot)
+                from ppt_agent.v2.evidence_check import check_content_numbers, sanitize_content_numbers
+                invalid = check_content_numbers(content, '')
+                content, stripped = sanitize_content_numbers(content, invalid)
+                record.setdefault('numeric_check', {}).setdefault('removed', []).extend(stripped)
                 page, notes = typeset_page(content, profile, page_number=slot.page_number,
                                           deck_title=skeleton.deck_title, history=history)
                 checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
@@ -442,7 +528,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         source_invalid_cached_pages=sum(bool(record.get('source_invalid_cached')) for record in records),
         source_empty_attempts=sum(record.get('source_empty_attempts', 0) for record in records),
     )
-    run = {'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    numeric_summary = {'blocked_attempts': sum(r.get('numeric_check', {}).get('blocked_attempts', 0) for r in records),
+                       'passed_after_retry_pages': sum(bool(r.get('numeric_check', {}).get('passed_after_retry')) for r in records),
+                       'removed_items_or_numbers': sum(len(r.get('numeric_check', {}).get('removed', [])) for r in records),
+                       'removed_items': sum(len({'.'.join(x['path'].split('.')[:2]) for x in r.get('numeric_check', {}).get('removed', [])
+                                                  if x.get('action') == 'removed_item'}) for r in records),
+                       'removed_numbers': sum(x.get('action') == 'removed_number' for r in records
+                                              for x in r.get('numeric_check', {}).get('removed', []))}
+    run = {'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,

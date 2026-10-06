@@ -275,6 +275,28 @@ def _prepare_evidence_intake(request, checkpoints):
     return IntakeResult(digest=store.document_map(), parsed_files=store.parsed_files, warnings=store.warnings)
 
 
+async def _enrich_search_evidence(request, search_provider, checkpoints, intake):
+    if not request.enable_search:
+        return intake
+    if search_provider is None:
+        raise ValueError("联网搜索未配置：请设置 TAVILY_API_KEY 后重试。")
+    from ppt_agent.v2.evidence import EvidenceStore
+    cached = checkpoints.load("search_results.json")
+    if cached is None:
+        results = await search_provider.search(request.prompt, max_results=6)
+        if not results:
+            raise ValueError("联网搜索未返回可用资料，未生成假装有证据的成品。")
+        checkpoints.save("search_results.json", [result.model_dump(mode="json") for result in results])
+    else:
+        from ppt_agent.v2.search import SearchResult
+        results = [SearchResult.model_validate(item) for item in cached]
+    path = checkpoints.root / "evidence_store.json"
+    store = EvidenceStore.from_dict(json.loads(path.read_text())) if path.is_file() else EvidenceStore.from_paths([])
+    store = store.with_search_results(results)
+    checkpoints.save("evidence_store.json", store.to_dict())
+    return IntakeResult(digest=store.document_map(), parsed_files=store.parsed_files, warnings=store.warnings)
+
+
 async def _run_brief_stage(
     request: BuildRequest,
     client: LLMClient,
@@ -943,12 +965,7 @@ async def build_deck_async(
     for warning in intake.warnings:
         progress(f"[intake] {warning}")
     search_digest: str | None = None
-    if request.enable_search and search_provider is not None:
-        try:
-            results = await search_provider.search(request.prompt, max_results=6)
-            search_digest = format_search_digest(results) or None
-        except Exception as exc:  # noqa: BLE001 - research is best-effort
-            progress(f"[search] skipped: {exc}")
+    intake = await _enrich_search_evidence(request, search_provider, checkpoints, intake)
     image_entries = await _run_image_digest_stage(
         request, client, checkpoints, progress=progress
     )
@@ -1220,12 +1237,7 @@ async def plan_deck_async(
     for warning in intake.warnings:
         progress(f"[intake] {warning}")
     search_digest: str | None = None
-    if request.enable_search and search_provider is not None:
-        try:
-            results = await search_provider.search(request.prompt, max_results=6)
-            search_digest = format_search_digest(results) or None
-        except Exception as exc:  # noqa: BLE001 - research is best-effort
-            progress(f"[search] skipped: {exc}")
+    intake = await _enrich_search_evidence(request, search_provider, checkpoints, intake)
     image_entries = await _run_image_digest_stage(
         request, client, checkpoints, progress=progress
     )

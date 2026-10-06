@@ -181,6 +181,23 @@ class EvidenceStore:
                 warnings.append(f'Failed to parse {path.name}: {exc}')
         return cls(documents, warnings)
 
+    def with_search_results(self, results):
+        """Index retrieved web snippets, preserving URL and title as evidence."""
+        from urllib.parse import urlparse
+        documents = list(self.documents)
+        known = {doc['name'] for doc in documents}
+        for result in results:
+            url = result.url.strip()
+            parsed = urlparse(url)
+            if parsed.scheme not in {'http', 'https'} or not parsed.netloc or url in known or not result.snippet.strip():
+                continue
+            documents.append({'doc_id': f'web{len(documents) + 1}', 'name': url,
+                              'title': result.title.strip(), 'url': url, 'path': url,
+                              'sha256': hashlib.sha256(result.snippet.encode()).hexdigest(),
+                              'page_kind': 'web', 'pages': [{'page': 1, 'text': result.snippet}]})
+            known.add(url)
+        return EvidenceStore(documents, self.warnings)
+
     def to_dict(self) -> dict:
         return {'documents': self.documents, 'warnings': self.warnings}
 
@@ -208,7 +225,7 @@ class EvidenceStore:
                             numbers.append(f"[{doc['page_kind']} p{page['page']}] {sentence.strip()}")
                 # Spread numeric examples over the chapter rather than only its lead.
                 chosen = numbers
-                heading = f"{doc['name']} [{doc['page_kind']} p{chapter['pages'][0]}–{chapter['pages'][-1]}] {chapter['title']}"
+                heading = f"{doc['name']} {doc.get('title', '')} [{doc['page_kind']} p{chapter['pages'][0]}–{chapter['pages'][-1]}] {chapter['title']}"
                 entries.append((heading, lead, chosen))
         if not entries or max_chars <= 0:
             return ''

@@ -22,8 +22,13 @@ def test_actual_previous_archetypes_and_deck_statistics(tmp_path):
     assert stats['diversity_violations']==[]
     assert stats['source_empty_pages']==17 and stats['source_invalid_pages']==0
     actual=[]
+    seen_pages=set()
     for req in client.content_requests:
-        payload=json.loads(req['user']);assert payload['diversity']['previous_archetypes']==actual
+        page=req['context']['page_number']
+        if page in seen_pages:
+            continue  # numeric-check retry carries the same preceding history
+        seen_pages.add(page)
+        payload=json.loads(req['user'].split('\nPrevious output failed validation.')[0]);assert payload['diversity']['previous_archetypes']==actual
         actual.append(report['typeset_pages'][len(actual)]['archetype'])
     assert all(a!=b for a,b in zip(actual,actual[1:]))
     assert 'body' in client.content_requests[0]['system'] and '40' in client.content_requests[0]['system']
