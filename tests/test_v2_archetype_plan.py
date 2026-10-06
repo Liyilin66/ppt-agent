@@ -99,3 +99,29 @@ def test_web_search_runs_per_section_within_the_cap(tmp_path):
     assert len(web_docs) == len(search.queries)
     sections = json.loads((tmp_path / "checkpoints/section_search_results.json").read_text())
     assert len(sections) == len(search.queries) - 1  # first call is the topic search
+
+
+def test_large_sections_are_planned_in_batches_and_survive_a_timeout(tmp_path):
+    from ppt_agent.v2.orchestrator import SECTION_PAGES_BATCH
+    from ppt_agent.v2.providers import ProviderError
+
+    class OneTimeout(MockLLMClient):
+        def __init__(self):
+            super().__init__()
+            self.section_calls = []
+
+        async def complete_json(self, **kw):
+            if kw["task"] == "section_pages":
+                self.section_calls.append(kw["context"]["page_count"])
+                if len(self.section_calls) == 2:
+                    raise ProviderError("[section_pages] provider call failed after 4 attempts: ")
+            return await super().complete_json(**kw)
+
+    client = OneTimeout()
+    result = build_deck(BuildRequest(prompt="大章节分批", page_count=60, output_dir=str(tmp_path)),
+                        client, progress=lambda _: None)
+    assert max(client.section_calls) <= SECTION_PAGES_BATCH
+    report = json.loads(Path(result.run_report_path).read_text())
+    fallbacks = [e for e in report["planning_events"] if e["action"] == "fallback"]
+    assert 0 < len(fallbacks) <= SECTION_PAGES_BATCH  # only the failed batch degraded
+    assert result.pptx_path

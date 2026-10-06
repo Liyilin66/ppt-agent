@@ -298,6 +298,7 @@ async def _enrich_search_evidence(request, search_provider, checkpoints, intake)
 
 
 MAX_SEARCH_CALLS = 12  # per deck, including the initial topic search
+SECTION_PAGES_BATCH = 6  # page scripts per planning call
 
 
 async def _enrich_section_search(request, search_provider, checkpoints, brief, skeleton, *, progress):
@@ -477,38 +478,46 @@ async def _run_page_brief_stage(
             packet = EvidenceStore.from_dict(evidence_data).select(query, section_query=query)
             section_brief = brief.model_copy(update={"source_digest": packet.text})
             checkpoints.save(f"section_evidence_{section_index:03d}.json", packet.to_dict())
-        async with semaphore:
-            try:
-                payload = await client.complete_json(
-                    task="section_pages",
-                    system=prompts.SECTION_PAGES_SYSTEM,
-                    user=prompts.build_section_pages_user_prompt(
-                        section_brief,
-                        section,
-                        page_count=page_count,
-                        deck_title=skeleton.deck_title,
-                        prior_titles=[
-                            earlier.title
-                            for earlier in sections[: section_index - 1]
-                        ],
-                    ),
-                    context={
-                        "section": section.model_dump(mode="json"),
-                        "page_count": page_count,
-                        "brief": section_brief.model_dump(mode="json"),
-                    },
-                )
-                briefs = parse_page_briefs(
-                    payload, fallback_briefs=fallback_briefs,
-                    page_numbers=page_numbers, events=events,
-                )
-            except (ValidationError, ValueError) as exc:
-                progress(
-                    f"[briefs] section {section_index} fell back to talking points ({exc})"
-                )
-                briefs = fallback_briefs
-                events.extend({"page_number": number, "action": "fallback", "reason": str(exc)}
-                              for number in page_numbers)
+        # Large sections are planned in batches: a single call writing 9+ page
+        # scripts with speaker notes can outlast the proxy's ~125 s gateway on
+        # a slow model, and one timed-out section must not sink the deck.
+        briefs: list[PageBrief] = []
+        for start in range(0, page_count, SECTION_PAGES_BATCH):
+            batch_numbers = page_numbers[start:start + SECTION_PAGES_BATCH]
+            batch_fallback = fallback_briefs[start:start + SECTION_PAGES_BATCH]
+            prior_titles = [earlier.title for earlier in sections[: section_index - 1]]
+            prior_titles += [page.title for page in briefs]
+            async with semaphore:
+                try:
+                    payload = await client.complete_json(
+                        task="section_pages",
+                        system=prompts.SECTION_PAGES_SYSTEM,
+                        user=prompts.build_section_pages_user_prompt(
+                            section_brief,
+                            section,
+                            page_count=len(batch_numbers),
+                            deck_title=skeleton.deck_title,
+                            prior_titles=prior_titles,
+                        ),
+                        context={
+                            "section": section.model_dump(mode="json"),
+                            "page_count": len(batch_numbers),
+                            "brief": section_brief.model_dump(mode="json"),
+                        },
+                    )
+                    batch = parse_page_briefs(
+                        payload, fallback_briefs=batch_fallback,
+                        page_numbers=batch_numbers, events=events,
+                    )
+                except (ValidationError, ValueError, RuntimeError) as exc:
+                    progress(
+                        f"[briefs] section {section_index} pages {batch_numbers[0]}-"
+                        f"{batch_numbers[-1]} fell back to talking points ({str(exc)[:160]})"
+                    )
+                    batch = batch_fallback
+                    events.extend({"page_number": number, "action": "fallback", "reason": str(exc)[:300]}
+                                  for number in batch_numbers)
+            briefs.extend(reconcile_page_briefs(batch, len(batch_numbers), section_title=section.title))
         return section_index, reconcile_page_briefs(
             briefs, page_count, section_title=section.title
         ), events

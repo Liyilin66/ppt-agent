@@ -60,7 +60,9 @@ Rules:
 - Use the slide language from the brief for all titles and points.
 - content_pages counts ONLY normal content slides (cover/TOC/dividers/closing are added separately).
 - 4-12 sections. Weight content_pages by importance; they will be rescaled to the exact budget.
-- talking_points: 3-8 per section, concrete and non-overlapping.
+- talking_points: 3-5 per section, each a key phrase of at most 24 characters, concrete and
+  non-overlapping. goal: one sentence of at most 40 characters. Keep the outline compact:
+  page-level detail is planned later, section by section.
 - When a document map is provided, cover the full chapter structure and quantitative evidence from beginning, middle and end; preserve numeric subject, unit and period."""
 
 
