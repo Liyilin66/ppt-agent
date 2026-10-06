@@ -60,15 +60,15 @@ class TypeSpec(StrictModel):
 # stays fixed so QA overflow estimation is theme-independent.
 TYPE_SCALE: dict[str, TypeSpec] = {
     "display": TypeSpec(size_pt=44, bold=True, line_spacing=1.1, min_size_pt=30),
-    "title": TypeSpec(size_pt=30, bold=True, line_spacing=1.15, min_size_pt=22),
-    "subtitle": TypeSpec(size_pt=18, line_spacing=1.3, default_color="muted", min_size_pt=13),
+    "title": TypeSpec(size_pt=30, bold=True, line_spacing=1.2, min_size_pt=22),
+    "subtitle": TypeSpec(size_pt=18, line_spacing=1.4, default_color="muted", min_size_pt=13),
     "section": TypeSpec(size_pt=36, bold=True, line_spacing=1.1, min_size_pt=26),
-    "h3": TypeSpec(size_pt=17, bold=True, line_spacing=1.2, min_size_pt=13),
-    "body": TypeSpec(size_pt=13, line_spacing=1.35, min_size_pt=10),
-    "body_small": TypeSpec(size_pt=11, line_spacing=1.3, default_color="muted", min_size_pt=9),
-    "caption": TypeSpec(size_pt=10, line_spacing=1.25, default_color="muted", min_size_pt=8),
+    "h3": TypeSpec(size_pt=17, bold=True, line_spacing=1.3, min_size_pt=13),
+    "body": TypeSpec(size_pt=13, line_spacing=1.5, min_size_pt=10),
+    "body_small": TypeSpec(size_pt=11, line_spacing=1.45, default_color="muted", min_size_pt=9),
+    "caption": TypeSpec(size_pt=10, line_spacing=1.3, default_color="muted", min_size_pt=8),
     "kicker": TypeSpec(size_pt=11, bold=True, line_spacing=1.2, default_color="primary", min_size_pt=9),
-    "stat": TypeSpec(size_pt=34, bold=True, line_spacing=1.05, default_color="primary", min_size_pt=22),
+    "stat": TypeSpec(size_pt=34, bold=True, line_spacing=1.15, default_color="primary", min_size_pt=22),
     "stat_label": TypeSpec(size_pt=11, line_spacing=1.2, default_color="muted", min_size_pt=9),
     "quote": TypeSpec(size_pt=22, line_spacing=1.35, min_size_pt=16),
 }

@@ -149,6 +149,11 @@ class ChartItem(BaseElement):
     series: list[ChartSeries] = Field(..., min_length=1, max_length=4)
     show_legend: bool = True
     show_data_labels: bool = False
+    # Optional typesetting overrides; None keeps the renderer's legacy defaults.
+    font_pt: float | None = Field(default=None, gt=4, le=40)
+    show_value_axis: bool = True
+    show_gridlines: bool = True
+    number_format: str | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:
@@ -165,6 +170,9 @@ class TableItem(BaseElement):
     type: Literal["table"] = "table"
     headers: list[str] = Field(..., min_length=1, max_length=8)
     rows: list[list[str]] = Field(..., min_length=1, max_length=12)
+    # "filled": colored header + banded rows (legacy); "minimal": rules only.
+    style: Literal["filled", "minimal"] = "filled"
+    font_pt: float | None = Field(default=None, gt=4, le=40)
 
     @model_validator(mode="after")
     def validate_row_widths(self) -> Self:

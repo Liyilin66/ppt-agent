@@ -108,6 +108,22 @@ def _set_run_fonts(run, theme: ThemeSpec, *, heading: bool) -> None:
         ea = r_pr.makeelement(qn("a:ea"), {})
         r_pr.append(ea)
     ea.set("typeface", east_asian)
+    if _has_cjk(run.text):
+        # Without a CJK language tag PowerPoint skips Chinese line-breaking
+        # rules and can start a line with "，" or "。".
+        r_pr.set("lang", "zh-CN")
+        r_pr.set("altLang", "en-US")
+
+
+def _has_cjk(text: str) -> bool:
+    return any("\u3000" <= char <= "\u9fff" or "\uff00" <= char <= "\uffef" for char in text)
+
+
+def _enable_cjk_line_breaking(paragraph) -> None:
+    p_pr = paragraph._p.get_or_add_pPr()  # noqa: SLF001 - no public API for these flags
+    p_pr.set("eaLnBrk", "1")
+    p_pr.set("hangingPunct", "1")
+    p_pr.set("latinLnBrk", "0")
 
 
 def _fill_text_frame(
@@ -132,7 +148,12 @@ def _fill_text_frame(
     for index, line in enumerate(lines):
         paragraph = text_frame.paragraphs[0] if index == 0 else text_frame.add_paragraph()
         paragraph.alignment = _ALIGN_MAP[item.align]
-        paragraph.line_spacing = spec.line_spacing
+        _enable_cjk_line_breaking(paragraph)
+        # Exact spacing (points), not a multiple: PowerPoint multiplies a
+        # multiple by the font's own line height (~1.18 em for YaHei/DengXian),
+        # which made every height estimate ~18% short. Exact points make the
+        # rendered line pitch equal size x spacing, the figure metrics.py uses.
+        paragraph.line_spacing = Pt(size_pt * spec.line_spacing)
         if item.bullet == "dot" and line.strip():
             line = f"•  {line}"
         elif item.bullet == "number" and line.strip():
@@ -262,14 +283,14 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
         chart.chart_title.text_frame.text = item.title
         for run_paragraph in chart.chart_title.text_frame.paragraphs:
             for run in run_paragraph.runs:
-                run.font.size = Pt(13)
+                run.font.size = Pt((item.font_pt or 10) + 3)
                 run.font.bold = True
                 run.font.color.rgb = _rgb(theme.palette.text)
     chart.has_legend = item.show_legend and len(item.series) > 1
     if chart.has_legend:
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
         chart.legend.include_in_layout = False
-        chart.legend.font.size = Pt(10)
+        chart.legend.font.size = Pt(item.font_pt or 10)
 
     series_colors = [
         theme.palette.primary,
@@ -293,16 +314,51 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
             )
     plot.has_data_labels = item.show_data_labels
     if item.show_data_labels:
-        plot.data_labels.font.size = Pt(9)
-        plot.data_labels.font.color.rgb = _rgb(theme.palette.muted)
+        if item.number_format:
+            plot.data_labels.number_format = item.number_format
+            plot.data_labels.number_format_is_linked = False
+        plot.data_labels.font.size = Pt(item.font_pt or 9)
+        plot.data_labels.font.color.rgb = _rgb(
+            theme.palette.text if item.font_pt else theme.palette.muted
+        )
+    if item.font_pt and item.chart in ("bar", "column"):
+        plot.gap_width = 60
     for axis_name in ("category_axis", "value_axis"):
         try:
             axis = getattr(chart, axis_name)
         except ValueError:
             continue
-        axis.tick_labels.font.size = Pt(10)
-        axis.tick_labels.font.color.rgb = _rgb(theme.palette.muted)
+        axis.tick_labels.font.size = Pt(item.font_pt or 10)
+        axis.tick_labels.font.color.rgb = _rgb(
+            theme.palette.text if item.font_pt else theme.palette.muted
+        )
         axis.format.line.color.rgb = _rgb(theme.palette.surface_alt)
+        if axis_name == "value_axis":
+            axis.has_major_gridlines = item.show_gridlines
+            if item.show_gridlines:
+                axis.major_gridlines.format.line.color.rgb = _rgb(theme.palette.surface_alt)
+            axis.visible = item.show_value_axis
+        if item.font_pt:
+            _set_axis_fonts(axis, theme)
+    if item.chart == "bar":
+        # Bar charts list categories bottom-up by default; read them top-down.
+        try:
+            chart.category_axis.reverse_order = True
+        except ValueError:
+            pass
+
+
+def _set_axis_fonts(axis, theme: ThemeSpec) -> None:
+    """Give tick labels the deck's fonts so CJK categories match slide text."""
+
+    font = axis.tick_labels.font
+    font.name = theme.fonts.body_latin
+    r_pr = font._rPr  # noqa: SLF001 - east-asian font needs raw XML
+    ea = r_pr.find(qn("a:ea"))
+    if ea is None:
+        ea = r_pr.makeelement(qn("a:ea"), {})
+        r_pr.append(ea)
+    ea.set("typeface", theme.fonts.body_east_asian)
 
 
 def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
@@ -315,16 +371,30 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
     table.first_row = False
     table.horz_banding = False
 
-    def style_cell(cell, text: str, *, header: bool, banded: bool) -> None:
-        cell.fill.solid()
-        if header:
-            cell.fill.fore_color.rgb = _rgb(theme.palette.primary)
-        else:
-            cell.fill.fore_color.rgb = _rgb(
-                theme.palette.surface_alt if banded else theme.palette.surface
+    minimal = item.style == "minimal"
+    body_pt = item.font_pt or 10.5
+    header_pt = item.font_pt or 11
+
+    def style_cell(cell, text: str, *, header: bool, banded: bool, last: bool) -> None:
+        if minimal:
+            cell.fill.background()
+            _set_cell_rules(
+                cell,
+                bottom=theme.palette.primary if header else (
+                    None if last else theme.palette.surface_alt
+                ),
+                width_pt=1.5 if header else 0.75,
             )
-        cell.margin_left = _emu(8)
-        cell.margin_right = _emu(8)
+        else:
+            cell.fill.solid()
+            if header:
+                cell.fill.fore_color.rgb = _rgb(theme.palette.primary)
+            else:
+                cell.fill.fore_color.rgb = _rgb(
+                    theme.palette.surface_alt if banded else theme.palette.surface
+                )
+        cell.margin_left = _emu(0 if minimal else 8)
+        cell.margin_right = _emu(12 if minimal else 8)
         cell.margin_top = _emu(4)
         cell.margin_bottom = _emu(4)
         text_frame = cell.text_frame
@@ -333,15 +403,17 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
         paragraph = text_frame.paragraphs[0]
         run = paragraph.add_run()
         run.text = text
-        run.font.size = Pt(11 if header else 10.5)
+        run.font.size = Pt(header_pt if header else body_pt)
         run.font.bold = header
-        run.font.color.rgb = _rgb(
-            theme.palette.on_primary if header else theme.palette.text
-        )
+        if minimal:
+            color = theme.palette.primary if header else theme.palette.text
+        else:
+            color = theme.palette.on_primary if header else theme.palette.text
+        run.font.color.rgb = _rgb(color)
         _set_run_fonts(run, theme, heading=header)
 
     for column, header in enumerate(item.headers):
-        style_cell(table.cell(0, column), header, header=True, banded=False)
+        style_cell(table.cell(0, column), header, header=True, banded=False, last=False)
     for row_index, row in enumerate(item.rows):
         for column, value in enumerate(row):
             style_cell(
@@ -349,7 +421,30 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
                 value,
                 header=False,
                 banded=row_index % 2 == 1,
+                last=row_index == len(item.rows) - 1,
             )
+
+
+def _set_cell_rules(cell, *, bottom: str | None, width_pt: float) -> None:
+    """Hairline-only cell borders: no verticals, optional bottom rule."""
+
+    tc_pr = cell._tc.get_or_add_tcPr()  # noqa: SLF001 - no public border API
+    tags = ("a:lnL", "a:lnR", "a:lnT", "a:lnB")
+    for tag in tags:
+        existing = tc_pr.find(qn(tag))
+        if existing is not None:
+            tc_pr.remove(existing)
+    # Schema order: borders come first inside tcPr, before any fill element.
+    for index, tag in enumerate(tags):
+        color = bottom if tag == "a:lnB" else None
+        line = tc_pr.makeelement(qn(tag), {"w": str(int(Pt(width_pt))) if color else "0"})
+        if color:
+            solid = line.makeelement(qn("a:solidFill"), {})
+            solid.append(solid.makeelement(qn("a:srgbClr"), {"val": color.lstrip("#")}))
+            line.append(solid)
+        else:
+            line.append(line.makeelement(qn("a:noFill"), {}))
+        tc_pr.insert(index, line)
 
 
 def _render_image(slide, item: ImageItem, theme: ThemeSpec, assets_dir: Path | None) -> None:
