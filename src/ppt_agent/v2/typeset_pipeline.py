@@ -196,7 +196,11 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     system = (
         'Return one JSON content object matching the schema. Choose an archetype and write content only. '
         'Never output coordinates. Respect every field length and item-count limit. '
-        'Use the requested slide language. insights and metrics must be ordered by importance, '
+        'Use the requested slide language. Retain exact source subjects, metric labels, denominators and periods. '
+        'Never transfer a number between different purposes, cases or population groups. '
+        'Preserve expected/projected/planned qualifiers; forecasts are not observed outcomes. '
+        'Percentage and percentage-point increases are different units and must be named accurately. '
+        'insights and metrics must be ordered by importance, '
         'with the first item carrying the core conclusion. Each page argues one point. '
         'points defaults to 3 items, at most 4; keep item body preferably within 40 characters. '
         'Prefer metrics or chart for supported quantitative evidence, and statement for key conclusions. '
