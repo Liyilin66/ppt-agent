@@ -256,6 +256,8 @@ async def _revise_typeset_deck_staged(
                 client, checkpoints, slot, brief, profile,
                 revision_instruction=item.instruction or message, force_regenerate=True,
                 current_content=(originals[slot.page_number] or {}).get("content"),
+                source_references=config.get("source_references", []),
+                source_page_counts=config.get("source_page_counts", {}),
             )
             original = originals[slot.page_number]
             if original is not None and content.model_dump(mode="json") == original["content"]:

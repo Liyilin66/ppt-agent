@@ -1,8 +1,8 @@
 """Content-only model calls followed by an ordered deterministic layout pass."""
 from __future__ import annotations
 
-import asyncio
 import json
+from collections import Counter
 import re
 import time
 from pathlib import Path
@@ -42,10 +42,58 @@ def suggested_archetype(hint):
     return 'process' if suggested == 'timeline' else 'points'
 
 
+def source_is_valid(source, references, page_counts=None):
+    """Check supplied identifiers, not the truth of the cited claim."""
+    if not source or not str(source).strip():
+        return True
+    source = str(source).strip()
+    if any(label in source.lower() for label in (
+        "用户提供", "用户需求", "需求说明", "需求背景", "user-provided", "user provided",
+    )):
+        return False
+    if not references:
+        return False
+    urls = re.findall(r"https?://[^\s；;，,）)]+", source)
+    files = re.findall(r"[^\s；;，,/]+\.(?:pdf|docx|md|txt|csv|xlsx)(?![a-zA-Z0-9_.])", source, flags=re.I)
+    known = {Path(ref).name for ref in references if not ref.startswith(('http://', 'https://'))}
+    if any(url not in references for url in urls) or any(name not in known for name in files):
+        return False
+    pages = re.search(r"(?:第\s*)?(\d+)(?:[-–—](\d+))?\s*页", source)
+    if pages:
+        pdfs = [name for name in known if name.lower().endswith('.pdf')]
+        document = files[0] if len(files) == 1 else (pdfs[0] if not files and len(pdfs) == 1 else None)
+        if not document or (not files and not (page_counts or {}).get(document)):
+            return False
+        start, end = int(pages[1]), int(pages[2] or pages[1])
+        if start < 1 or end < start or ((page_counts or {}).get(document) and end > page_counts[document]):
+            return False
+    if urls or files:
+        return True
+    return bool(pages and re.fullmatch(r"(?:PDF\s*)?(?:第\s*)?\d+(?:[-–—]\d+)?\s*页", source))
+
+
+def diversity_statistics(contents, slots):
+    counts = Counter(content.archetype for content in contents)
+    total = len(contents)
+    violations = []
+    if counts['points'] > int(total * .4):
+        violations.append({'rule': 'points_share', 'count': counts['points'], 'limit': int(total * .4)})
+    for index in range(1, total):
+        if contents[index].archetype == contents[index - 1].archetype:
+            violations.append({'rule': 'consecutive_archetype', 'page_number': slots[index].page_number})
+    for section in {slot.section_index for slot in slots}:
+        if all(content.archetype == 'points' for content, slot in zip(contents, slots)
+               if slot.section_index == section):
+            violations.append({'rule': 'section_non_points', 'section_index': section})
+    return {'content_pages': total, 'archetype_counts': dict(counts),
+            'archetype_ratios': {key: count / total for key, count in counts.items()} if total else {},
+            'diversity_violations': violations}
+
+
 def fallback_content(slot):
     """Reuse source planning text; do not invent quantitative placeholders."""
     page = slot.brief or PageBrief(title=slot.section_title or '内容要点')
-    points = [point.strip() for point in page.points if point.strip()][:5]
+    points = [point.strip() for point in page.points if point.strip()][:4]
     if not points:
         points = [page.summary.strip() or '本页缺少可用资料，请补充原文。']
     if len(points) == 1:
@@ -73,7 +121,9 @@ def content_qa(content, page_number, seen_titles=None):
 
 
 async def generate_content(client, checkpoints, slot, brief, profile, *,
-                           revision_instruction=None, force_regenerate=False, current_content: dict[str, Any] | None = None):
+                           revision_instruction=None, force_regenerate=False, current_content: dict[str, Any] | None = None,
+                           diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None):
+    source_references = source_references or re.findall(r'https?://[^\s]+', brief.source_digest or '')
     name = f'typeset/content_{slot.page_number:03d}.json'
     cached = None if force_regenerate else checkpoints.load(name)
     if cached is not None:
@@ -82,23 +132,32 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     page_brief = slot.brief or PageBrief(title=slot.section_title or '内容要点')
     schema = content_adapter().json_schema()
     suggested = suggested_archetype(page_brief.layout_hint)
+    diversity = diversity or {}
     system = (
         'Return one JSON content object matching the schema. Choose an archetype and write content only. '
         'Never output coordinates. Respect every field length and item-count limit. '
         'Use the requested slide language. insights and metrics must be ordered by importance, '
-        'with the first item carrying the core conclusion. Fill source with a real supplied source '
-        'or user-provided requirement attribution. When revising, edit current_content according to the instruction and preserve unrelated existing content. Never invent citations or unsupported numbers; '
+        'with the first item carrying the core conclusion. Each page argues one point. '
+        'points defaults to 3 items, at most 4; keep item body preferably within 40 characters. '
+        'Prefer metrics or chart for supported quantitative evidence, and statement for key conclusions. '
+        'Across content pages points must not exceed 40%; no consecutive identical archetypes; '
+        'each section must contain a non-points page. Follow the provided remaining allowance and allowed_archetypes. '
+        'source must identify an actual supplied filename, page or URL in source_references. '
+        'Without source material leave source null; never cite user requirements as a source. When revising, edit current_content according to the instruction and preserve unrelated existing content. Never invent citations or unsupported numbers; '
         'if no evidence supports a number, omit it and use points or statement instead. '
         'Chart categories and values must have identical lengths. Schema:\n' + json.dumps(schema, ensure_ascii=False)
     )
     context = {'page_number': slot.page_number, 'page_brief': page_brief.model_dump(mode='json'),
                'section_title': slot.section_title, 'language': brief.language,
                'suggested_archetype': suggested, 'revision_instruction': revision_instruction,
-               'current_content': current_content}
+               'current_content': current_content, 'diversity': diversity}
     user = json.dumps({'page': context, 'audience': brief.audience, 'purpose': brief.purpose,
                        'profile': profile.name, 'source_digest': brief.source_digest, 'current_content': current_content,
-                       'key_points': brief.key_points}, ensure_ascii=False)
+                       'key_points': brief.key_points, 'diversity': diversity,
+                       'source_references': source_references}, ensure_ascii=False)
     errors = []
+    invalid_sources = 0
+    empty_sources = 0
     attempts = 0
     parsed = None
     for _ in range(2):
@@ -106,6 +165,14 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         try:
             payload = await client.complete_json(task='page_content', system=system, user=user, context=context)
             parsed = content_adapter().validate_python(payload)
+            empty_sources += int(not parsed.source or not parsed.source.strip())
+            if not source_is_valid(parsed.source, source_references, source_page_counts):
+                invalid_sources += 1
+                raise ValueError('source must be a supplied filename, page or URL; no source material means source=null')
+            if parsed.archetype == 'points' and len(parsed.items) > 4:
+                raise ValueError('points must have at most 4 items, normally 3')
+            if diversity.get('allowed_archetypes') and parsed.archetype not in diversity['allowed_archetypes']:
+                raise ValueError('archetype violates deck diversity; choose from ' + str(diversity['allowed_archetypes']))
             if parsed.archetype == 'chart' and len(parsed.categories) != len(parsed.values):
                 raise ValueError('categories and values must have identical lengths')
             break
@@ -126,7 +193,8 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     if page_brief.speaker_notes:
         parsed = parsed.model_copy(update={'speaker_notes': page_brief.speaker_notes})
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
-              'validation_errors': errors, 'archetype': parsed.archetype}
+              'validation_errors': errors, 'archetype': parsed.archetype,
+              'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources}
     checkpoints.save(name, {'content': parsed.model_dump(mode='json'), 'record': record})
     return parsed, record
 
@@ -139,20 +207,52 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     output_dir.mkdir(parents=True, exist_ok=True)
     profile = PROFILES[getattr(request, 'style_profile', None) or getattr(brief, 'deck_type', 'corporate')]
     theme = profile.theme()
-    checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name})
+    previous_config = checkpoints.load('typeset_config.json') or {}
     checkpoints.save('theme.json', theme.model_dump(mode='json'))
-    semaphore = asyncio.Semaphore(request.concurrency)
-    async def generate(slot):
-        async with semaphore:
-            result = await generate_content(client, checkpoints, slot, brief, profile)
-            progress(f'[content] page {slot.page_number} ready')
-            return slot.page_number, result
-    # Complete all model calls before the first layout call; rhythm is serial.
-    results = dict(await asyncio.gather(*(generate(slot) for slot in skeleton.content_slots())))
+    references = [Path(path).name for path in request.source_paths]
+    page_counts = dict(previous_config.get('source_page_counts', {})) if request.resume else {}
+    if request.resume and not request.source_paths:
+        references = list(previous_config.get('source_references', []))
+    from pypdf import PdfReader
+    for path in request.source_paths:
+        if Path(path).suffix.lower() == '.pdf':
+            page_counts[Path(path).name] = len(PdfReader(path).pages)
+    references += re.findall(r'https?://[^\s]+', brief.source_digest or '')
+    checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
+                                           'source_references': references, 'source_page_counts': page_counts})
+    content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
+    results, previous, section_archetypes = {}, [], {}
+    supported = list(content_adapter().json_schema()['discriminator']['mapping'])
+    points_limit = int(len(content_slots) * .4)
+    # Actual earlier archetypes require ordered generation, including resumed pages.
+    for index, slot in enumerate(content_slots):
+        used = section_archetypes.setdefault(slot.section_index, [])
+        last_in_section = not any(later.section_index == slot.section_index for later in content_slots[index + 1:])
+        allowed = [kind for kind in supported if not previous or kind != previous[-1]]
+        if previous.count('points') >= points_limit or (last_in_section and not any(kind != 'points' for kind in used)):
+            allowed = [kind for kind in allowed if kind != 'points']
+        diversity = {'previous_archetypes': list(previous), 'section_archetypes': list(used),
+                     'content_pages': len(content_slots), 'points_limit': points_limit,
+                     'points_remaining': max(0, points_limit - previous.count('points')),
+                     'last_page_in_section': last_in_section, 'allowed_archetypes': allowed,
+                     'original_layout_hint': slot.brief.layout_hint if slot.brief else 'auto'}
+        content, record = await generate_content(client, checkpoints, slot, brief, profile,
+                                                diversity=diversity, source_references=references, source_page_counts=page_counts)
+        # Old caches are preserved, but fabricated attribution is never displayed.
+        if not source_is_valid(content.source, references, page_counts):
+            record = {**record, 'source_invalid_cached': True}
+            content = content.model_copy(update={'source': None})
+            checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
+                             {'content': content.model_dump(mode='json'), 'record': record})
+        results[slot.page_number] = content, record
+        previous.append(content.archetype)
+        used.append(content.archetype)
+        progress(f'[content] page {slot.page_number} ready')
     content_seconds = time.perf_counter() - started
     anchors = _build_anchor_pages(skeleton, brief, theme)
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     seen_titles = set()
+    final_contents = []
     for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
         if slot.kind == 'content':
             content, record = results[slot.page_number]
@@ -168,6 +268,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                           deck_title=skeleton.deck_title, history=history)
                 checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
                                  {'content': content.model_dump(mode='json'), 'record': record})
+            final_contents.append(content)
             page = page.model_copy(update={'section': slot.section_title})
             if notes:
                 history.append(notes[0])
@@ -206,7 +307,15 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     if passed or request.qa_gate == 'lenient':
         pptx_path = render_deck(deck, output_dir / f'{request.deck_name}.pptx', assets_dir=output_dir / 'assets')
     seconds = {'content': content_seconds, 'typeset_assemble_render': time.perf_counter()-started-content_seconds}
-    run = {'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    statistics = diversity_statistics(final_contents, content_slots)
+    statistics.update(
+        source_empty_pages=sum(not content.source or not content.source.strip() for content in final_contents),
+        source_invalid_pages=sum(not source_is_valid(content.source, references, page_counts) for content in final_contents),
+        source_invalid_attempts=sum(record.get('source_invalid_attempts', 0) for record in records),
+        source_invalid_cached_pages=sum(bool(record.get('source_invalid_cached')) for record in records),
+        source_empty_attempts=sum(record.get('source_empty_attempts', 0) for record in records),
+    )
+    run = {'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,

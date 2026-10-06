@@ -895,7 +895,7 @@ async def build_deck_async(
     previous_engine = checkpoints.load("typeset_config.json")
     if previous_engine and previous_engine.get("layout_engine") != request.layout_engine:
         raise ValueError("Cannot resume with a different layout engine; use a new output directory.")
-    checkpoints.save("typeset_config.json", {"layout_engine": request.layout_engine,
+    checkpoints.save("typeset_config.json", {**(previous_engine or {}), "layout_engine": request.layout_engine,
                                              "profile": request.style_profile})
     stage_seconds: dict[str, float] = {}
 

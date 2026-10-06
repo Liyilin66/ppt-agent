@@ -257,3 +257,15 @@ def test_history_relayout_neighbor_new_loss_rejects_entire_revision(deck,monkeyp
         with pytest.raises(RevisionError,match='第 4 页'):
             asyncio.run(revise_deck_async(output_dir=root,deck_name='deck',message='rewrite',client=client))
         assert _files(root)==before
+
+
+def test_profile_switch_preserves_supplied_file_sources(deck):
+    root, cp = deck
+    cp.save('typeset_config.json', {'layout_engine':'typeset','profile':'consulting',
+                                   'source_references':['report.pdf']})
+    cp.save('typeset/content_003.json', {'content':_content('Existing') | {'source':'report.pdf 第12页'},
+             'record':{'page_number':3,'attempts':1,'fallback':False,'validation_errors':[],'archetype':'points'}})
+    client = Planner({'reply':'switch','pages':[],'profile':'launch'})
+    asyncio.run(revise_deck_async(output_dir=root,deck_name='deck',message='launch',client=client))
+    assert cp.load('typeset/content_003.json')['content']['source']=='report.pdf 第12页'
+    assert cp.load('typeset_config.json')['source_references']==['report.pdf']

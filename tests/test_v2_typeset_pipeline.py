@@ -53,7 +53,7 @@ def test_invalid_twice_falls_back_to_source_points(tmp_path):
 
 def test_chart_value_length_mismatch_retries(tmp_path):
     chart = {'archetype': 'chart', 'title': '真实数据', 'chart_title': '资料统计',
-             'categories': ['A', 'B'], 'values': [1, 2, 3], 'source': '用户资料',
+             'categories': ['A', 'B'], 'values': [1, 2, 3], 'source': None,
              'insights': [{'text': '比较两项'}]}
     client = Replies([chart, valid()])
     _, record = asyncio.run(generate_content(client, _Checkpoints(tmp_path, resume=False),
@@ -62,7 +62,7 @@ def test_chart_value_length_mismatch_retries(tmp_path):
     assert 'categories' in client.requests[1]['user']
 
 
-def test_parallel_content_finishes_before_ordered_layout(tmp_path, monkeypatch):
+def test_ordered_content_finishes_before_ordered_layout(tmp_path, monkeypatch):
     import ppt_agent.v2.typeset_pipeline as pipeline
     from ppt_agent.v2.visual.archetypes import typeset_page as original
     class Delayed(MockLLMClient):
