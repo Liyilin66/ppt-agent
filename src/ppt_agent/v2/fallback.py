@@ -55,7 +55,7 @@ def _icon_for(index: int, page_number: int) -> str:
 
 def _cards_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
     points = brief.points[:4] or [brief.summary or brief.title]
-    count = max(2, min(4, len(points)))
+    count = min(4, len(points))
     gap = 28.0
     card_width = (CONTENT_WIDTH - gap * (count - 1)) / count
     card_top, card_height = CONTENT_TOP + 20, CONTENT_BOTTOM - CONTENT_TOP - 40
@@ -100,7 +100,7 @@ def _cards_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
 
 def _stats_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
     points = brief.points[:3] or [brief.summary or brief.title]
-    count = max(2, min(3, len(points)))
+    count = min(3, len(points))
     gap = 32.0
     card_width = (CONTENT_WIDTH - gap * (count - 1)) / count
     elements: list[PageElement] = _title_block(brief.title)
@@ -134,7 +134,7 @@ def _stats_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
 
 def _timeline_layout(brief: PageBrief, page_number: int) -> list[PageElement]:
     points = brief.points[:5] or [brief.summary or brief.title]
-    count = max(3, min(5, len(points)))
+    count = min(5, len(points))
     axis_y = (CONTENT_TOP + CONTENT_BOTTOM) / 2
     step = CONTENT_WIDTH / count
     elements: list[PageElement] = _title_block(brief.title)

@@ -2079,7 +2079,7 @@ def test_missing_artifact_returns_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def _install_fake_deck_plan_backend(monkeypatch, captured: dict | None = None) -> None:
+def _install_fake_deck_plan_backend(monkeypatch, captured: dict | None = None, *, planning_events=None) -> None:
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
     monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
 
@@ -2119,7 +2119,7 @@ def _install_fake_deck_plan_backend(monkeypatch, captured: dict | None = None) -
                     }
                 )
             slots.append(slot)
-        skeleton = skeleton.model_copy(update={"slots": slots})
+        skeleton = skeleton.model_copy(update={"slots": slots, "planning_events": planning_events or []})
         return PlanResult(brief=brief, skeleton=skeleton, usage={"estimated_cost_usd": 0.1})
 
     monkeypatch.setattr(api, "plan_v2_deck", fake_plan_v2_deck)
@@ -2154,7 +2154,7 @@ def test_deck_plan_lifecycle_edit_confirm_generates_with_seeded_checkpoints(
     plan["sections"][0]["pages"][0]["speaker_notes"] = "我改过的口播稿"
     updated = client.put(f"/api/deck-plans/{plan_id}", json={"plan": plan})
     assert updated.status_code == 200
-    assert updated.json()["total_pages"] == 8  # dropping below 10 pages also drops the TOC page
+    assert updated.json()["total_pages"] == 9  # one content page removed; TOC remains
 
     confirmed = client.post(f"/api/deck-plans/{plan_id}/confirm")
     assert confirmed.status_code == 202
@@ -2162,7 +2162,7 @@ def test_deck_plan_lifecycle_edit_confirm_generates_with_seeded_checkpoints(
 
     build_request = captured["request"]
     assert build_request.resume is True
-    assert build_request.page_count == 8
+    assert build_request.page_count == 9
 
     checkpoints = tmp_path / "jobs" / job_id / "checkpoints"
     assert (checkpoints / "brief.json").is_file()
@@ -2181,7 +2181,7 @@ def test_deck_plan_lifecycle_edit_confirm_generates_with_seeded_checkpoints(
 
     job = client.get(f"/api/jobs/{job_id}").json()
     assert job["status"] == "succeeded"
-    assert job["total_batches"] == 8
+    assert job["total_batches"] == 9
 
 
 def test_deck_plan_marks_failed_when_planning_raises(tmp_path: Path, monkeypatch) -> None:
@@ -2528,3 +2528,23 @@ def test_dotenv_file_loads_without_overriding_exports(tmp_path: Path, monkeypatc
     assert os.environ["PPT_AGENT_EXPORTED"] == "from-shell"  # export wins
     monkeypatch.delenv("PPT_AGENT_TEST_KEY")
     monkeypatch.delenv("PPT_AGENT_QUOTED")
+
+
+def test_deck_plan_confirm_preserves_server_planning_diagnostics(tmp_path, monkeypatch):
+    events = [{'page_number': 3, 'action': 'normalized', 'original_hint': 'three_column',
+               'normalized_hint': 'cards'}, {'page_number': 4, 'action': 'fallback', 'reason': 'bad title'}]
+    captured = {}
+    _install_fake_deck_plan_backend(monkeypatch, captured, planning_events=events)
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    created = client.post('/api/deck-plans', json={**_long_deck_payload(), 'slide_count': 20,
+                                                 'deck_type': 'visual_design_v2'})
+    plan_id = created.json()['plan_id']
+    plan = client.get(f'/api/deck-plans/{plan_id}').json()['plan']
+    # Delete a page: diagnostic page numbers describe planning before review.
+    plan['sections'][0]['pages'].pop()
+    assert client.put(f'/api/deck-plans/{plan_id}', json={'plan':plan}).status_code == 200
+    confirmed = client.post(f'/api/deck-plans/{plan_id}/confirm', json={'plan':plan})
+    job_id = confirmed.json()['job_id']
+    seeded = json.loads((tmp_path/'jobs'/job_id/'checkpoints/skeleton_with_briefs.json').read_text())
+    assert seeded['planning_events'] == [{**e, 'page_number_scope': 'before_user_review'} for e in events]

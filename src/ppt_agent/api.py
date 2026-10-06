@@ -1930,6 +1930,7 @@ def _run_deck_plan(
                 {
                     "brief": result.brief.model_dump(mode="json"),
                     "plan": editable.model_dump(mode="json"),
+                    "planning_events": result.skeleton.planning_events,
                 },
                 ensure_ascii=False,
             ),
@@ -2739,7 +2740,12 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             else EditableDeckPlan.model_validate(stored["plan"])
         )
         try:
-            skeleton = skeleton_from_editable_plan(editable)
+            skeleton = skeleton_from_editable_plan(editable).model_copy(update={
+                "planning_events": [
+                    {**event, "page_number_scope": "before_user_review"}
+                    for event in stored.get("planning_events", [])
+                ]
+            })
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         brief = V2ContentBrief.model_validate(stored["brief"]).model_copy(
@@ -2783,7 +2789,8 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
             status="confirmed",
             job_id=job.job_id,
             plan_json=json.dumps(
-                {"brief": stored["brief"], "plan": editable.model_dump(mode="json")},
+                {"brief": stored["brief"], "plan": editable.model_dump(mode="json"),
+                 "planning_events": stored.get("planning_events", [])},
                 ensure_ascii=False,
             ),
         )

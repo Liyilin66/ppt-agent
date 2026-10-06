@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ppt_agent.models import StrictModel
 
@@ -96,6 +96,7 @@ class DeckSkeleton(StrictModel):
     total_pages: int
     outline: DeckOutline
     slots: list[PageSlot]
+    planning_events: list[dict[str, Any]] = Field(default_factory=list)
 
     def content_slots(self) -> list[PageSlot]:
         return [slot for slot in self.slots if slot.kind == "content"]
@@ -123,7 +124,26 @@ def _distribute(total: int, weights: list[float]) -> list[int]:
     return floors
 
 
-def reconcile_outline(outline: DeckOutline, total_pages: int) -> tuple[DeckOutline, int]:
+def _structure_budget(
+    total_pages: int, section_count: int, include_section_dividers: bool | None = None
+) -> tuple[int, bool]:
+    """Reserve fixed pages and use dividers only within the 25% allowance.
+
+    The fixed pages take precedence for short decks, where they alone can
+    exceed the allowance. TOCs keep their existing eight-section capacity.
+    """
+
+    toc_pages = math.ceil(section_count / 8)
+    include_dividers = (
+        include_section_dividers is not False
+        and (2 + toc_pages + section_count) * 4 <= total_pages
+    )
+    return toc_pages, include_dividers
+
+
+def reconcile_outline(
+    outline: DeckOutline, total_pages: int, *, include_section_dividers: bool | None = None
+) -> tuple[DeckOutline, int]:
     """Fit the model's outline to the exact page budget.
 
     Returns the adjusted outline plus the TOC page count. Section content-page
@@ -135,13 +155,14 @@ def reconcile_outline(outline: DeckOutline, total_pages: int) -> tuple[DeckOutli
         raise ValueError(f"total_pages must be within [{MIN_PAGES}, {MAX_PAGES}]")
 
     sections = list(outline.sections)
-    include_toc = total_pages >= 10
-
     while sections:
-        toc_pages = math.ceil(len(sections) / 8) if include_toc else 0
-        overhead = 1 + toc_pages + len(sections) + 1
+        toc_pages, include_dividers = _structure_budget(
+            total_pages, len(sections), include_section_dividers
+        )
+        overhead = 2 + toc_pages + (len(sections) if include_dividers else 0)
         content_budget = total_pages - overhead
-        if content_budget >= len(sections):
+        fixed_fits = 2 + toc_pages <= max(3, total_pages // 4)
+        if content_budget >= len(sections) and fixed_fits:
             break
         # Too many sections for the budget: merge the smallest into its neighbor.
         if len(sections) == 1:
@@ -175,23 +196,30 @@ def reconcile_outline(outline: DeckOutline, total_pages: int) -> tuple[DeckOutli
 
 
 def build_skeleton(
-    outline: DeckOutline, *, total_pages: int, language: str
+    outline: DeckOutline, *, total_pages: int, language: str,
+    include_section_dividers: bool | None = None,
 ) -> DeckSkeleton:
     """Lay out the exact page-by-page structure of the deck."""
 
-    fitted, toc_pages = reconcile_outline(outline, total_pages)
+    fitted, toc_pages = reconcile_outline(
+        outline, total_pages, include_section_dividers=include_section_dividers
+    )
+    _, include_dividers = _structure_budget(
+        total_pages, len(fitted.sections), include_section_dividers
+    )
     slots: list[PageSlot] = [PageSlot(page_number=1, kind="cover")]
     for index in range(toc_pages):
         slots.append(PageSlot(page_number=len(slots) + 1, kind="toc"))
     for section_index, section in enumerate(fitted.sections, start=1):
-        slots.append(
-            PageSlot(
-                page_number=len(slots) + 1,
-                kind="section_divider",
-                section_index=section_index,
-                section_title=section.title,
+        if include_dividers:
+            slots.append(
+                PageSlot(
+                    page_number=len(slots) + 1,
+                    kind="section_divider",
+                    section_index=section_index,
+                    section_title=section.title,
+                )
             )
-        )
         for _ in range(section.content_pages):
             slots.append(
                 PageSlot(
@@ -214,13 +242,15 @@ def build_skeleton(
 
 
 def section_start_pages(skeleton: DeckSkeleton) -> list[tuple[str, int]]:
-    """(section title, divider page number) pairs for the TOC."""
+    """TOC targets: each section's divider, or its first content page."""
 
-    return [
-        (slot.section_title or "", slot.page_number)
-        for slot in skeleton.slots
-        if slot.kind == "section_divider"
-    ]
+    starts: list[tuple[str, int]] = []
+    seen: set[int] = set()
+    for slot in skeleton.slots:
+        if slot.section_index is not None and slot.section_index not in seen:
+            starts.append((slot.section_title or "", slot.page_number))
+            seen.add(slot.section_index)
+    return starts
 
 
 def reconcile_page_briefs(
@@ -242,9 +272,27 @@ def reconcile_page_briefs(
     return result
 
 
-def parse_page_briefs(payload: Any) -> list[PageBrief]:
-    """Parse a model reply that should be a list of PageBrief objects."""
+def normalize_layout_hint(hint: Any) -> str:
+    """Treat layout suggestions as hints, without discarding page content."""
+    supported = PageBrief.model_fields["layout_hint"].annotation.__args__
+    if isinstance(hint, str):
+        hint = hint.strip().lower()
+        if hint in supported:
+            return hint
+        if hint == "columns" or hint.endswith(("_column", "_columns")):
+            return "cards"
+    return "auto"
 
+
+def parse_page_briefs(
+    payload: Any, *, fallback_briefs: list[PageBrief] | None = None,
+    page_numbers: list[int] | None = None, events: list[dict[str, Any]] | None = None,
+) -> list[PageBrief]:
+    """Normalize suggestions and recover invalid pages independently.
+
+    Without fallback content, invalid non-hint fields still raise. Callers that
+    know the target slots can supply one fallback per page, including omissions.
+    """
     if isinstance(payload, dict):
         for key in ("pages", "briefs", "items"):
             if isinstance(payload.get(key), list):
@@ -252,7 +300,29 @@ def parse_page_briefs(payload: Any) -> list[PageBrief]:
                 break
     if not isinstance(payload, list):
         raise ValueError("Page brief reply is not a list")
-    return [PageBrief.model_validate(item) for item in payload]
+    count = len(fallback_briefs) if fallback_briefs is not None else len(payload)
+    result: list[PageBrief] = []
+    for index in range(count):
+        number = page_numbers[index] if page_numbers is not None else index + 1
+        item = payload[index] if index < len(payload) else None
+        try:
+            if isinstance(item, dict):
+                item = dict(item)
+                original = item.get("layout_hint", "auto")
+                hint = normalize_layout_hint(original)
+                item["layout_hint"] = hint
+                if original != hint and events is not None:
+                    events.append({"page_number": number, "action": "normalized",
+                                   "original_hint": original, "normalized_hint": hint})
+            result.append(PageBrief.model_validate(item))
+        except (ValidationError, ValueError) as exc:
+            if fallback_briefs is None:
+                raise
+            result.append(fallback_briefs[index])
+            if events is not None:
+                events.append({"page_number": number, "action": "fallback",
+                               "reason": "missing_page" if item is None else str(exc)})
+    return result
 
 
 class EditablePage(StrictModel):
@@ -266,7 +336,7 @@ class EditablePage(StrictModel):
     speaker_notes: str = ""
 
     def to_brief(self) -> PageBrief:
-        hint = self.layout_hint if self.layout_hint in PageBrief.model_fields["layout_hint"].annotation.__args__ else "auto"
+        hint = normalize_layout_hint(self.layout_hint)
         return PageBrief(
             title=self.title,
             summary=self.summary,
@@ -289,16 +359,18 @@ class EditableDeckPlan(StrictModel):
     deck_title: str = Field(..., min_length=1)
     subtitle: str | None = None
     language: str = "zh-CN"
+    include_section_dividers: bool | None = None
     sections: list[EditableSection] = Field(..., min_length=1, max_length=16)
 
     def structural_pages(self) -> int:
-        base = 2 + len(self.sections)  # cover + closing + one divider per section
         content = sum(len(section.pages) for section in self.sections)
-        toc = math.ceil(len(self.sections) / 8)
-        # Matches reconcile_outline: decks that reach 10 pages carry a TOC.
-        if base + content + toc >= 10:
-            base += toc
-        return base
+        section_count = len(self.sections)
+        fixed = 2 + math.ceil(section_count / 8)
+        total_with_dividers = content + fixed + section_count
+        _, include_dividers = _structure_budget(
+            total_with_dividers, section_count, self.include_section_dividers
+        )
+        return fixed + (section_count if include_dividers else 0)
 
     def total_pages(self) -> int:
         return self.structural_pages() + sum(len(section.pages) for section in self.sections)
@@ -328,6 +400,7 @@ def editable_plan_from_skeleton(skeleton: DeckSkeleton) -> EditableDeckPlan:
         deck_title=skeleton.deck_title,
         subtitle=skeleton.subtitle,
         language=skeleton.language,
+        include_section_dividers=any(slot.kind == "section_divider" for slot in skeleton.slots),
         sections=sections,
     )
 
@@ -357,7 +430,15 @@ def skeleton_from_editable_plan(plan: EditableDeckPlan) -> DeckSkeleton:
             for section in plan.sections
         ],
     )
-    skeleton = build_skeleton(outline, total_pages=total, language=plan.language)
+    skeleton = build_skeleton(
+        outline, total_pages=total, language=plan.language,
+        include_section_dividers=plan.include_section_dividers,
+    )
+    if skeleton.outline.sections != outline.sections:
+        raise ValueError(
+            "Edited plan exceeds the structural page allowance; "
+            "merge sections or add content pages to preserve every edited page."
+        )
     briefs_by_section = {
         index: [page.to_brief() for page in section.pages]
         for index, section in enumerate(plan.sections, start=1)

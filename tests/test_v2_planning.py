@@ -61,12 +61,12 @@ class TestReconcileOutline:
         assert sum(s.content_pages for s in fitted.sections) + overhead == 100
         assert all(s.content_pages >= 1 for s in fitted.sections)
 
-    def test_merges_sections_when_budget_is_tiny(self) -> None:
+    def test_tiny_budget_keeps_sections_without_dividers(self) -> None:
         outline = _outline([3, 3, 3, 3, 3, 3])
         fitted, toc_pages = reconcile_outline(outline, 8)
-        overhead = 1 + toc_pages + len(fitted.sections) + 1
+        overhead = 1 + toc_pages + 1
         assert sum(s.content_pages for s in fitted.sections) + overhead == 8
-        assert len(fitted.sections) < 6
+        assert len(fitted.sections) == 5
 
     def test_rejects_out_of_range_page_count(self) -> None:
         with pytest.raises(ValueError):
@@ -88,9 +88,9 @@ class TestSkeleton:
         dividers = [slot for slot in skeleton.slots if slot.kind == "section_divider"]
         assert len(dividers) == len(skeleton.outline.sections)
 
-    def test_small_deck_has_no_toc(self) -> None:
+    def test_small_deck_keeps_toc(self) -> None:
         skeleton = build_skeleton(_outline([2, 2]), total_pages=8, language="zh-CN")
-        assert all(slot.kind != "toc" for slot in skeleton.slots)
+        assert any(slot.kind == "toc" for slot in skeleton.slots)
 
     def test_section_start_pages_match_dividers(self) -> None:
         skeleton = build_skeleton(_outline([5, 5, 5]), total_pages=30, language="zh-CN")
@@ -135,7 +135,7 @@ class TestEditableDeckPlan:
 
     def test_skeleton_roundtrip_preserves_briefs(self) -> None:
         skeleton = skeleton_from_editable_plan(self._plan())
-        assert skeleton.total_pages == 7  # cover + 2 dividers + 3 content + closing = 7 (<10, no TOC)
+        assert skeleton.total_pages == 6  # cover + toc + 3 content + closing
         content = skeleton.content_slots()
         assert [slot.brief.title for slot in content] == ["p1", "p2", "p3"]
         assert content[0].brief.points == ["a", "b"]
@@ -155,9 +155,9 @@ class TestEditableDeckPlan:
                 )
             ],
         )
-        # cover + toc + divider + 8 content + closing = 12
-        assert plan.total_pages() == 12
-        assert skeleton_from_editable_plan(plan).total_pages == 12
+        # cover + toc + 8 content + closing; divider would exceed allowance
+        assert plan.total_pages() == 11
+        assert skeleton_from_editable_plan(plan).total_pages == 11
 
     def test_rejects_out_of_range_totals(self) -> None:
         oversized = EditableDeckPlan(

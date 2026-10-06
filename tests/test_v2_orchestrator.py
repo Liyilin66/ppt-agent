@@ -380,7 +380,7 @@ class TestAnchorVariety:
         assert len(variants) > 1
 
     def test_build_uses_model_designed_anchors(self, tmp_path: Path) -> None:
-        result = build_deck(_request(tmp_path), MockLLMClient(), progress=lambda _: None)
+        result = build_deck(_request(tmp_path, page_count=100), MockLLMClient(), progress=lambda _: None)
         design = json.loads(Path(result.deck_design_path).read_text(encoding="utf-8"))
         cover = design["pages"][0]
         assert cover["role"] == "cover"

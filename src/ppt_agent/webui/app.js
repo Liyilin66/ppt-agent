@@ -2296,14 +2296,13 @@ function planContentPages(plan) {
 }
 
 function planStructuralPages(plan) {
-  // Mirrors the server: cover + closing + one divider per section (+ TOC once the deck reaches 10 pages).
+  // Preserve the reviewed plan's divider policy and the server's 25% cap.
   const sectionCount = plan.sections.length;
-  let structural = 2 + sectionCount;
-  const toc = Math.ceil(sectionCount / 8);
-  if (structural + planContentPages(plan) + toc >= 10) {
-    structural += toc;
-  }
-  return structural;
+  const fixed = 2 + Math.ceil(sectionCount / 8);
+  const withDividers = planContentPages(plan) + fixed + sectionCount;
+  const includeDividers = plan.include_section_dividers !== false
+    && fixed + sectionCount <= Math.floor(withDividers * 0.25);
+  return fixed + (includeDividers ? sectionCount : 0);
 }
 
 function planTotalPages(plan) {

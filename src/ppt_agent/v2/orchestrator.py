@@ -372,11 +372,19 @@ async def _run_page_brief_stage(
         if slot.kind == "content" and slot.section_index is not None:
             slots_by_section.setdefault(slot.section_index, []).append(slot)
 
-    async def briefs_for(section_index: int) -> tuple[int, list[PageBrief]]:
+    async def briefs_for(section_index: int) -> tuple[int, list[PageBrief], list[dict[str, Any]]]:
         section = sections[section_index - 1]
         page_count = len(slots_by_section.get(section_index, []))
         if page_count == 0:
-            return section_index, []
+            return section_index, [], []
+        page_numbers = [slot.page_number for slot in slots_by_section[section_index]]
+        events: list[dict[str, Any]] = []
+        fallback_briefs = [
+            PageBrief(title=f"{section.title} · {position + 1}", summary=section.goal,
+                      points=section.talking_points[:5] or [section.goal or section.title],
+                      layout_hint="auto")
+            for position in range(page_count)
+        ]
         async with semaphore:
             try:
                 payload = await client.complete_json(
@@ -398,23 +406,31 @@ async def _run_page_brief_stage(
                         "brief": brief.model_dump(mode="json"),
                     },
                 )
-                briefs = parse_page_briefs(payload)
+                briefs = parse_page_briefs(
+                    payload, fallback_briefs=fallback_briefs,
+                    page_numbers=page_numbers, events=events,
+                )
             except (ValidationError, ValueError) as exc:
                 progress(
                     f"[briefs] section {section_index} fell back to talking points ({exc})"
                 )
-                briefs = [
-                    PageBrief(title=point, summary=section.goal, layout_hint="auto")
-                    for point in section.talking_points[:page_count]
-                ]
+                briefs = fallback_briefs
+                events.extend({"page_number": number, "action": "fallback", "reason": str(exc)}
+                              for number in page_numbers)
         return section_index, reconcile_page_briefs(
             briefs, page_count, section_title=section.title
-        )
+        ), events
 
     results = await asyncio.gather(
         *(briefs_for(index) for index in sorted(slots_by_section))
     )
-    briefs_map = dict(results)
+    briefs_map = {index: pages for index, pages, _ in results}
+    planning_events = sorted(
+        [event for _, _, events in results for event in events],
+        key=lambda event: (event["page_number"], event["action"]),
+    )
+    for event in planning_events:
+        progress(f"[briefs] page {event['page_number']} {event['action']}")
     new_slots: list[PageSlot] = []
     cursor: dict[int, int] = {}
     for slot in skeleton.slots:
@@ -425,7 +441,7 @@ async def _run_page_brief_stage(
                 update={"brief": briefs_map[slot.section_index][position]}
             )
         new_slots.append(slot)
-    enriched = skeleton.model_copy(update={"slots": new_slots})
+    enriched = skeleton.model_copy(update={"slots": new_slots, "planning_events": planning_events})
     checkpoints.save("skeleton_with_briefs.json", enriched.model_dump(mode="json"))
     return enriched
 
@@ -1067,6 +1083,7 @@ async def build_deck_async(
         "stage_seconds": stage_seconds,
         "outcomes": [item.model_dump(mode="json") for item in outcomes],
         "intake_warnings": intake.warnings,
+        "planning_events": skeleton.planning_events,
         "quality_gate": {
             "mode": request.qa_gate,
             "passed": quality_gate_passed,
