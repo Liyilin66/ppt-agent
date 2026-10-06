@@ -144,6 +144,18 @@ def display_source(source, website_titles):
     return '；'.join(result) or None
 
 
+def qualitative_structural_text(text, field, page_number, removed):
+    """Structure has no evidence footer; do not render unsupported business numbers."""
+    if not text:
+        return text
+    from ppt_agent.v2.evidence_check import _NUMBER
+    def drop(match):
+        removed.append({'page_number': page_number, 'field': field, 'value': match.group(),
+                        'action': 'removed_number', 'reason': 'structural_copy_without_citation'})
+        return ''
+    return _NUMBER.sub(drop, text).strip() or '演示'
+
+
 def diversity_statistics(contents, slots):
     counts = Counter(content.archetype for content in contents)
     total = len(contents)
@@ -455,6 +467,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     seen_titles = set()
     final_contents = []
+    structural_removed = []
     for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
         if slot.kind == 'content':
             content, record = results[slot.page_number]
@@ -493,9 +506,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             # structural designs, built only from skeleton facts.
             page = typeset_structural(
                 slot.kind, profile, page_number=slot.page_number,
-                deck_title=skeleton.deck_title, subtitle=skeleton.subtitle,
-                sections=sections, section_index=slot.section_index,
-                section_title=slot.section_title,
+                deck_title=qualitative_structural_text(skeleton.deck_title, 'deck_title', slot.page_number, structural_removed),
+                subtitle=qualitative_structural_text(skeleton.subtitle, 'subtitle', slot.page_number, structural_removed),
+                sections=[(qualitative_structural_text(title, 'section_title', slot.page_number, structural_removed), number)
+                          for title, number in sections], section_index=slot.section_index,
+                section_title=qualitative_structural_text(slot.section_title, 'section_title', slot.page_number, structural_removed),
             )
             page, qa = review_page(page, theme)
             outcome = PageOutcome(page_number=slot.page_number, status='anchor',
@@ -535,7 +550,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                                   if x.get('action') == 'removed_item'}) for r in records),
                        'removed_numbers': sum(x.get('action') == 'removed_number' for r in records
                                               for x in r.get('numeric_check', {}).get('removed', []))}
-    run = {'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    numeric_summary['structural_removed_numbers'] = len(structural_removed)
+    run = {'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,

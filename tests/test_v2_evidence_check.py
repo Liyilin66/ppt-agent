@@ -116,3 +116,11 @@ def test_source_page_range_is_scoped():
     assert not check_content_numbers(page,packet)
     page.statement='18.8%'
     assert check_content_numbers(page,packet)
+
+
+def test_amount_and_event_rate_are_different_metric_keywords():
+    from ppt_agent.v2.visual.content import MetricsContent
+    c=MetricsContent(title='融资结构',metrics=[{'value':'38.7%','label':'机器人融资金额'}, {'value':'35.5%','label':'机器人融资金额'}])
+    issues=check_content_numbers(c,'机器人融资事件38.7%\n机器人融资金额占比35.5%')
+    assert any(i['path']=='metrics.0.value' and i['reason']=='metric_mismatch' for i in issues)
+    assert not any(i['path']=='metrics.1.value' for i in issues)

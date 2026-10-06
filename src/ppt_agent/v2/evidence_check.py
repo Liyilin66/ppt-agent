@@ -15,7 +15,7 @@ from .visual.content import ArchetypeContent, StatementContent
 _NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|万亿|亿|万|千|百|pp)?', re.I)
 _SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart'}
 _ADAPTER = TypeAdapter(ArchetypeContent)
-_STOP = re.compile(r'(?:占比|比例|数量|总数|规模|增长率|使用率|用户数|金额|事件数)$')
+_STOP = re.compile(r'(?:占比|比例|规模|增长率|使用率)$')
 
 
 def _key(value: str) -> tuple[Decimal, str]:

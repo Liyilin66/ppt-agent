@@ -69,3 +69,11 @@ def test_live_search_provider_results_are_present_in_content_requests(tmp_path):
     assert store['documents'][0]['url']=='https://example.com/report'
     requests=[x for x in c.requests if x['task']=='page_content']
     assert requests and any('https://example.com/report' in x['user'] for x in requests)
+
+
+def test_structural_business_numbers_are_removed_without_citation():
+    from ppt_agent.v2.typeset_pipeline import qualitative_structural_text
+    removed=[]
+    result=qualitative_structural_text('800人企业预算50万元','title',1,removed)
+    assert '800' not in result and '50' not in result
+    assert len(removed)==2
