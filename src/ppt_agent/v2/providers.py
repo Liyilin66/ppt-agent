@@ -22,7 +22,7 @@ from pydantic import Field
 from ppt_agent.models import StrictModel
 
 
-DEFAULT_TIMEOUT_SECONDS = 100.0
+DEFAULT_TIMEOUT_SECONDS = 115.0  # just under the proxy gateway's ~125 s cut-off
 RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504, 524}
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -47,6 +47,9 @@ class ProviderConfig(StrictModel):
     max_retries: int = Field(default=3, ge=0)
     temperature: float | None = Field(default=0.4, ge=0, le=2)
     max_output_tokens: int = Field(default=8192, gt=0)
+    # Reasoning models can spend >125 s thinking on a small JSON answer, past
+    # the proxy gateway's limit (HTTP 524). "none"/"low" keeps calls short.
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     input_cost_per_mtok_usd: float | None = Field(default=None, ge=0)
     output_cost_per_mtok_usd: float | None = Field(default=None, ge=0)
 
@@ -154,10 +157,12 @@ def provider_config_from_env() -> ProviderConfig:
         or os.environ.get("OPENAI_MODEL", default_model if protocol == "openai" else "")
         or default_model
     )
+    effort = (os.environ.get("PPT_AGENT_REASONING_EFFORT") or "").strip().lower() or None
     return ProviderConfig(
         protocol=protocol,  # type: ignore[arg-type]
         model=model.strip(),
         base_url=os.environ.get("PPT_AGENT_BASE_URL") or None,
+        reasoning_effort=effort,  # type: ignore[arg-type]
     )
 
 
@@ -394,6 +399,8 @@ class OpenAICompatClient(HttpLLMClient):
         }
         if self.config.temperature is not None:
             body["temperature"] = self.config.temperature
+        if self.config.reasoning_effort is not None:
+            body["reasoning_effort"] = self.config.reasoning_effort
         headers = {
             "Authorization": f"Bearer {self.config.resolved_api_key()}",
             "Content-Type": "application/json",

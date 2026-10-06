@@ -102,6 +102,10 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         parser.add_argument(
             "--repair-rounds", type=int, default=1, help="LLM repair rounds per failing page (0-2)."
         )
+        parser.add_argument(
+            "--reasoning-effort", choices=("none", "minimal", "low", "medium", "high"), default=None,
+            help="Reasoning budget for reasoning models (env PPT_AGENT_REASONING_EFFORT).",
+        )
 
 
 def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
@@ -150,6 +154,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
             base_url=args.base_url or env_config.base_url,
             input_cost_per_mtok_usd=args.input_cost,
             output_cost_per_mtok_usd=args.output_cost,
+            reasoning_effort=args.reasoning_effort or env_config.reasoning_effort,
         )
         config.resolved_api_key()  # fail fast before any planning work
     except ProviderError as exc:

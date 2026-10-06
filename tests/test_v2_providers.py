@@ -197,3 +197,26 @@ class TestPricingDefaults:
         priced, used_defaults = ensure_pricing(config)
         assert used_defaults is False
         assert priced == config
+
+
+def test_reasoning_effort_is_sent_only_when_configured(monkeypatch):
+    import asyncio
+    import httpx
+    from ppt_agent.v2.providers import OpenAICompatClient, ProviderConfig
+
+    seen = []
+
+    def handler(request):
+        seen.append(__import__("json").loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{\"ok\": true}"}}],
+                                         "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+
+    transport = httpx.MockTransport(handler)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: real(*a, transport=transport, **k))
+    for effort in (None, "none"):
+        client = OpenAICompatClient(ProviderConfig(model="m", api_key="k", base_url="https://x.test/v1",
+                                                   reasoning_effort=effort))
+        asyncio.run(client.complete_json(task="t", system="s", user="u", context={}))
+    assert "reasoning_effort" not in seen[0]
+    assert seen[1]["reasoning_effort"] == "none"
