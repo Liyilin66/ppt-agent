@@ -1,6 +1,7 @@
 """Content-only model calls followed by an ordered deterministic layout pass."""
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import Counter
 import re
@@ -268,8 +269,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'with the first item carrying the core conclusion. Each page argues one point. '
         'points defaults to 3 items, at most 4; keep item body preferably within 40 characters. '
         'Prefer metrics or chart for supported quantitative evidence, and statement for key conclusions. '
-        'Across content pages points must not exceed 40%; no consecutive identical archetypes; '
-        'each section must contain a non-points page. Follow the provided remaining allowance and allowed_archetypes. '
+        'The deck mix is planned in advance: use diversity.assigned_archetype. Only if the supplied '
+        'evidence cannot honestly fill it (e.g. no numbers for metrics or chart), choose another from '
+        'allowed_archetypes. '
         'source must identify an actual supplied filename, page or URL in source_references. '
         'Without source material leave source null; never cite user requirements as a source. When revising, edit current_content according to the instruction and preserve unrelated existing content. Never invent citations or unsupported numbers; '
         'if no evidence supports a number, omit it and use points or statement instead. '
@@ -363,6 +365,77 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     return parsed, record
 
 
+_NUMBER = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|千|倍|家|款|个|起|元|美元|欧元|台|项|件|人|年)")
+
+ARCHETYPE_CAPS = {"points": 0.4, "process": 0.3, "statement": 0.15}
+_GENERIC = ["points", "process", "compare", "statement"]
+_NUMERIC = ["metrics", "chart"]
+
+
+def has_numeric_evidence(text: str | None, minimum: int = 3) -> bool:
+    """Enough quantified facts in a page's evidence to carry metrics or a chart."""
+    return bool(text) and len(_NUMBER.findall(text)) >= minimum
+
+
+def plan_archetypes(slots, numeric: dict[int, bool]) -> dict[int, str]:
+    """Assign every content page an archetype up front, so pages can be generated
+    concurrently while the deck still obeys the mix rules.
+
+    Rules, in priority order: no two consecutive pages share an archetype;
+    metrics/chart only where the page's evidence carries numbers; timeline only
+    where planning asked for one; points <= 40%, process <= 30%, statement
+    <= 15% and never a section's first page; every section gets a non-points
+    page. When nothing satisfies every cap, caps are relaxed (process, then
+    points) rather than forcing an archetype the content cannot fill.
+    """
+
+    slots = sorted(slots, key=lambda slot: slot.page_number)
+    total = len(slots)
+    caps = {kind: max(1, int(total * share)) for kind, share in ARCHETYPE_CAPS.items()}
+    counts: dict[str, int] = {}
+    plan: dict[int, str] = {}
+    previous = None
+    for index, slot in enumerate(slots):
+        hint = slot.brief.layout_hint if slot.brief else "auto"
+        preferred = suggested_archetype(hint)
+        has_numbers = numeric.get(slot.page_number, False)
+        section = slot.section_index
+        first_in_section = index == 0 or slots[index - 1].section_index != section
+        last_in_section = index == total - 1 or slots[index + 1].section_index != section
+        section_kinds = [plan[s.page_number] for s in slots[:index] if s.section_index == section]
+        candidates = [preferred] + (_NUMERIC if has_numbers else []) + _GENERIC
+        if hint == "timeline":
+            candidates.insert(1, "timeline")
+        ordered = list(dict.fromkeys(candidates))
+
+        def allowed(kind: str, relax: frozenset = frozenset()) -> bool:
+            if kind == previous:
+                return False
+            if kind in _NUMERIC and not has_numbers:
+                return False
+            if kind == "timeline" and hint != "timeline":
+                return False
+            if kind == "statement" and first_in_section:
+                return False
+            # all() over an empty list is True: a one-page section must not be points.
+            if kind == "points" and last_in_section and all(k == "points" for k in section_kinds):
+                return False
+            if kind in caps and kind not in relax and counts.get(kind, 0) >= caps[kind]:
+                return False
+            return True
+
+        choice = None
+        for relax in (frozenset(), frozenset({"process"}), frozenset({"process", "points"})):
+            choice = next((kind for kind in ordered if allowed(kind, relax)), None)
+            if choice:
+                break
+        choice = choice or ("points" if previous != "points" else "process")
+        plan[slot.page_number] = choice
+        counts[choice] = counts.get(choice, 0) + 1
+        previous = choice
+    return plan
+
+
 def _skeleton_sections(skeleton) -> list[tuple[str, int]]:
     """(section title, first page) in deck order, for the cover and TOC."""
 
@@ -399,30 +472,43 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     evidence_path = checkpoints.root / 'evidence_store.json'
     evidence_store = EvidenceStore.from_dict(json.loads(evidence_path.read_text())) if evidence_path.is_file() else None
     content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
-    results, previous, section_archetypes = {}, [], {}
-    supported = list(content_adapter().json_schema()['discriminator']['mapping'])
-    points_limit = int(len(content_slots) * .4)
-    # Actual earlier archetypes require ordered generation, including resumed pages.
-    for index, slot in enumerate(content_slots):
-        used = section_archetypes.setdefault(slot.section_index, [])
-        last_in_section = not any(later.section_index == slot.section_index for later in content_slots[index + 1:])
-        allowed = [kind for kind in supported if not previous or kind != previous[-1]]
-        if previous.count('points') >= points_limit or (last_in_section and not any(kind != 'points' for kind in used)):
-            allowed = [kind for kind in allowed if kind != 'points']
-        diversity = {'previous_archetypes': list(previous), 'section_archetypes': list(used),
-                     'content_pages': len(content_slots), 'points_limit': points_limit,
-                     'points_remaining': max(0, points_limit - previous.count('points')),
-                     'last_page_in_section': last_in_section, 'allowed_archetypes': allowed,
+
+    def packet_for(slot):
+        if evidence_store is None:
+            return None
+        section = skeleton.outline.sections[(slot.section_index or 1) - 1]
+        query = " ".join([slot.brief.title, *slot.brief.points, slot.section_title or '']) if slot.brief else (slot.section_title or '')
+        section_query = " ".join([section.title, section.goal, *section.talking_points])
+        return evidence_store.select(query, section_query=section_query)
+
+    # Evidence selection is local BM25, so every packet is known before any
+    # model call; the archetype mix is then fixed up front and pages can be
+    # generated concurrently instead of one after another.
+    packets = {slot.page_number: packet_for(slot) for slot in content_slots}
+    plan = plan_archetypes(content_slots, {
+        number: has_numeric_evidence(packet.text if packet is not None else None)
+        for number, packet in packets.items()
+    })
+    checkpoints.save('typeset/archetype_plan.json', {str(k): v for k, v in plan.items()})
+    semaphore = asyncio.Semaphore(max(1, request.concurrency))
+
+    async def produce(slot):
+        assigned = plan[slot.page_number]
+        diversity = {'assigned_archetype': assigned,
+                     # Only data-bound assignments may fall back: a page planned as
+                     # metrics/chart/timeline may lack the numbers or dates; a generic
+                     # assignment (process, compare, ...) must be followed.
+                     'allowed_archetypes': (list(dict.fromkeys([assigned, 'points', 'statement']))
+                                            if assigned in ('metrics', 'chart', 'timeline') else [assigned]),
+                     'deck_plan': [plan[s.page_number] for s in content_slots],
                      'original_layout_hint': slot.brief.layout_hint if slot.brief else 'auto'}
-        packet = None
-        if evidence_store is not None:
-            section = skeleton.outline.sections[(slot.section_index or 1) - 1]
-            query = " ".join([slot.brief.title, *slot.brief.points, slot.section_title or '']) if slot.brief else (slot.section_title or '')
-            section_query = " ".join([section.title, section.goal, *section.talking_points])
-            packet = evidence_store.select(query, section_query=section_query)
-        content, record = await generate_content(client, checkpoints, slot, brief, profile,
-                                                diversity=diversity, source_references=references, source_page_counts=page_counts,
-                                                evidence=packet)
+        packet = packets[slot.page_number]
+        async with semaphore:
+            content, record = await generate_content(client, checkpoints, slot, brief, profile,
+                                                    diversity=diversity, source_references=references,
+                                                    source_page_counts=page_counts, evidence=packet)
+        record = {**record, 'assigned_archetype': assigned,
+                  'archetype_downgraded': content.archetype != assigned}
         if record.get('evidence') is not None:
             from ppt_agent.v2.evidence import EvidencePacket
             packet = EvidencePacket(**record['evidence'])
@@ -447,19 +533,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 record = {**record, 'model_source': record.get('model_source', content.source),
                           'citation_basis': 'all evidence ranges delivered for this page; not per-claim proof'}
                 content = content.model_copy(update={'source': citation})
-        checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
-                         {'content': content.model_dump(mode='json'), 'record': record})
         # Old caches are preserved, but fabricated attribution is never displayed.
         if not source_is_valid(content.source, references_for_page, page_counts_for_page,
                                packet.allowed_pages if packet is not None else None):
             record = {**record, 'source_invalid_cached': True}
             content = content.model_copy(update={'source': None})
-            checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
-                             {'content': content.model_dump(mode='json'), 'record': record})
-        results[slot.page_number] = content, record
-        previous.append(content.archetype)
-        used.append(content.archetype)
+        checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
+                         {'content': content.model_dump(mode='json'), 'record': record})
         progress(f'[content] page {slot.page_number} ready')
+        return slot.page_number, (content, record)
+
+    results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
     content_seconds = time.perf_counter() - started
     sections = _skeleton_sections(skeleton)
     website_titles = {doc['name']: doc.get('title', '') for doc in evidence_store.documents

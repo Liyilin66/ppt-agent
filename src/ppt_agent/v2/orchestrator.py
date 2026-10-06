@@ -297,6 +297,46 @@ async def _enrich_search_evidence(request, search_provider, checkpoints, intake)
     return IntakeResult(digest=store.document_map(), parsed_files=store.parsed_files, warnings=store.warnings)
 
 
+MAX_SEARCH_CALLS = 12  # per deck, including the initial topic search
+
+
+async def _enrich_section_search(request, search_provider, checkpoints, brief, skeleton, *, progress):
+    """One or two web searches per outline section, so later sections get their
+    own evidence instead of sharing the snippets found for the deck topic."""
+
+    if not request.enable_search or search_provider is None:
+        return
+    from ppt_agent.v2.evidence import EvidenceStore
+    from ppt_agent.v2.search import SearchResult
+    cached = checkpoints.load("section_search_results.json")
+    if cached is None:
+        sections = skeleton.outline.sections
+        queries = [f"{brief.topic} {section.title}" for section in sections]
+        queries += [f"{section.title} {section.talking_points[0]}"
+                    for section in sections if section.talking_points]
+        queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))
+        queries = queries[: MAX_SEARCH_CALLS - 1]
+        semaphore = asyncio.Semaphore(4)
+
+        async def run(query):
+            async with semaphore:
+                try:
+                    return query, await search_provider.search(query, max_results=4)
+                except Exception as exc:  # noqa: BLE001 - one failed query must not sink the deck
+                    progress(f"[search] query failed ({query[:30]}): {str(exc)[:120]}")
+                    return query, []
+
+        pairs = await asyncio.gather(*(run(query) for query in queries))
+        cached = {query: [result.model_dump(mode="json") for result in results]
+                  for query, results in pairs}
+        checkpoints.save("section_search_results.json", cached)
+    results = [SearchResult.model_validate(item) for items in cached.values() for item in items]
+    path = checkpoints.root / "evidence_store.json"
+    store = EvidenceStore.from_dict(json.loads(path.read_text())) if path.is_file() else EvidenceStore.from_paths([])
+    checkpoints.save("evidence_store.json", store.with_search_results(results).to_dict())
+    progress(f"[search] {len(cached)} section queries, {len(results)} results")
+
+
 async def _run_brief_stage(
     request: BuildRequest,
     client: LLMClient,
@@ -1007,6 +1047,8 @@ async def build_deck_async(
         f"[outline] {len(skeleton.outline.sections)} sections / "
         f"{skeleton.total_pages} pages"
     )
+    await _enrich_section_search(request, search_provider, checkpoints, brief, skeleton,
+                                 progress=progress)
 
     finish = timed("page_briefs")
     skeleton = await _run_page_brief_stage(

@@ -15,22 +15,19 @@ class Capture(MockLLMClient):
         return await super().complete_json(**kw)
 
 
-def test_actual_previous_archetypes_and_deck_statistics(tmp_path):
+def test_planned_archetypes_reach_prompts_and_deck_statistics(tmp_path):
     client=Capture();r=build_deck(BuildRequest(prompt='离线方案',page_count=20,output_dir=str(tmp_path)),client,progress=lambda _:None)
     report=json.loads(Path(r.run_report_path).read_text());stats=report['content_statistics']
     assert stats['archetype_ratios'].get('points',0)<=.4
     assert stats['diversity_violations']==[]
     assert stats['source_empty_pages']==17 and stats['source_invalid_pages']==0
-    actual=[]
-    seen_pages=set()
+    assigned={p['page_number']:p['assigned_archetype'] for p in report['typeset_pages']}
     for req in client.content_requests:
-        page=req['context']['page_number']
-        if page in seen_pages:
-            continue  # numeric-check retry carries the same preceding history
-        seen_pages.add(page)
-        payload=json.loads(req['user'].split('\nPrevious output failed validation.')[0]);assert payload['diversity']['previous_archetypes']==actual
-        actual.append(report['typeset_pages'][len(actual)]['archetype'])
-    assert all(a!=b for a,b in zip(actual,actual[1:]))
+        payload=json.loads(req['user'].split('\nPrevious output failed validation.')[0])
+        assert payload['diversity']['assigned_archetype']==assigned[req['context']['page_number']]
+    plan=[assigned[n] for n in sorted(assigned)]
+    assert all(a!=b for a,b in zip(plan,plan[1:]))
+    assert payload['diversity']['deck_plan']==plan
     assert 'body' in client.content_requests[0]['system'] and '40' in client.content_requests[0]['system']
 
 

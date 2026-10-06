@@ -101,18 +101,36 @@ class MockLLMClient:
             points.append("核对资料并明确下一步")
         diversity = context.get("diversity", {})
         allowed = diversity.get("allowed_archetypes", ["points"])
-        previous = diversity.get("previous_archetypes", [])
-        cycle = ("points", "process", "statement")
-        preferred = cycle[len(previous) % len(cycle)]
-        kind = preferred if preferred in allowed else next(
-            candidate for candidate in cycle if candidate in allowed
-        )
+        assigned = diversity.get("assigned_archetype")
+        producible = ("points", "process", "statement", "compare", "timeline")
+        if assigned in producible:
+            kind = assigned  # honour the deck plan like a well-behaved model
+        elif assigned:
+            # No offline numbers for metrics/chart: take the planned fallback.
+            kind = next(c for c in ("points", "statement") if c in allowed)
+        else:
+            previous = diversity.get("previous_archetypes", [])
+            cycle = ("points", "process", "statement")
+            preferred = cycle[len(previous) % len(cycle)]
+            kind = preferred if preferred in allowed else next(
+                candidate for candidate in cycle if candidate in allowed
+            )
         common = {"title": str(brief.get("title", "核心要点"))[:40],
                   "kicker": str(context.get("section_title") or "")[:24] or None,
                   "source": None, "speaker_notes": brief.get("speaker_notes") or None}
         if kind == "statement":
             return {**common, "archetype": "statement", "statement": common["title"][:44],
                     "support": (brief.get("summary") or "先明确问题，再验证方案。")[:100]}
+        if kind == "compare":
+            return {**common, "archetype": "compare",
+                    "left": {"heading": "现状", "points": ["资料分散、依赖经验", "核对耗时、口径不一"]},
+                    "right": {"heading": "方案", "points": [p[:40] for p in points[:3]]}}
+        if kind == "timeline":
+            return {**common, "archetype": "timeline", "milestones": [
+                {"date": f"第{n}阶段", "label": label, "body": body[:40]}
+                for n, (label, body) in enumerate(
+                    zip(("明确问题", "验证方案", "推进落实"),
+                        (points + ["核对目标与边界", "验证结果并反馈"])[:3]), start=1)]}
         if kind == "process":
             steps = (points + ["核对目标与边界", "验证结果并反馈", "确定下一步行动"])[:3]
             return {**common, "archetype": "process", "steps": [
