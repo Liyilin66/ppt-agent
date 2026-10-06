@@ -1062,6 +1062,7 @@ function buildLongDeckPayload() {
     slide_count: Number(document.getElementById("long_slide_count").value),
     language: "zh-CN",
     deck_type: "visual_design_v2",
+    layout_engine: document.getElementById("layoutEngine").value,
     user_requirements: document.getElementById("long_user_requirements").value.trim(),
     interview_id: activeInterviewId,
     attachment_ids: interviewAttachmentIds()
@@ -2261,6 +2262,9 @@ const planEditor = document.getElementById("planEditor");
 const planSections = document.getElementById("planSections");
 const planDeckTitle = document.getElementById("planDeckTitle");
 const planDeckSubtitle = document.getElementById("planDeckSubtitle");
+const planStyleProfile = document.getElementById("planStyleProfile");
+const planLayoutEngine = document.getElementById("planLayoutEngine");
+const planStyleReason = document.getElementById("planStyleReason");
 const planPageSummary = document.getElementById("planPageSummary");
 const confirmPlanButton = document.getElementById("confirmPlanButton");
 const retryPlanButton = document.getElementById("retryPlanButton");
@@ -2470,6 +2474,9 @@ function renderPlanEditor() {
   if (!activePlan) return;
   planDeckTitle.value = activePlan.deck_title || "";
   planDeckSubtitle.value = activePlan.subtitle || "";
+  planStyleProfile.value = activePlan.deck_type || "corporate";
+  planLayoutEngine.value = document.getElementById("layoutEngine").value;
+  planStyleReason.textContent = activePlan.deck_type_reason || "根据受众、目的与语气选择风格，可在此调整。";
   planSections.replaceChildren();
   activePlan.sections.forEach((section, sectionIndex) => {
     planSections.appendChild(buildPlanSectionCard(section, sectionIndex));
@@ -2509,6 +2516,7 @@ function applyPlanState(plan) {
   }
   if (plan.status === "ready") {
     activePlan = plan.plan;
+    document.getElementById("layoutEngine").value = plan.request?.layout_engine || "typeset";
     renderPlanEditor();
     return;
   }
@@ -2551,7 +2559,7 @@ async function confirmDeckPlan() {
     const job = await requestJson(`/api/deck-plans/${activePlanId}/confirm`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({plan: activePlan})
+      body: JSON.stringify({plan: activePlan, layout_engine: document.getElementById("layoutEngine").value})
     });
     localStorage.removeItem(activePlanStorageKey);
     longSlideCount.value = String(total);
@@ -2601,6 +2609,17 @@ retryPlanButton.addEventListener("click", () => {
 skipPlanButton.addEventListener("click", skipPlanAndGenerateDirectly);
 skipPlanFooterButton.addEventListener("click", skipPlanAndGenerateDirectly);
 skipOutlineButton.addEventListener("click", skipPlanAndGenerateDirectly);
+
+planLayoutEngine.addEventListener("change", () => {
+  document.getElementById("layoutEngine").value = planLayoutEngine.value;
+});
+
+planStyleProfile.addEventListener("change", () => {
+  if (!activePlan) return;
+  activePlan.deck_type = planStyleProfile.value;
+  activePlan.deck_type_reason = `用户选择：${planStyleProfile.options[planStyleProfile.selectedIndex].text}`;
+  planStyleReason.textContent = activePlan.deck_type_reason;
+});
 
 planDeckTitle.addEventListener("input", () => {
   if (activePlan) activePlan.deck_title = planDeckTitle.value;

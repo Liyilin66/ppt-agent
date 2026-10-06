@@ -24,6 +24,7 @@ from ppt_agent.v2.providers import UsageMeter
 def _request(tmp_path: Path, **overrides) -> BuildRequest:
     defaults = dict(
         prompt="AI Agent 产品方案",
+        layout_engine="free",
         page_count=20,
         output_dir=str(tmp_path / "out"),
         deck_name="test",

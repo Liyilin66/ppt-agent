@@ -2548,3 +2548,71 @@ def test_deck_plan_confirm_preserves_server_planning_diagnostics(tmp_path, monke
     job_id = confirmed.json()['job_id']
     seeded = json.loads((tmp_path/'jobs'/job_id/'checkpoints/skeleton_with_briefs.json').read_text())
     assert seeded['planning_events'] == [{**e, 'page_number_scope': 'before_user_review'} for e in events]
+
+
+def test_v2_layout_and_style_request_contract():
+    request = api.CreateLongDeckJobRequest.model_validate(_long_deck_payload())
+    assert request.layout_engine == 'typeset'
+    assert request.style_profile is None
+    for engine in ('typeset', 'free'):
+        explicit = api.CreateLongDeckJobRequest.model_validate({
+            **_long_deck_payload(), 'layout_engine': engine, 'style_profile': 'consulting',
+        })
+        assert explicit.layout_engine == engine
+        assert explicit.style_profile == 'consulting'
+
+
+def test_deck_plan_confirm_preserves_selected_profile_and_engine(tmp_path, monkeypatch):
+    captured = {}
+    _install_fake_deck_plan_backend(monkeypatch, captured)
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    created = client.post('/api/deck-plans', json={
+        **_long_deck_payload(), 'slide_count': 10,
+        'layout_engine': 'free', 'style_profile': 'training',
+    })
+    plan_id = created.json()['plan_id']
+    assert captured['plan_request'].layout_engine == 'free'
+    assert captured['plan_request'].style_profile == 'training'
+    plan = client.get(f'/api/deck-plans/{plan_id}').json()['plan']
+    plan['deck_type'] = 'consulting'
+    plan['deck_type_reason'] = '用户选择咨询汇报'
+    confirmed = client.post(f'/api/deck-plans/{plan_id}/confirm', json={'plan': plan})
+    assert confirmed.status_code == 202
+    assert captured['request'].layout_engine == 'free'
+    assert captured['request'].style_profile == 'consulting'
+    brief_path = tmp_path / 'jobs' / confirmed.json()['job_id'] / 'checkpoints' / 'brief.json'
+    assert json.loads(brief_path.read_text())['deck_type'] == 'consulting'
+
+
+def test_v2_direct_generation_and_resume_preserve_engine_and_profile(tmp_path, monkeypatch):
+    captured = {}
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    for engine in ('typeset', 'free'):
+        response = client.post('/api/long-deck-jobs', json={
+            **_long_deck_payload(), 'slide_count': 20, 'layout_engine': engine,
+            'style_profile': 'launch',
+        })
+        assert response.status_code == 202
+        assert captured['request'].layout_engine == engine
+        assert captured['request'].style_profile == 'launch'
+        job_id = response.json()['job_id']
+        resumed = client.post(f'/api/long-deck-jobs/{job_id}/resume')
+        assert resumed.status_code == 202
+        assert captured['request'].layout_engine == engine
+        assert captured['request'].style_profile == 'launch'
+
+
+def test_deck_plan_confirm_can_change_layout_engine(tmp_path, monkeypatch):
+    captured = {}
+    _install_fake_deck_plan_backend(monkeypatch, captured)
+    _install_fake_v2_long_deck_backend(monkeypatch, captured)
+    client = _client(tmp_path)
+    created = client.post('/api/deck-plans', json={
+        **_long_deck_payload(), 'slide_count': 10, 'layout_engine': 'free',
+    })
+    plan_id = created.json()['plan_id']
+    confirmed = client.post(f'/api/deck-plans/{plan_id}/confirm', json={'layout_engine': 'typeset'})
+    assert confirmed.status_code == 202
+    assert captured['request'].layout_engine == 'typeset'

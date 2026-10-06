@@ -191,6 +191,8 @@ class CreateLongDeckJobRequest(StrictModel):
     max_batch_attempts: int = Field(default=1, ge=1, le=3)
     interview_id: str | None = Field(default=None, min_length=1, max_length=64)
     attachment_ids: list[str] = Field(default_factory=list, max_length=20)
+    layout_engine: Literal["typeset", "free"] = "typeset"
+    style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
 
 
 def _uses_v2_generation(payload: CreateLongDeckJobRequest) -> bool:
@@ -215,6 +217,7 @@ class UpdateDeckPlanRequest(StrictModel):
 
 class ConfirmDeckPlanRequest(StrictModel):
     plan: EditableDeckPlan | None = None
+    layout_engine: Literal["typeset", "free"] | None = None
 
 
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024
@@ -1803,6 +1806,8 @@ def _run_v2_long_deck_job(
                 prompt=_v2_long_deck_prompt(payload),
                 page_count=payload.slide_count,
                 language=payload.language,
+                layout_engine=payload.layout_engine,
+                style_profile=payload.style_profile,
                 source_paths=document_paths,
                 image_paths=image_paths,
                 output_dir=str(output_dir),
@@ -1912,6 +1917,8 @@ def _run_deck_plan(
                 prompt=_v2_long_deck_prompt(payload),
                 page_count=payload.slide_count,
                 language=payload.language,
+                layout_engine=payload.layout_engine,
+                style_profile=payload.style_profile,
                 source_paths=document_paths,
                 image_paths=image_paths,
                 output_dir=str(output_dir),
@@ -1922,7 +1929,12 @@ def _run_deck_plan(
             client,
             progress=progress_logger,
         )
-        editable = editable_plan_from_skeleton(result.skeleton)
+        editable = editable_plan_from_skeleton(result.skeleton).model_copy(
+            update={
+                "deck_type": result.brief.deck_type,
+                "deck_type_reason": result.brief.deck_type_reason,
+            }
+        )
         store.update_deck_plan(
             plan_id,
             status="ready",
@@ -2749,7 +2761,12 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         brief = V2ContentBrief.model_validate(stored["brief"]).model_copy(
-            update={"deck_title": editable.deck_title, "subtitle": editable.subtitle}
+            update={
+                "deck_title": editable.deck_title,
+                "subtitle": editable.subtitle,
+                "deck_type": editable.deck_type,
+                "deck_type_reason": editable.deck_type_reason,
+            }
         )
 
         try:
@@ -2761,11 +2778,16 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
                 detail=f"Could not initialize the v2 model provider: {detail}",
             ) from exc
 
+        request_updates = {
+            "slide_count": skeleton.total_pages,
+            "deck_type": "visual_design_v2",
+            "style_profile": editable.deck_type,
+        }
+        if payload is not None and payload.layout_engine is not None:
+            request_updates["layout_engine"] = payload.layout_engine
         request_payload = CreateLongDeckJobRequest.model_validate_json(
             record.request_json
-        ).model_copy(
-            update={"slide_count": skeleton.total_pages, "deck_type": "visual_design_v2"}
-        )
+        ).model_copy(update=request_updates)
 
         job = app.state.job_store.create_job(job_type="long_deck_v2")
         _seed_plan_checkpoints(app.state.jobs_root / job.job_id, brief, skeleton)

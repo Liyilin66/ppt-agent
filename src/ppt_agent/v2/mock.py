@@ -59,6 +59,8 @@ class MockLLMClient:
             return self._outline(context)
         if task == "section_pages":
             return self._section_pages(context)
+        if task == "page_content":
+            return self._page_content(context)
         if task == "page_design":
             return self._page_design(context)
         if task == "anchor_design":
@@ -71,6 +73,8 @@ class MockLLMClient:
                 "description": f"「{name}」的示意图：展示了与主题相关的结构与数据要点。",
                 "extracted_text": "",
             }
+        if task == "typeset_revision_plan":
+            return self._typeset_revision_plan(context)
         if task == "revision_plan":
             return self._revision_plan(context)
         if task == "theme_revise":
@@ -86,6 +90,22 @@ class MockLLMClient:
         if task == "image_content":
             return self._image_content(context)
         raise ValueError(f"MockLLMClient does not know task '{task}'")
+
+    def _page_content(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Offline content contract; no invented statistics or coordinates."""
+        brief = context.get("page_brief", {})
+        points = [str(p)[:80] for p in brief.get("points", [])][:5]
+        if not points:
+            points = ["明确问题与使用场景", "验证方案与推进路径"]
+        if len(points) == 1:
+            points.append("核对资料并明确下一步")
+        return {
+            "archetype": "points", "title": str(brief.get("title", "核心要点"))[:40],
+            "kicker": str(context.get("section_title") or "")[:24] or None,
+            "items": [{"heading": "核心要点" if i == 0 else "补充说明", "body": text}
+                      for i, text in enumerate(points)],
+            "speaker_notes": brief.get("speaker_notes") or None,
+        }
 
     def _image_classify(self, context: dict[str, Any]) -> dict[str, Any]:
         name = str((context or {}).get("name", "image.png")).lower()
@@ -280,6 +300,24 @@ class MockLLMClient:
                 }
             )
         return {"pages": pages}
+
+    def _typeset_revision_plan(self, context: dict[str, Any]) -> dict[str, Any]:
+        import re
+
+        message = str(context.get("message", ""))
+        aliases = {"consulting": ("consulting", "咨询"), "launch": ("launch", "发布"),
+                   "training": ("training", "培训"), "corporate": ("corporate", "企业")}
+        profile = next((name for name, words in aliases.items() if any(w in message for w in words)), None)
+        unsupported = any(word in message for word in ("坐标", "移动", "向右", "向左", "图片", "新增页", "删除页", "自定义配色"))
+        numbers = [int(n) for n in re.findall(r"第\s*(\d+)\s*页", message)]
+        numbers = list(dict.fromkeys(numbers + [int(n) for n in context.get("selected_pages", [])]))
+        pages = [{"page_number": n, "instruction": message} for n in numbers]
+        return {
+            "reply": "离线演示将按计划调整内容或风格。",
+            "profile": None if unsupported else profile,
+            "pages": [] if unsupported else pages,
+            "unsupported_reason": "当前模式不支持坐标、图片或页数修改。" if unsupported else None,
+        }
 
     def _revision_plan(self, context: dict[str, Any]) -> dict[str, Any]:
         import re as _re

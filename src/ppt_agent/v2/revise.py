@@ -16,7 +16,11 @@ the pre-generation outline step is for.
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +105,247 @@ def _load_checkpoint_model(checkpoints: _Checkpoints, name: str, model, what: st
     return model.model_validate(payload)
 
 
+class TypesetRevisionPlan(StrictModel):
+    reply: str = Field(..., min_length=1)
+    profile: str | None = None
+    pages: list[PageRevisionInstruction] = Field(default_factory=list)
+    unsupported_reason: str | None = None
+
+
+
+async def _revise_typeset_deck(**kwargs) -> ReviseResult:
+    """Stage all outputs: failed layout/render leaves the approved deck intact."""
+    output_root = kwargs["output_root"]
+    with tempfile.TemporaryDirectory(prefix=".typeset-revise-", dir=output_root.parent) as temporary:
+        stage = Path(temporary) / "deck"
+        shutil.copytree(output_root, stage)
+        staged_kwargs = {
+            **kwargs, "output_root": stage,
+            "checkpoints": _Checkpoints(stage / "checkpoints", resume=True),
+        }
+        result = await _revise_typeset_deck_staged(**staged_kwargs)
+        # Absolute paths in generated reports must refer to the lasting job.
+        changed = {}
+        for source in stage.rglob("*"):
+            if not source.is_file():
+                continue
+            data = source.read_bytes()
+            if source.suffix == ".json":
+                data = data.replace(str(stage).encode(), str(output_root).encode())
+            destination = output_root / source.relative_to(stage)
+            previous = destination.read_bytes() if destination.is_file() else None
+            if data != previous:
+                changed[destination] = (data, previous)
+        committed = []
+        try:
+            for destination, (data, previous) in changed.items():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as pending:
+                    pending.write(data)
+                    pending_name = pending.name
+                try:
+                    os.replace(pending_name, destination)
+                finally:
+                    Path(pending_name).unlink(missing_ok=True)
+                committed.append(destination)
+        except Exception:
+            for destination in reversed(committed):
+                previous = changed[destination][1]
+                if previous is None:
+                    destination.unlink(missing_ok=True)
+                else:
+                    destination.write_bytes(previous)
+            raise
+        return result.model_copy(update={
+            "pptx_path": str(output_root / Path(result.pptx_path).relative_to(stage))
+        })
+
+
+async def _revise_typeset_deck_staged(
+    *,
+    output_root: Path,
+    deck_name: str,
+    message: str,
+    client: LLMClient,
+    checkpoints: _Checkpoints,
+    config: dict[str, Any],
+    selected_pages: list[int] | None,
+    attachment_paths: list[str] | None,
+    concurrency: int,
+    progress: Progress,
+) -> ReviseResult:
+    from ppt_agent.v2.visual.profiles import PROFILES
+
+    brief = _load_checkpoint_model(checkpoints, "brief.json", ContentBrief, "brief")
+    skeleton = _load_checkpoint_model(
+        checkpoints, "skeleton_with_briefs.json", DeckSkeleton, "page plan"
+    )
+    slots = {slot.page_number: slot for slot in skeleton.slots}
+    current_profile = config.get("profile")
+    if current_profile not in PROFILES:
+        raise RevisionError("档案无效；只能使用 consulting / launch / training / corporate 四种风格。")
+    if attachment_paths:
+        raise RevisionError("排版模式暂不支持修改时新增附件；请修改内容页文字或切换四种风格。")
+    if selected_pages and any(number not in slots or slots[number].kind != "content" for number in selected_pages):
+        raise RevisionError("排版模式只支持修改内容页；封面、目录、章节分隔和结尾页暂不能单独修改。")
+    summary_slots = []
+    for slot in skeleton.slots:
+        cached = checkpoints.load(f"typeset/content_{slot.page_number:03d}.json")
+        if slot.kind == "content" and cached is not None:
+            current_title = cached["content"]["title"]
+            current_brief = (slot.brief or PageBrief(title=current_title)).model_copy(
+                update={"title": current_title}
+            )
+            slot = slot.model_copy(update={"brief": current_brief})
+        summary_slots.append(slot)
+    current_summary = _deck_summary(skeleton.model_copy(update={"slots": summary_slots}))
+    payload = await client.complete_json(
+        task="typeset_revision_plan",
+        system=(
+            "Plan an executable typeset-deck revision. Return JSON: "
+            '{"reply":string,"profile":null|"consulting"|"launch"|"training"|"corporate",'
+            '"pages":[{"page_number":integer,"instruction":string}],"unsupported_reason":null|string}. '
+            "Only rewrite content-page text and/or switch among the four profiles. "
+            "Coordinates, image changes, custom palettes, adding/removing pages and structural-page "
+            "edits are unsupported: set unsupported_reason and return no actions. "
+            "Preserve all numbers unless supported by the user request or supplied evidence. "
+            "Acknowledge planned actions, never claim already completed. "
+            "If selected pages are supplied, only target those content pages."
+        ),
+        user=f"Current profile: {current_profile}\n{current_summary}\nSelected pages: {selected_pages}\nRequest: {message}",
+        context={"message": message, "selected_pages": selected_pages, "profile": current_profile},
+    )
+    try:
+        plan = TypesetRevisionPlan.model_validate(payload)
+    except ValidationError as exc:
+        raise RevisionError("修改规划无效；只支持内容页改写及四种风格切换。") from exc
+    if plan.unsupported_reason:
+        raise RevisionError(f"当前排版模式不能完成该修改：{plan.unsupported_reason}")
+    if plan.profile is not None and plan.profile not in PROFILES:
+        raise RevisionError("只能在 consulting / launch / training / corporate 四种风格之间切换。")
+    profile_name = plan.profile or current_profile
+    theme_changed = profile_name != current_profile
+    page_numbers = [item.page_number for item in plan.pages]
+    if len(set(page_numbers)) != len(page_numbers):
+        raise RevisionError("同一内容页不能重复修改。")
+    if any(number not in slots or slots[number].kind != "content" for number in page_numbers):
+        raise RevisionError("规划包含不支持的页码；仅能修改内容页。")
+    if selected_pages and not set(page_numbers).issubset(selected_pages):
+        raise RevisionError("修改规划超出所选内容页。")
+    if not plan.pages and not theme_changed:
+        raise RevisionError("没有可执行的实际改动；请指定内容页改写，或切换到另一种风格档案。")
+
+    # Reuse the generation pipeline so every content page is typeset in order,
+    # with the same history and content-only QA as an original build.
+    from ppt_agent.v2.orchestrator import BuildRequest
+    from ppt_agent.v2.typeset_pipeline import build_typeset_deck, generate_content
+
+    profile = PROFILES[profile_name]
+    updated_slots = list(skeleton.slots)
+    originals = {
+        number: checkpoints.load(f"typeset/content_{number:03d}.json")
+        for number in page_numbers
+    }
+    try:
+        for item in plan.pages:
+            slot = slots[item.page_number]
+            if item.new_brief is not None:
+                slot = slot.model_copy(update={"brief": item.new_brief})
+                updated_slots[item.page_number - 1] = slot
+            content, record = await generate_content(
+                client, checkpoints, slot, brief, profile,
+                revision_instruction=item.instruction or message, force_regenerate=True,
+                current_content=(originals[slot.page_number] or {}).get("content"),
+            )
+            original = originals[slot.page_number]
+            if original is not None and content.model_dump(mode="json") == original["content"]:
+                raise RevisionError(f"第 {slot.page_number} 页模型没有产生实际内容变化，未应用修改。")
+            if record["fallback"]:
+                raise RevisionError(f"第 {slot.page_number} 页内容生成校验失败；未应用该修改，请缩短要求后重试。")
+    except Exception:
+        # A failed later page must not leave a hidden partial content edit.
+        for number, original in originals.items():
+            name = f"typeset/content_{number:03d}.json"
+            if original is not None:
+                checkpoints.save(name, original)
+            else:
+                (checkpoints.root / name).unlink(missing_ok=True)
+        raise
+    skeleton = skeleton.model_copy(update={"slots": updated_slots})
+    checkpoints.save("skeleton_with_briefs.json", skeleton.model_dump(mode="json"))
+    checkpoints.save("skeleton.json", skeleton.model_dump(mode="json"))
+    request = BuildRequest(
+        prompt=message, page_count=skeleton.total_pages, language=brief.language,
+        output_dir=str(output_root), deck_name=deck_name, resume=True,
+        concurrency=concurrency, layout_engine="typeset", style_profile=profile_name,
+    )
+    previous_report_path = output_root / f"{deck_name}_run_report.json"
+    previous_records = {}
+    if previous_report_path.is_file():
+        previous_report = json.loads(previous_report_path.read_text(encoding="utf-8"))
+        previous_records = {
+            record["page_number"]: record
+            for record in previous_report.get("typeset_pages", [])
+        }
+    result = await build_typeset_deck(request, client, checkpoints, brief, skeleton, progress=progress)
+    if result.pptx_path is None:
+        raise RevisionError("修改后未通过质量检查，未导出新版 PPTX；请查看运行报告。")
+    if theme_changed:
+        updated_brief = brief.model_copy(update={
+            "deck_type": profile_name,
+            "deck_type_reason": "用户在成片修改中要求切换风格档案。",
+        })
+        checkpoints.save("brief.json", updated_brief.model_dump(mode="json"))
+    qa = json.loads(Path(result.qa_report_path).read_text(encoding="utf-8"))
+    report_path = Path(result.run_report_path)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    affected = {slot.page_number for slot in skeleton.content_slots()} if theme_changed else set(page_numbers)
+    for record in report.get("typeset_pages", []):
+        previous = previous_records.get(record["page_number"], {})
+        dropped_notes = Counter(
+            str(note) for note in record.get("notes", [])
+            if "dropped " in str(note).lower()
+        )
+        previous_drops = Counter(
+            str(note) for note in previous.get("notes", [])
+            if "dropped " in str(note).lower()
+        )
+        errors = Counter(map(str, record.get("layout_errors", [])))
+        previous_errors = Counter(map(str, previous.get("layout_errors", [])))
+        has_loss = record.get("fallback") or errors or record.get("data_loss") or dropped_notes
+        new_loss = (
+            (record.get("fallback") and not previous.get("fallback"))
+            or bool(errors - previous_errors)
+            or (record.get("data_loss") and not previous.get("data_loss"))
+            or bool(dropped_notes - previous_drops)
+        )
+        if (record["page_number"] in affected and has_loss) or new_loss:
+            raise RevisionError(
+                f"第 {record['page_number']} 页排版发生退化或内容丢失，未应用本次修改。"
+            )
+    report["revision"] = {
+        "revised_pages": sorted(page_numbers),
+        "theme_changed": theme_changed,
+        "previous_profile": current_profile,
+        "profile": profile_name,
+    }
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    labels = "、".join(map(str, sorted(page_numbers)))
+    actions = []
+    if page_numbers:
+        actions.append(f"已重新生成第 {labels} 页内容")
+    if theme_changed:
+        actions.append(f"已切换为 {profile.label} 风格")
+    return ReviseResult(
+        reply="；".join(actions) + "，并按页序重新排版导出。",
+        revised_pages=sorted(page_numbers), theme_changed=theme_changed,
+        qa_error_pages=qa.get("pages_with_errors", 0), pptx_path=result.pptx_path,
+        usage=client.usage.snapshot(),
+    )
+
+
 async def revise_deck_async(
     *,
     output_dir: str | Path,
@@ -114,6 +359,13 @@ async def revise_deck_async(
 ) -> ReviseResult:
     output_root = Path(output_dir)
     checkpoints = _Checkpoints(output_root / "checkpoints", resume=True)
+    config = checkpoints.load("typeset_config.json")
+    if config and config.get("layout_engine") == "typeset":
+        return await _revise_typeset_deck(
+            output_root=output_root, deck_name=deck_name, message=message, client=client,
+            checkpoints=checkpoints, config=config, selected_pages=selected_pages,
+            attachment_paths=attachment_paths, concurrency=concurrency, progress=progress,
+        )
 
     brief = _load_checkpoint_model(checkpoints, "brief.json", ContentBrief, "brief")
     theme = _load_checkpoint_model(checkpoints, "theme.json", ThemeSpec, "theme")

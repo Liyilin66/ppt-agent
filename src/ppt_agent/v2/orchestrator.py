@@ -77,6 +77,8 @@ PageStatus = Literal["anchor", "model", "repaired", "fallback"]
 
 
 class BuildRequest(StrictModel):
+    layout_engine: Literal["typeset", "free"] = "typeset"
+    style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
     prompt: str = Field(..., min_length=1)
     page_count: int = Field(default=100, ge=MIN_PAGES, le=MAX_PAGES)
     language: str | None = Field(
@@ -272,7 +274,12 @@ async def _run_brief_stage(
 ) -> ContentBrief:
     cached = checkpoints.load("brief.json")
     if cached is not None:
-        return ContentBrief.model_validate(cached)
+        brief = ContentBrief.model_validate(cached)
+        if request.style_profile:
+            brief = brief.model_copy(update={"deck_type": request.style_profile,
+                                            "deck_type_reason": "用户在生成确认中选择该风格。"})
+            checkpoints.save("brief.json", brief.model_dump(mode="json"))
+        return brief
     payload = await client.complete_json(
         task="brief",
         system=prompts.BRIEF_SYSTEM,
@@ -286,6 +293,8 @@ async def _run_brief_stage(
     )
     brief = ContentBrief.model_validate(payload)
     updates: dict[str, Any] = {}
+    if request.style_profile:
+        updates.update(deck_type=request.style_profile, deck_type_reason="用户指定该风格。")
     if request.language:
         updates["language"] = request.language
     if intake.digest or search_digest:
@@ -883,6 +892,11 @@ async def build_deck_async(
     output_dir = Path(request.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoints = _Checkpoints(output_dir / "checkpoints", resume=request.resume)
+    previous_engine = checkpoints.load("typeset_config.json")
+    if previous_engine and previous_engine.get("layout_engine") != request.layout_engine:
+        raise ValueError("Cannot resume with a different layout engine; use a new output directory.")
+    checkpoints.save("typeset_config.json", {"layout_engine": request.layout_engine,
+                                             "profile": request.style_profile})
     stage_seconds: dict[str, float] = {}
 
     def timed(stage: str):
@@ -930,7 +944,12 @@ async def build_deck_async(
     progress(f"[brief] '{brief.deck_title}' | language={brief.language}")
 
     finish = timed("theme")
-    theme = await _run_theme_stage(request, client, checkpoints, brief)
+    if request.layout_engine == "typeset":
+        from ppt_agent.v2.visual.profiles import PROFILES
+        theme = PROFILES[brief.deck_type].theme()
+        checkpoints.save("theme.json", theme.model_dump(mode="json"))
+    else:
+        theme = await _run_theme_stage(request, client, checkpoints, brief)
     finish()
     progress(f"[theme] {theme.name} (motif: {theme.motif})")
 
@@ -952,6 +971,20 @@ async def build_deck_async(
         progress=progress,
     )
     finish()
+
+    if request.layout_engine == "typeset":
+        from ppt_agent.v2.typeset_pipeline import build_typeset_deck
+        finish = timed("typeset_pages")
+        result = await build_typeset_deck(
+            request, client, checkpoints, brief, skeleton, progress=progress
+        )
+        finish()
+        report = json.loads(Path(result.run_report_path).read_text(encoding="utf-8"))
+        combined_seconds = {**stage_seconds, **result.stage_seconds}
+        report.update(stage_seconds=combined_seconds, intake_warnings=intake.warnings,
+                      planning_events=skeleton.planning_events)
+        Path(result.run_report_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        return result.model_copy(update={"stage_seconds": combined_seconds})
 
     finish = timed("page_designs")
     semaphore = asyncio.Semaphore(request.concurrency)

@@ -18,8 +18,11 @@ BRIEF_SYSTEM = """You are the requirements analyst of a presentation studio.
 Turn the user's request into a normalized JSON brief for a slide deck.
 Reply with ONLY a JSON object with keys:
 topic, deck_title, subtitle, audience, purpose, tone, language,
-key_points (array of strings), must_include (array), must_avoid (array).
+key_points (array of strings), must_include (array), must_avoid (array),
+deck_type, deck_type_reason.
 Rules:
+- deck_type: consulting (management/industry analysis), launch (product launch/pitch), training (courses/instructions), or corporate (business reports/reviews). Choose from audience, purpose and tone.
+- deck_type_reason: one sentence explaining this choice in the slide language.
 - language: BCP-47 code of the slide copy language. Default zh-CN unless the
   user asks for another language.
 - deck_title: punchy, <= 40 characters, in the slide language.

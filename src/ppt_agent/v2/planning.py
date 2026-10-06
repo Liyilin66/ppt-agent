@@ -22,6 +22,8 @@ MAX_PAGES = 100
 class ContentBrief(StrictModel):
     """Normalized understanding of what the user wants."""
 
+    deck_type: Literal["consulting", "launch", "training", "corporate"] = "corporate"
+    deck_type_reason: str = ""
     topic: str = Field(..., min_length=1)
     deck_title: str = Field(..., min_length=1)
     subtitle: str | None = None
@@ -360,6 +362,8 @@ class EditableDeckPlan(StrictModel):
     subtitle: str | None = None
     language: str = "zh-CN"
     include_section_dividers: bool | None = None
+    deck_type: Literal["consulting", "launch", "training", "corporate"] = "corporate"
+    deck_type_reason: str = ""
     sections: list[EditableSection] = Field(..., min_length=1, max_length=16)
 
     def structural_pages(self) -> int:

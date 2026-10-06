@@ -247,6 +247,7 @@
                         <div><span>页数</span><strong id="confirmationSlideCount">待确认</strong></div>
                         <div><span>视觉方向</span><strong id="confirmationVisual">待确认</strong></div>
                       </div>
+                      <label class="plan-field">排版方式<select id="layoutEngine"><option value="typeset">智能排版</option><option value="free">自由布局（旧版）</option></select></label>
                       <div class="confirmation-actions">
                         <button id="continueInterviewButton" class="secondary-button" type="button">继续调整</button>
                         <button id="skipOutlineButton" class="secondary-button" type="button">跳过确认，直接生成</button>
@@ -344,6 +345,11 @@
                 <div class="plan-title-grid">
                   <label class="plan-field">演示标题<input id="planDeckTitle" type="text"></label>
                   <label class="plan-field">副标题<input id="planDeckSubtitle" type="text" placeholder="可留空"></label>
+                </div>
+                <div class="plan-title-grid">
+                  <label class="plan-field">演示风格<select id="planStyleProfile"><option value="consulting">咨询分析</option><option value="launch">产品发布</option><option value="training">培训教学</option><option value="corporate">企业汇报</option></select></label>
+                  <label class="plan-field">排版方式<select id="planLayoutEngine"><option value="typeset">智能排版</option><option value="free">自由布局（旧版）</option></select></label>
+                  <p id="planStyleReason" class="hint"></p>
                 </div>
                 <div id="planSections" class="plan-sections"></div>
                 <div class="plan-footer">

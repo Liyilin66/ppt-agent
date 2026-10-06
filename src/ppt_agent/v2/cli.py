@@ -34,6 +34,14 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         default="auto",
         help=f"'auto' (model-designed) or a builtin: {', '.join(sorted(BUILTIN_THEMES))}.",
     )
+    parser.add_argument(
+        "--layout-engine", choices=("typeset", "free"), default="typeset",
+        help="Deterministic typesetting or legacy free layout.",
+    )
+    parser.add_argument(
+        "--style-profile", choices=("consulting", "launch", "training", "corporate"),
+        default=None, help="Override the model-selected deck style.",
+    )
     parser.add_argument("--language", default=None, help="Force slide language (e.g. zh-CN, en).")
     parser.add_argument(
         "--source",
@@ -104,6 +112,8 @@ def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
         source_paths=list(args.sources),
         enable_search=bool(getattr(args, "search", False)),
         theme=args.theme,
+        layout_engine=args.layout_engine,
+        style_profile=args.style_profile,
         output_dir=args.output_dir,
         deck_name=args.deck_name,
         resume=args.resume,
