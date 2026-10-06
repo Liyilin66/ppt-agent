@@ -20,7 +20,8 @@ class PageCopy(StrictModel):
     kicker: str | None = Field(default=None, max_length=24)
     lead: str | None = Field(default=None, max_length=60)
     takeaway: str | None = Field(default=None, max_length=70)
-    source: str | None = Field(default=None, max_length=90)
+    # Real URLs run long; the footer shows a shortened "domain · title" form.
+    source: str | None = Field(default=None, max_length=400)
     speaker_notes: str | None = None
 
 

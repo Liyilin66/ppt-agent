@@ -44,9 +44,36 @@ def test_plan_respects_mix_rules(count):
 
 
 def test_numeric_gate_needs_several_quantified_facts():
-    assert has_numeric_evidence("用户规模 5.15 亿，普及率 36.5%，备案 538 款")
-    assert not has_numeric_evidence("2025 年报告指出趋势明显")
+    assert has_numeric_evidence("用户规模 5.15 亿，普及率 36.5%，半年提升 18.8 个百分点")
+    # Counting words in prose ("3 项", "5 个") are not statistics.
+    assert not has_numeric_evidence("产品经理需要 3 项能力、5 个步骤和 2 类角色，2025 年趋势明显")
     assert not has_numeric_evidence(None)
+
+
+def test_timeline_needs_real_dates_in_evidence():
+    from ppt_agent.v2.typeset_pipeline import has_dated_evidence
+    slots = _slots(["two_column", "timeline", "cards", "timeline"])
+    dated = {slots[1].page_number: False, slots[3].page_number: True}
+    plan = plan_archetypes(slots, {}, dated)
+    assert plan[slots[1].page_number] != "timeline"
+    assert plan[slots[3].page_number] == "timeline"
+    assert has_dated_evidence("2024年12月 Sora 开放；2025.01 DeepSeek-R1 发布")
+    assert not has_dated_evidence("第一阶段、第二阶段、第三阶段")
+
+
+def test_overlong_lists_are_trimmed_not_discarded():
+    from ppt_agent.v2.typeset_pipeline import trim_overlong_lists
+    payload = {"archetype": "points", "title": "t",
+               "items": [{"heading": f"h{i}", "body": "b"} for i in range(6)]}
+    trimmed, notes = trim_overlong_lists(payload)
+    assert len(trimmed["items"]) == 4 and notes == [{"field": "items", "from": 6, "to": 4}]
+    assert trim_overlong_lists({"archetype": "statement", "title": "t", "statement": "s"})[1] == []
+
+
+def test_long_real_urls_fit_the_source_field():
+    from ppt_agent.v2.visual.content import StatementContent
+    url = "https://github.com/archlinux-pm/awesome-ai-agent-product-management/blob/main/docs/ai-pm-capability-model.md"
+    assert StatementContent(title="t", statement="s", source=url).source == url
 
 
 def test_content_pages_are_generated_concurrently(tmp_path):

@@ -211,6 +211,28 @@ def packet_citation(packet):
     return citation if len(citation) <= 90 else None
 
 
+_LIST_LIMITS = {"points": ("items", 4), "process": ("steps", 6), "metrics": ("metrics", 4),
+                "chart": ("insights", 3), "timeline": ("milestones", 6)}
+
+
+def trim_overlong_lists(payload):
+    """Keep the first N items when a model overshoots a list limit.
+
+    The same rule the typesetter applies to dense pages: trailing items go and
+    the cut is recorded, rather than discarding an otherwise good page.
+    """
+    if not isinstance(payload, dict):
+        return payload, []
+    limit = _LIST_LIMITS.get(payload.get('archetype'))
+    if not limit:
+        return payload, []
+    field, maximum = limit
+    items = payload.get(field)
+    if isinstance(items, list) and len(items) > maximum:
+        return {**payload, field: items[:maximum]}, [{'field': field, 'from': len(items), 'to': maximum}]
+    return payload, []
+
+
 def fallback_content(slot):
     """Reuse source planning text; do not invent quantitative placeholders."""
     page = slot.brief or PageBrief(title=slot.section_title or '内容要点')
@@ -305,11 +327,15 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     attempts = 0
     numeric_failures = []
     numeric_candidate = None
+    trims = []
     parsed = None
     for _ in range(2):
         attempts += 1
         try:
             payload = await client.complete_json(task='page_content', system=system, user=user, context=context)
+            payload, trimmed = trim_overlong_lists(payload)
+            if trimmed:
+                trims.extend(trimmed)
             parsed = content_adapter().validate_python(payload)
             empty_sources += int(not parsed.source or not parsed.source.strip())
             if not source_is_valid(parsed.source, source_references, source_page_counts,
@@ -357,6 +383,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
               'validation_errors': errors, 'archetype': parsed.archetype,
               'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources,
+              'trimmed_items': trims,
               'evidence': evidence.to_dict() if evidence is not None else None,
               'numeric_check': {'blocked_attempts': len(numeric_failures), 'failures': numeric_failures,
                                 'passed_after_retry': bool(numeric_failures and not fallback),
@@ -365,7 +392,10 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     return parsed, record
 
 
-_NUMBER = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|千|倍|家|款|个|起|元|美元|欧元|台|项|件|人|年)")
+# Statistics, not counting words: "3 项" or "5 个" in prose must not make a page look
+# data-rich enough for metrics or a chart.
+_NUMBER = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|倍|元|美元|欧元)|\d+\.\d+")
+_DATE = re.compile(r"(?:19|20)\d{2}\s*(?:年|[.\-/]\s*\d{1,2})")
 
 ARCHETYPE_CAPS = {"points": 0.4, "process": 0.3, "statement": 0.15}
 _GENERIC = ["points", "process", "compare", "statement"]
@@ -377,13 +407,18 @@ def has_numeric_evidence(text: str | None, minimum: int = 3) -> bool:
     return bool(text) and len(_NUMBER.findall(text)) >= minimum
 
 
-def plan_archetypes(slots, numeric: dict[int, bool]) -> dict[int, str]:
+def has_dated_evidence(text: str | None, minimum: int = 2) -> bool:
+    """Real dates (2024年 / 2025.08) to put on a timeline, not stage numbers."""
+    return bool(text) and len(_DATE.findall(text)) >= minimum
+
+
+def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | None = None) -> dict[int, str]:
     """Assign every content page an archetype up front, so pages can be generated
     concurrently while the deck still obeys the mix rules.
 
     Rules, in priority order: no two consecutive pages share an archetype;
     metrics/chart only where the page's evidence carries numbers; timeline only
-    where planning asked for one; points <= 40%, process <= 30%, statement
+    where planning asked for one and the evidence carries real dates; points <= 40%, process <= 30%, statement
     <= 15% and never a section's first page; every section gets a non-points
     page. When nothing satisfies every cap, caps are relaxed (process, then
     points) rather than forcing an archetype the content cannot fill.
@@ -404,8 +439,11 @@ def plan_archetypes(slots, numeric: dict[int, bool]) -> dict[int, str]:
         last_in_section = index == total - 1 or slots[index + 1].section_index != section
         section_kinds = [plan[s.page_number] for s in slots[:index] if s.section_index == section]
         candidates = [preferred] + (_NUMERIC if has_numbers else []) + _GENERIC
-        if hint == "timeline":
+        has_dates = (dated or {}).get(slot.page_number, False)
+        if hint == "timeline" and has_dates:
             candidates.insert(1, "timeline")
+        if preferred == "timeline" and not has_dates:
+            candidates[0] = "process"  # stages without dates read as a process
         ordered = list(dict.fromkeys(candidates))
 
         def allowed(kind: str, relax: frozenset = frozenset()) -> bool:
@@ -413,7 +451,7 @@ def plan_archetypes(slots, numeric: dict[int, bool]) -> dict[int, str]:
                 return False
             if kind in _NUMERIC and not has_numbers:
                 return False
-            if kind == "timeline" and hint != "timeline":
+            if kind == "timeline" and (hint != "timeline" or not has_dates):
                 return False
             if kind == "statement" and first_in_section:
                 return False
@@ -434,6 +472,14 @@ def plan_archetypes(slots, numeric: dict[int, bool]) -> dict[int, str]:
         counts[choice] = counts.get(choice, 0) + 1
         previous = choice
     return plan
+
+
+def _page_references(record, references, page_counts):
+    """The references a page was actually given (its evidence packet), else the deck's."""
+    evidence = record.get('evidence') or {}
+    if evidence.get('references'):
+        return evidence['references'], evidence.get('page_counts') or page_counts, evidence.get('allowed_pages')
+    return references, page_counts, None
 
 
 def _skeleton_sections(skeleton) -> list[tuple[str, int]]:
@@ -487,6 +533,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     packets = {slot.page_number: packet_for(slot) for slot in content_slots}
     plan = plan_archetypes(content_slots, {
         number: has_numeric_evidence(packet.text if packet is not None else None)
+        for number, packet in packets.items()
+    }, {
+        number: has_dated_evidence(packet.text if packet is not None else None)
         for number, packet in packets.items()
     })
     checkpoints.save('typeset/archetype_plan.json', {str(k): v for k, v in plan.items()})
@@ -622,7 +671,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     statistics = diversity_statistics(final_contents, content_slots)
     statistics.update(
         source_empty_pages=sum(not content.source or not content.source.strip() for content in final_contents),
-        source_invalid_pages=sum(not source_is_valid(content.source, references, page_counts) for content in final_contents),
+        source_invalid_pages=sum(
+            not source_is_valid(content.source, *_page_references(record, references, page_counts))
+            for content, record in zip(final_contents, records)),
         source_invalid_attempts=sum(record.get('source_invalid_attempts', 0) for record in records),
         source_invalid_cached_pages=sum(bool(record.get('source_invalid_cached')) for record in records),
         source_empty_attempts=sum(record.get('source_empty_attempts', 0) for record in records),
