@@ -1,0 +1,4 @@
+# 第三方报告及其截图不入库，复现时按 URL / 页码重新获取
+sources/*.pdf
+tasks/T4_images/t4_04_*
+tasks/T4_images/t4_05_*
