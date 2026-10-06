@@ -91,9 +91,13 @@ SAMPLES = [T1, T2, T3]
 _SRC = "来源：CNNIC《生成式人工智能应用发展报告（2025）》"
 
 from ppt_agent.v2.visual.archetypes import (  # noqa: E402
+    CompareContent,
+    CompareSide,
     MetricItem,
     MetricsContent,
+    Milestone,
     StatementContent,
+    TimelineContent,
 )
 
 CNNIC_DECK = [
@@ -157,6 +161,33 @@ CNNIC_DECK = [
                       ref="第 5–6 页"),
         ],
         source=f"{_SRC}第 2–6 页",
+    ),
+    CompareContent(
+        kicker="技术路线",
+        title="轻量模型补上主力模型的成本和部署短板",
+        left=CompareSide(heading="主力模型", points=[
+            "性能强，但计算成本高昂",
+            "千亿参数单次推理耗时长，难满足客服等即时场景",
+            "参数规模大，难在手机、物联网设备上实时运行",
+        ]),
+        right=CompareSide(heading="轻量模型", points=[
+            "低成本、易部署",
+            "剪枝、量化、蒸馏把推理时间压缩到毫秒级",
+            "推动生成式 AI 从云端走向终端",
+        ]),
+        takeaway="例：子曰 3 数学模型只需单块消费级 GPU 就能运行。",
+        source=f"{_SRC}第 5–6 页",
+    ),
+    TimelineContent(
+        kicker="产品里程碑",
+        title="一年内，视频、推理和搜索相继迎来标志性产品",
+        milestones=[
+            Milestone(date="2024.12", label="Sora 开放", body="OpenAI 视频生成模型正式向用户开放"),
+            Milestone(date="2025.01", label="DeepSeek-R1", body="成本不到同类模型的十分之一"),
+            Milestone(date="2025.05", label="谷歌 AI 模式", body="基于 Gemini 2.5 的搜索模式正式发布"),
+            Milestone(date="2025.08", label="GPT-5 发布", body="统一推理能力与快速响应"),
+        ],
+        source=f"{_SRC}第 2、25、27、51 页",
     ),
     ChartContent(
         kicker="融资环境",

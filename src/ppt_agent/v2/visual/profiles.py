@@ -132,11 +132,13 @@ PROFILES: dict[ProfileName, StyleProfile] = {
         fill_target=0.74,
         chart_font=12,
         compositions={
-            "points": ["columns", "rows", "feature", "panel"],
+            "points": ["columns", "list2", "rows", "grid", "panel", "feature"],
             "process": ["chevron", "horizontal", "vertical"],
             "chart": ["stacked", "side", "hero"],
             "metrics": ["columns", "cards"],
             "statement": ["left", "center"],
+            "compare": ["split", "versus"],
+            "timeline": ["axis", "cards"],
         },
     ),
     "launch": StyleProfile(
@@ -178,11 +180,13 @@ PROFILES: dict[ProfileName, StyleProfile] = {
         fill_target=0.75,
         chart_font=14,
         compositions={
-            "points": ["columns", "feature", "rows"],
+            "points": ["columns", "feature", "list2", "rows"],
             "process": ["horizontal", "vertical"],
             "chart": ["hero", "side", "stacked"],
             "metrics": ["columns", "cards"],
             "statement": ["center", "left"],
+            "compare": ["versus", "split"],
+            "timeline": ["axis", "cards"],
         },
     ),
     "training": StyleProfile(
@@ -221,11 +225,13 @@ PROFILES: dict[ProfileName, StyleProfile] = {
         fill_target=0.78,
         chart_font=14,
         compositions={
-            "points": ["columns", "panel", "rows"],
+            "points": ["columns", "panel", "list2", "rows"],
             "process": ["horizontal", "vertical"],
             "chart": ["side", "kpi_top", "hero"],
             "metrics": ["cards", "columns"],
             "statement": ["center", "band"],
+            "compare": ["split", "versus"],
+            "timeline": ["cards", "axis"],
         },
     ),
     "corporate": StyleProfile(
@@ -264,11 +270,13 @@ PROFILES: dict[ProfileName, StyleProfile] = {
         fill_target=0.72,
         chart_font=12,
         compositions={
-            "points": ["grid", "feature", "columns", "rows"],
+            "points": ["grid", "columns", "list2", "feature", "rows"],
             "process": ["horizontal", "vertical"],
             "chart": ["kpi_top", "side", "hero"],
             "metrics": ["cards", "columns"],
             "statement": ["band", "left"],
+            "compare": ["versus", "split"],
+            "timeline": ["cards", "axis"],
         },
     ),
 }

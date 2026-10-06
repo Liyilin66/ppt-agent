@@ -25,7 +25,10 @@ from ppt_agent.v2.visual.content import (  # noqa: F401 - re-exported API
     AnyContent,
     ArchetypeContent,
     ChartContent,
+    CompareContent,
+    CompareSide,
     Insight,
+    Milestone,
     MetricItem,
     MetricsContent,
     PointItem,
@@ -33,6 +36,7 @@ from ppt_agent.v2.visual.content import (  # noqa: F401 - re-exported API
     ProcessContent,
     StatementContent,
     StepItem,
+    TimelineContent,
 )
 from ppt_agent.v2.visual.layout import (  # noqa: F401 - re-exported helpers
     MIN_BODY_PT,
@@ -53,6 +57,7 @@ _ITEM_FIELD = {
     "process": ("steps", 3),
     "chart": ("insights", 1),
     "metrics": ("metrics", 2),
+    "timeline": ("milestones", 3),
 }
 
 
@@ -236,3 +241,45 @@ def typeset_deck(
         notes.append(page_notes)
     deck = DeckDesign(deck_title=deck_title, theme=profile.theme(), pages=pages)
     return deck, notes
+
+
+def assemble_deck(
+    contents: Sequence[AnyContent],
+    profile: StyleProfile,
+    *,
+    deck_title: str,
+    subtitle: str | None = None,
+) -> tuple[DeckDesign, list[list[str]]]:
+    """Cover + TOC + content pages + closing, with sections taken from kickers.
+
+    Used for sample decks; the generation pipeline builds sections from its
+    skeleton and calls ``typeset_structural`` directly.
+    """
+
+    from ppt_agent.v2.visual.structural import typeset_structural
+
+    first_content = 3
+    sections: list[tuple[str, int]] = []
+    for offset, content in enumerate(contents):
+        label = content.kicker or content.title
+        if not sections or sections[-1][0] != label:
+            sections.append((label, first_content + offset))
+    pages = [
+        typeset_structural("cover", profile, page_number=1, deck_title=deck_title,
+                           subtitle=subtitle, sections=sections),
+        typeset_structural("toc", profile, page_number=2, deck_title=deck_title,
+                           sections=sections),
+    ]
+    notes: list[list[str]] = [["structural:cover"], ["structural:toc"]]
+    history: list[str] = []
+    for offset, content in enumerate(contents):
+        page, page_notes = typeset_page(content, profile, page_number=first_content + offset,
+                                        deck_title=deck_title, history=history)
+        history.append(page_notes[0])
+        pages.append(page)
+        notes.append(page_notes)
+    pages.append(typeset_structural("closing", profile, page_number=len(pages) + 1,
+                                    deck_title=deck_title))
+    notes.append(["structural:closing"])
+    return DeckDesign(deck_title=deck_title, subtitle=subtitle, theme=profile.theme(),
+                      pages=pages), notes
