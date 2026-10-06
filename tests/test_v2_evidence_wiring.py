@@ -91,3 +91,30 @@ def test_revision_prompt_and_cache_keep_actual_selected_evidence(tmp_path):
     prompt=json.loads(req['user']);assert prompt['source_digest']==req['context']['evidence']['text']
     stored=json.loads((tmp_path/'out/checkpoints/typeset/content_003.json').read_text())
     assert stored['record']['evidence']==req['context']['evidence']
+
+
+def test_chinese_page_list_validates_every_range():
+    allowed={'report.pdf':[28,29,40]}
+    assert source_is_valid('report.pdf 第28—29、40页',['report.pdf'],{'report.pdf':63},allowed_pages=allowed)
+    assert not source_is_valid('report.pdf 第28—29、41页',['report.pdf'],{'report.pdf':63},allowed_pages=allowed)
+    assert not source_is_valid('report.pdf 第28、999页',['report.pdf'],{'report.pdf':63},allowed_pages=allowed)
+
+
+def test_percent_format_normalization_preserves_source_values():
+    from ppt_agent.v2.typeset_pipeline import normalize_chart_format,content_adapter
+    c=content_adapter().validate_python({'archetype':'chart','title':'原始百分比','chart_title':'占比',
+       'categories':['A','B'],'values':[47.1,34],'unit_format':'0.0%','insights':[{'text':'真实分布'}]})
+    fixed,notes=normalize_chart_format(c)
+    assert fixed.values==[47.1,34] and fixed.unit_format=='0.0"%"'
+    assert notes
+    fractional=c.model_copy(update={'values':[.471,.34]})
+    assert normalize_chart_format(fractional)[0].unit_format=='0.0%'
+
+
+def test_canonical_packet_citation_includes_all_delivered_pages():
+    from ppt_agent.v2.evidence import EvidencePacket
+    from ppt_agent.v2.typeset_pipeline import packet_citation
+    p=EvidencePacket(references=['report.pdf'],allowed_pages={'report.pdf':[15,16,17,28,29,40]},page_counts={'report.pdf':63})
+    citation=packet_citation(p)
+    assert citation=='report.pdf 第15-17、28-29、40页'
+    assert source_is_valid(citation,p.references,p.page_counts,allowed_pages=p.allowed_pages)

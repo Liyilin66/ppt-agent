@@ -67,9 +67,13 @@ def source_is_valid(source, references, page_counts=None, allowed_pages=None):
         return False
     remaining = re.sub(r'\bp(?:ages?)?\.?\s*(\d+)(?:[-–—](\d+))?',
                        lambda m: '第' + m[1] + ('-' + m[2] if m[2] else '') + '页', remaining, flags=re.I)
-    pattern = r'(?:第\s*)?(\d+)(?:[-–—](\d+))?\s*页'
-    spans = re.findall(pattern, remaining)
-    # Reject unparsed comma/shared-suffix page lists rather than certify only the last page.
+    pattern = r'(?:第\s*)?(\d+(?:\s*[-–—]\s*\d+)?(?:\s*[,，、/]\s*\d+(?:\s*[-–—]\s*\d+)?)*)\s*页'
+    spans = []
+    for expression in re.findall(pattern, remaining):
+        for part in re.split(r'[,，、/]', expression):
+            numbers = re.findall(r'\d+', part)
+            spans.append((numbers[0], numbers[-1]))
+    # Reject any unparsed digits rather than certify only part of a page list.
     if re.search(r'\d', re.sub(pattern, '', remaining)):
         return False
     if len(names) > 1:
@@ -107,6 +111,39 @@ def diversity_statistics(contents, slots):
     return {'content_pages': total, 'archetype_counts': dict(counts),
             'archetype_ratios': {key: count / total for key, count in counts.items()} if total else {},
             'diversity_violations': violations}
+
+
+def normalize_chart_format(content):
+    """Raw 47.1 percent data must display 47.1%, never Excel's 4710%."""
+    if content.archetype != 'chart' or not content.unit_format or not content.values:
+        return content, []
+    fmt = content.unit_format
+    if max(abs(value) for value in content.values) > 1 and '%' in fmt and '"%"' not in fmt and r'\%' not in fmt:
+        fixed = fmt.replace('%', '"%"')
+        return content.model_copy(update={'unit_format': fixed}), [
+            {'from': fmt, 'to': fixed, 'reason': 'literal percentage values; prevent 100x display inflation'}]
+    return content, []
+
+
+def packet_citation(packet):
+    """Declare delivered evidence ranges; do not invent a claim-level provenance."""
+    clauses = []
+    for name, pages in packet.allowed_pages.items():
+        ordered = sorted(set(pages))
+        if not ordered:
+            continue
+        ranges = []
+        first = last = ordered[0]
+        for page in ordered[1:]:
+            if page == last + 1:
+                last = page
+            else:
+                ranges.append(str(first) if first == last else f'{first}-{last}')
+                first = last = page
+        ranges.append(str(first) if first == last else f'{first}-{last}')
+        clauses.append(f"{name} 第{'、'.join(ranges)}页")
+    citation = '；'.join(clauses)
+    return citation if len(citation) <= 90 else None
 
 
 def fallback_content(slot):
@@ -168,9 +205,16 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'source must identify an actual supplied filename, page or URL in source_references. '
         'Without source material leave source null; never cite user requirements as a source. When revising, edit current_content according to the instruction and preserve unrelated existing content. Never invent citations or unsupported numbers; '
         'if no evidence supports a number, omit it and use points or statement instead. '
+        'Use literal source observations; do not introduce computed aggregates unless the user explicitly asks for calculations. '
+        'Current content is not numerical evidence: remove any prior aggregate absent from these excerpts. '
         'Only the supplied evidence excerpts are numerical evidence; planning suggestions are not evidence. '
         'For PDF evidence, source MUST use exact filename and physical PDF page, e.g. report.pdf 第12页, '
         'and only pages appearing in these excerpts; never confuse printed page numbers with physical PDF pages. '
+         'Preserve complete quantitative bundles from the evidence visibly: count plus amount, '
+        'quantity plus growth, or budget plus procurement capacity belong together. '
+        'Do not hide necessary paired numbers in speaker_notes or secondary value fields: '
+        'include them in visible item notes or insight text. '
+        'For raw percentage values like 47.1, use unit_format 0.0"%", not 0.0%. '
         'Chart categories and values must have identical lengths. Schema:\n' + json.dumps(schema, ensure_ascii=False)
     )
     context = {'page_number': slot.page_number, 'page_brief': page_brief.model_dump(mode='json'),
@@ -300,6 +344,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             references_for_page, page_counts_for_page = packet.references, packet.page_counts
         else:
             references_for_page, page_counts_for_page = references, page_counts
+        content, format_notes = normalize_chart_format(content)
+        if format_notes:
+            record = {**record, 'format_normalizations': record.get('format_normalizations', []) + format_notes}
+        if packet is not None:
+            citation = packet_citation(packet)
+            if citation:
+                record = {**record, 'model_source': record.get('model_source', content.source),
+                          'citation_basis': 'all evidence ranges delivered for this page; not per-claim proof'}
+                content = content.model_copy(update={'source': citation})
+        checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
+                         {'content': content.model_dump(mode='json'), 'record': record})
         # Old caches are preserved, but fabricated attribution is never displayed.
         if not source_is_valid(content.source, references_for_page, page_counts_for_page,
                                packet.allowed_pages if packet is not None else None):

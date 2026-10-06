@@ -90,6 +90,7 @@ Rules:
   data is available, describe what the chart should communicate without numeric values,
   or clearly label any illustrative values as "假设" or "示意" in the data_idea
   and slide-visible copy. Never present these values as observed facts.
+- Preserve complete quantitative bundles visibly in points/data_idea: quantity with growth, count with amount, budget with capacity. Never keep the second half only in speaker_notes.
 - speaker_notes: 2-4 spoken sentences the presenter reads aloud for this page,
   in the slide language; conversational, not a copy of the bullet points.
 - Every slide-visible string in the slide language from the brief."""

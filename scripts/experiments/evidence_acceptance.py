@@ -142,6 +142,10 @@ def billing_summary(out, budget):
     calls = []
     for path in out.glob('*/calls.json'):
         calls.extend(json.loads(path.read_text()))
+    unique = {}
+    for index, call in enumerate(calls):
+        unique[call.get('request_id', f'legacy-{index}')] = call
+    calls = list(unique.values())
     known = sum(call.get('official_cost_usd') or 0. for call in calls)
     value = {'known_official_usd': known, 'unknown_reserve_usd': max(0., budget.spent - known),
              'booked_usd': budget.spent, 'limit_usd': budget.limit,

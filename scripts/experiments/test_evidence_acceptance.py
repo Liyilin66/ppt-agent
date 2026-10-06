@@ -120,3 +120,11 @@ def test_gateway_failure_keeps_unknown_reserve_and_does_not_retry(tmp_path):
         assert client.records[0]['official_cost_usd'] is None
         await client.aclose()
     asyncio.run(check())
+
+
+def test_billing_does_not_charge_an_archived_copy_twice(tmp_path):
+    from evidence_acceptance import billing_summary,OfficialBudget,save
+    call={'request_id':'T3-1','official_cost_usd':.1,'usage':{'prompt_tokens':100,'completion_tokens':10},'response_model':'gpt-5.6-terra'}
+    save(tmp_path/'T3/calls.json',[call]);save(tmp_path/'T3-original/calls.json',[call])
+    budget=OfficialBudget(2);budget.spent=.1
+    assert billing_summary(tmp_path,budget)['known_official_usd']==.1
