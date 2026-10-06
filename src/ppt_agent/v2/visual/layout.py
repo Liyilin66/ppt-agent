@@ -9,6 +9,7 @@ decide how a block of text is sized and drawn.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from ppt_agent.v2.design import TYPE_SCALE
@@ -84,20 +85,42 @@ def _cjk_line_chars(text: str, size: float, width: float, latin_scale: float = 1
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.,%+\-/]*|.", re.S)
 
 
-def _advance_em(char: str) -> float:
-    """Approximate YaHei / DengXian advance widths (CJK is exactly 1 em)."""
+# Advance widths in em, measured from Microsoft YaHei Bold (msyhbd.ttc), the
+# widest of the families profiles use (DengXian is narrower), so estimates
+# err towards wrapping early rather than overflowing. Before this table "%"
+# was taken as 0.5 em (real: 0.93) and ">60%—80%" wrapped onto its label.
+_ADVANCE: dict[str, float] = {
+    "%": 0.93, "—": 1.08, "…": 0.96, "–": 0.54, "·": 0.44,
+    "<": 0.76, ">": 0.76, "+": 0.76, "=": 0.76, "±": 0.76, "×": 0.76, "÷": 0.76, "~": 0.76,
+    "#": 0.8, "&": 0.85, "@": 1.0, "$": 0.62,
+    ".": 0.29, ",": 0.29, ":": 0.29, ";": 0.29, "!": 0.32, "'": 0.27, '"': 0.45,
+    "(": 0.4, ")": 0.4, "[": 0.4, "]": 0.4, "/": 0.45, "-": 0.42, "_": 0.5, " ": 0.3,
+    "I": 0.34, "J": 0.46, "M": 0.95, "W": 1.0,
+    "i": 0.3, "j": 0.3, "l": 0.3, "f": 0.42, "t": 0.42, "r": 0.45, "m": 0.98, "w": 0.9,
+}
 
-    if ord(char) > 0x2E80:
+
+def _advance_em(char: str) -> float:
+    """Approximate advance width of one character in em."""
+
+    if char in _ADVANCE:
+        return _ADVANCE[char]
+    if ord(char) > 0x2E80 or unicodedata.east_asian_width(char) in ("W", "F", "A"):
+        # CJK, full-width forms and ambiguous punctuation (“ ” ‘ ’) draw full width.
         return 1.0
-    if char == " ":
-        return 0.3
-    if char in "Iijl|.,:;!'":
-        return 0.28
-    if char.isupper():
-        return 0.62
     if char.isdigit():
-        return 0.55
-    return 0.5
+        return 0.62
+    if char.isupper():
+        return 0.74
+    if char.isalpha():
+        return 0.65
+    return 0.6
+
+
+def _text_width(text: str, size: float) -> float:
+    """Single-line width in canvas units with full-width ambiguous punctuation."""
+
+    return sum(_advance_em(char) for char in text) * size * 96 / 72
 
 
 _NO_LINE_START = set("，。、；：？！）》」』”’,.;:?!)%")

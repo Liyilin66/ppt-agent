@@ -107,7 +107,8 @@ def test_dense_pages_shrink_but_never_below_the_floor() -> None:
 def test_widow_guard_matches_rendered_wrap_and_fixes_it() -> None:
     text = "客户资料、报价和未公开的项目文件，不要粘贴进外部 AI 工具。"
     # PowerPoint rendered this frame as 13 / 16 / 2 characters (one-char widow + "。").
-    assert _cjk_line_chars(text, 16, 290.67) == [13, 16, 2]
+    # The estimate is calibrated on bold widths, so it may wrap earlier, never later.
+    assert len(_cjk_line_chars(text, 16, 290.67)) >= 3
     narrowed = _widow_safe_width(text, 16, 290.67)
     assert _cjk_line_chars(text, 16, narrowed)[-1] >= 3
 
@@ -189,3 +190,27 @@ def test_structural_pages_keep_the_same_invariants(profile, kind, count) -> None
         assert fit_font_size(text.text, role=text.role, frame_width_units=text.frame.w,
                              frame_height_units=text.frame.h,
                              requested_size_pt=text.size_pt) == text.size_pt, text.text
+
+
+def test_stats_with_full_width_dashes_stay_on_one_line() -> None:
+    """Real run: ">60%—80%" wrapped because the dash was measured half width."""
+
+    from ppt_agent.v2.visual.archetypes import MetricItem, MetricsContent
+    from ppt_agent.v2.visual.compositions import _BOLD_WIDTH
+    from ppt_agent.v2.visual.layout import _text_width
+
+    content = MetricsContent(
+        title="中文数据与专利夯实本土适配",
+        metrics=[
+            MetricItem(value="157.6万", label="人工智能专利申请量"),
+            MetricItem(value="61.5%", label="全球新公开生成式专利"),
+            MetricItem(value="38.58%", label="全球人工智能专利申请"),
+            MetricItem(value=">60%—80%", label="模型中文数据占比"),
+        ],
+    )
+    for profile in PROFILES.values():
+        for key in ("metrics:cards", "metrics:columns"):
+            page, _ = typeset_page(content, profile, page_number=1, deck_title="t", composition=key)
+            for stat in (e for e in page.elements if isinstance(e, TextItem) and e.role == "stat"):
+                assert _text_width(stat.text, stat.size_pt) * _BOLD_WIDTH <= stat.frame.w, (
+                    profile.name, key, stat.text)

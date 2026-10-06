@@ -31,6 +31,7 @@ from ppt_agent.v2.visual.content import (
 )
 from ppt_agent.v2.visual.layout import (
     MIN_BODY_PT,
+    _text_width,
     _Builder,
     _draw_marker,
     _height,
@@ -117,17 +118,17 @@ def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: floa
                size=_ref_size(sz), color="secondary" if p.dark else "primary")
 
 
-_BOLD_WIDTH = 1.12  # bold YaHei / DengXian digits and Latin run ~10-12% wider
+_BOLD_WIDTH = 1.0  # _advance_em is already calibrated on YaHei Bold
 
 
 def _one_line(text: str, size: float, width: float, floor: float = 14.0) -> float:
     """Largest size <= ``size`` at which a short bold stat stays on one line.
 
-    Stats render bold, and the width metric is calibrated on regular weight:
-    "+18.8pp" at 40 pt wrapped in a real run because of that gap.
+    Widths come from the bold-calibrated table in ``layout``; real runs
+    wrapped "+18.8pp" and ">60%—80%" before it existed.
     """
 
-    while size > floor and text_width_units(text, size) * _BOLD_WIDTH > width * 0.92:
+    while size > floor and _text_width(text, size) * _BOLD_WIDTH > width * 0.92:
         size -= 1.0
     return size
 
