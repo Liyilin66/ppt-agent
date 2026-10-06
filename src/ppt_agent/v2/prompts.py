@@ -43,7 +43,7 @@ def build_brief_user_prompt(
         f"Planned deck length: {page_count} slides.",
     ]
     if source_digest:
-        parts.append(f"Source document digest:\n{source_digest.strip()[:6000]}")
+        parts.append(f"Source document digest:\n{source_digest.strip()}")
     if search_digest:
         parts.append(f"Web research notes:\n{search_digest.strip()[:4000]}")
     return "\n\n".join(parts)
@@ -60,7 +60,8 @@ Rules:
 - Use the slide language from the brief for all titles and points.
 - content_pages counts ONLY normal content slides (cover/TOC/dividers/closing are added separately).
 - 4-12 sections. Weight content_pages by importance; they will be rescaled to the exact budget.
-- talking_points: 3-8 per section, concrete and non-overlapping."""
+- talking_points: 3-8 per section, concrete and non-overlapping.
+- When a document map is provided, cover the full chapter structure and quantitative evidence from beginning, middle and end; preserve numeric subject, unit and period."""
 
 
 def build_outline_user_prompt(brief: ContentBrief, *, content_budget: int) -> str:
@@ -107,7 +108,7 @@ def build_section_pages_user_prompt(
         f"Deck: {deck_title}\n"
         f"Brief topic: {brief.topic}\nAudience: {brief.audience}\n"
         f"Language: {brief.language}\nTone: {brief.tone}\n"
-        f"Source digest: {(brief.source_digest or '(none)')[:3000]}\n\n"
+        f"Source digest: {(brief.source_digest or '(none)')}\n\n"
         f"Section: {section.title}\nGoal: {section.goal}\n"
         f"Talking points: {json.dumps(section.talking_points, ensure_ascii=False)}\n\n"
         f"Titles already used on earlier pages (do not repeat):\n{prior}\n\n"

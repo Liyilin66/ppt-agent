@@ -265,6 +265,16 @@ def _image_digest_text(entries: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _prepare_evidence_intake(request, checkpoints):
+    if not request.source_paths:
+        return IntakeResult()
+    from ppt_agent.v2.evidence import EvidenceStore
+    cached = checkpoints.load("evidence_store.json")
+    store = EvidenceStore.from_dict(cached) if cached is not None else EvidenceStore.from_paths(request.source_paths)
+    checkpoints.save("evidence_store.json", store.to_dict())
+    return IntakeResult(digest=store.document_map(), parsed_files=store.parsed_files, warnings=store.warnings)
+
+
 async def _run_brief_stage(
     request: BuildRequest,
     client: LLMClient,
@@ -299,7 +309,7 @@ async def _run_brief_stage(
         updates["language"] = request.language
     if intake.digest or search_digest:
         combined = "\n\n".join(part for part in (intake.digest, search_digest) if part)
-        updates["source_digest"] = combined[:24000]
+        updates["source_digest"] = combined
     if updates:
         brief = brief.model_copy(update=updates)
     checkpoints.save("brief.json", brief.model_dump(mode="json"))
@@ -394,13 +404,24 @@ async def _run_page_brief_stage(
                       layout_hint="auto")
             for position in range(page_count)
         ]
+        section_brief = brief
+        evidence_data = checkpoints.load("evidence_store.json") if checkpoints.resume else None
+        evidence_path = checkpoints.root / "evidence_store.json"
+        if evidence_data is None and evidence_path.is_file():
+            evidence_data = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if evidence_data:
+            from ppt_agent.v2.evidence import EvidenceStore
+            query = " ".join([section.title, section.goal, *section.talking_points])
+            packet = EvidenceStore.from_dict(evidence_data).select(query, section_query=query)
+            section_brief = brief.model_copy(update={"source_digest": packet.text})
+            checkpoints.save(f"section_evidence_{section_index:03d}.json", packet.to_dict())
         async with semaphore:
             try:
                 payload = await client.complete_json(
                     task="section_pages",
                     system=prompts.SECTION_PAGES_SYSTEM,
                     user=prompts.build_section_pages_user_prompt(
-                        brief,
+                        section_brief,
                         section,
                         page_count=page_count,
                         deck_title=skeleton.deck_title,
@@ -412,7 +433,7 @@ async def _run_page_brief_stage(
                     context={
                         "section": section.model_dump(mode="json"),
                         "page_count": page_count,
-                        "brief": brief.model_dump(mode="json"),
+                        "brief": section_brief.model_dump(mode="json"),
                     },
                 )
                 briefs = parse_page_briefs(
@@ -480,6 +501,15 @@ async def _design_content_page(
         return page, qa_result, outcome
 
     page_brief = slot.brief or PageBrief(title=slot.section_title or "Untitled")
+    evidence_path = checkpoints.root / "evidence_store.json"
+    if evidence_path.is_file():
+        from ppt_agent.v2.evidence import EvidenceStore
+        section = skeleton.outline.sections[(slot.section_index or 1) - 1]
+        query = " ".join([page_brief.title, *page_brief.points, slot.section_title or ""])
+        section_query = " ".join([section.title, section.goal, *section.talking_points])
+        packet = EvidenceStore.from_dict(json.loads(evidence_path.read_text())).select(query, section_query=section_query)
+        brief = brief.model_copy(update={"source_digest": packet.text})
+        checkpoints.save(f"page_evidence_{slot.page_number:03d}.json", packet.to_dict())
     neighbor_titles = _neighbor_titles(skeleton, slot)
     context = {
         "revision_instruction": revision_instruction,
@@ -909,7 +939,7 @@ async def build_deck_async(
         return done
 
     finish = timed("intake")
-    intake = ingest_sources(request.source_paths) if request.source_paths else IntakeResult()
+    intake = _prepare_evidence_intake(request, checkpoints)
     for warning in intake.warnings:
         progress(f"[intake] {warning}")
     search_digest: str | None = None
@@ -1186,7 +1216,7 @@ async def plan_deck_async(
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoints = _Checkpoints(output_dir / "checkpoints", resume=request.resume)
 
-    intake = ingest_sources(request.source_paths) if request.source_paths else IntakeResult()
+    intake = _prepare_evidence_intake(request, checkpoints)
     for warning in intake.warnings:
         progress(f"[intake] {warning}")
     search_digest: str | None = None

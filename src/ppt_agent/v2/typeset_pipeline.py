@@ -43,34 +43,52 @@ def suggested_archetype(hint):
     return 'process' if suggested == 'timeline' else 'points'
 
 
-def source_is_valid(source, references, page_counts=None):
-    """Check supplied identifiers, not the truth of the cited claim."""
+def source_is_valid(source, references, page_counts=None, allowed_pages=None):
+    """Validate every cited document and physical page, not claim semantics."""
     if not source or not str(source).strip():
         return True
     source = str(source).strip()
+    clauses = [item.strip() for item in re.split(r'[;；]', source) if item.strip()]
+    if len(clauses) > 1:
+        return all(source_is_valid(item, references, page_counts, allowed_pages) for item in clauses)
     if any(label in source.lower() for label in (
-        "用户提供", "用户需求", "需求说明", "需求背景", "user-provided", "user provided",
-    )):
+        '用户提供', '用户需求', '需求说明', '需求背景', 'user-provided', 'user provided',
+    )) or not references:
         return False
-    if not references:
+    urls = re.findall(r'https?://[^\s；;，,）)]+', source)
+    if urls:
+        return all(url in references for url in urls)
+    known = [Path(ref).name for ref in references if not ref.startswith(('http://', 'https://'))]
+    names = [name for name in known if re.search(r'(?<![\w.-])' + re.escape(name) + r'(?![\w.-])', source)]
+    remaining = source
+    for name in sorted(names, key=len, reverse=True):
+        remaining = remaining.replace(name, '')
+    if re.search(r'\.(?:pdf|docx|md|txt|csv|xlsx)\b', remaining, re.I):
         return False
-    urls = re.findall(r"https?://[^\s；;，,）)]+", source)
-    files = re.findall(r"[^\s；;，,/]+\.(?:pdf|docx|md|txt|csv|xlsx)(?![a-zA-Z0-9_.])", source, flags=re.I)
-    known = {Path(ref).name for ref in references if not ref.startswith(('http://', 'https://'))}
-    if any(url not in references for url in urls) or any(name not in known for name in files):
+    remaining = re.sub(r'\bp(?:ages?)?\.?\s*(\d+)(?:[-–—](\d+))?',
+                       lambda m: '第' + m[1] + ('-' + m[2] if m[2] else '') + '页', remaining, flags=re.I)
+    pattern = r'(?:第\s*)?(\d+)(?:[-–—](\d+))?\s*页'
+    spans = re.findall(pattern, remaining)
+    # Reject unparsed comma/shared-suffix page lists rather than certify only the last page.
+    if re.search(r'\d', re.sub(pattern, '', remaining)):
         return False
-    pages = re.search(r"(?:第\s*)?(\d+)(?:[-–—](\d+))?\s*页", source)
-    if pages:
+    if len(names) > 1:
+        return False  # Multiple documents must use explicit semicolon-separated citations.
+    document = names[0] if names else None
+    if document is None:
         pdfs = [name for name in known if name.lower().endswith('.pdf')]
-        document = files[0] if len(files) == 1 else (pdfs[0] if not files and len(pdfs) == 1 else None)
-        if not document or (not files and not (page_counts or {}).get(document)):
+        if len(pdfs) != 1 or not (page_counts or {}).get(pdfs[0]) or not spans:
             return False
-        start, end = int(pages[1]), int(pages[2] or pages[1])
+        document = pdfs[0]
+    if allowed_pages is not None and document.lower().endswith('.pdf') and not spans:
+        return False
+    for start, end in spans:
+        start, end = int(start), int(end or start)
         if start < 1 or end < start or ((page_counts or {}).get(document) and end > page_counts[document]):
             return False
-    if urls or files:
-        return True
-    return bool(pages and re.fullmatch(r"(?:PDF\s*)?(?:第\s*)?\d+(?:[-–—]\d+)?\s*页", source))
+        if allowed_pages is not None and any(n not in allowed_pages.get(document, []) for n in range(start, end + 1)):
+            return False
+    return bool(names or spans)
 
 
 def diversity_statistics(contents, slots):
@@ -123,7 +141,7 @@ def content_qa(content, page_number, seen_titles=None):
 
 async def generate_content(client, checkpoints, slot, brief, profile, *,
                            revision_instruction=None, force_regenerate=False, current_content: dict[str, Any] | None = None,
-                           diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None):
+                           diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None, evidence=None):
     source_references = source_references or re.findall(r'https?://[^\s]+', brief.source_digest or '')
     name = f'typeset/content_{slot.page_number:03d}.json'
     cached = None if force_regenerate else checkpoints.load(name)
@@ -132,6 +150,10 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         return parsed, cached['record']
     page_brief = slot.brief or PageBrief(title=slot.section_title or '内容要点')
     schema = content_adapter().json_schema()
+    if evidence is not None:
+        source_references = evidence.references
+        source_page_counts = evidence.page_counts
+        brief = brief.model_copy(update={'source_digest': evidence.text})
     suggested = suggested_archetype(page_brief.layout_hint)
     diversity = diversity or {}
     system = (
@@ -146,15 +168,22 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'source must identify an actual supplied filename, page or URL in source_references. '
         'Without source material leave source null; never cite user requirements as a source. When revising, edit current_content according to the instruction and preserve unrelated existing content. Never invent citations or unsupported numbers; '
         'if no evidence supports a number, omit it and use points or statement instead. '
+        'Only the supplied evidence excerpts are numerical evidence; planning suggestions are not evidence. '
+        'For PDF evidence, source MUST use exact filename and physical PDF page, e.g. report.pdf 第12页, '
+        'and only pages appearing in these excerpts; never confuse printed page numbers with physical PDF pages. '
         'Chart categories and values must have identical lengths. Schema:\n' + json.dumps(schema, ensure_ascii=False)
     )
     context = {'page_number': slot.page_number, 'page_brief': page_brief.model_dump(mode='json'),
                'section_title': slot.section_title, 'language': brief.language,
                'suggested_archetype': suggested, 'revision_instruction': revision_instruction,
-               'current_content': current_content, 'diversity': diversity}
-    user = json.dumps({'page': context, 'audience': brief.audience, 'purpose': brief.purpose,
+               'current_content': current_content, 'diversity': diversity,
+               'evidence': evidence.to_dict() if evidence is not None else None}
+    prompt_page = dict(context)
+    if evidence is not None:
+        prompt_page['evidence'] = {key: value for key, value in evidence.to_dict().items() if key != 'text'}
+    user = json.dumps({'page': prompt_page, 'audience': brief.audience, 'purpose': brief.purpose,
                        'profile': profile.name, 'source_digest': brief.source_digest, 'current_content': current_content,
-                       'key_points': brief.key_points, 'diversity': diversity,
+                       'key_points': [] if evidence is not None else brief.key_points, 'diversity': diversity,
                        'source_references': source_references}, ensure_ascii=False)
     errors = []
     invalid_sources = 0
@@ -167,9 +196,12 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
             payload = await client.complete_json(task='page_content', system=system, user=user, context=context)
             parsed = content_adapter().validate_python(payload)
             empty_sources += int(not parsed.source or not parsed.source.strip())
-            if not source_is_valid(parsed.source, source_references, source_page_counts):
+            if not source_is_valid(parsed.source, source_references, source_page_counts,
+                                   evidence.allowed_pages if evidence is not None else None):
                 invalid_sources += 1
                 raise ValueError('source must be a supplied filename, page or URL; no source material means source=null')
+            if evidence is not None and content_qa(parsed, slot.page_number).issues and not parsed.source:
+                raise ValueError('numeric content must cite the supplied filename and physical page in source')
             if parsed.archetype == 'points' and len(parsed.items) > 4:
                 raise ValueError('points must have at most 4 items, normally 3')
             if diversity.get('allowed_archetypes') and parsed.archetype not in diversity['allowed_archetypes']:
@@ -195,7 +227,8 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         parsed = parsed.model_copy(update={'speaker_notes': page_brief.speaker_notes})
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
               'validation_errors': errors, 'archetype': parsed.archetype,
-              'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources}
+              'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources,
+              'evidence': evidence.to_dict() if evidence is not None else None}
     checkpoints.save(name, {'content': parsed.model_dump(mode='json'), 'record': record})
     return parsed, record
 
@@ -232,6 +265,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     references += re.findall(r'https?://[^\s]+', brief.source_digest or '')
     checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
                                            'source_references': references, 'source_page_counts': page_counts})
+    from ppt_agent.v2.evidence import EvidenceStore
+    evidence_path = checkpoints.root / 'evidence_store.json'
+    evidence_store = EvidenceStore.from_dict(json.loads(evidence_path.read_text())) if evidence_path.is_file() else None
     content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
     results, previous, section_archetypes = {}, [], {}
     supported = list(content_adapter().json_schema()['discriminator']['mapping'])
@@ -248,10 +284,25 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                      'points_remaining': max(0, points_limit - previous.count('points')),
                      'last_page_in_section': last_in_section, 'allowed_archetypes': allowed,
                      'original_layout_hint': slot.brief.layout_hint if slot.brief else 'auto'}
+        packet = None
+        if evidence_store is not None:
+            section = skeleton.outline.sections[(slot.section_index or 1) - 1]
+            query = " ".join([slot.brief.title, *slot.brief.points, slot.section_title or '']) if slot.brief else (slot.section_title or '')
+            section_query = " ".join([section.title, section.goal, *section.talking_points])
+            packet = evidence_store.select(query, section_query=section_query)
         content, record = await generate_content(client, checkpoints, slot, brief, profile,
-                                                diversity=diversity, source_references=references, source_page_counts=page_counts)
+                                                diversity=diversity, source_references=references, source_page_counts=page_counts,
+                                                evidence=packet)
+        if record.get('evidence') is not None:
+            from ppt_agent.v2.evidence import EvidencePacket
+            packet = EvidencePacket(**record['evidence'])
+        if packet is not None:
+            references_for_page, page_counts_for_page = packet.references, packet.page_counts
+        else:
+            references_for_page, page_counts_for_page = references, page_counts
         # Old caches are preserved, but fabricated attribution is never displayed.
-        if not source_is_valid(content.source, references, page_counts):
+        if not source_is_valid(content.source, references_for_page, page_counts_for_page,
+                               packet.allowed_pages if packet is not None else None):
             record = {**record, 'source_invalid_cached': True}
             content = content.model_copy(update={'source': None})
             checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',

@@ -252,8 +252,17 @@ async def _revise_typeset_deck_staged(
             if item.new_brief is not None:
                 slot = slot.model_copy(update={"brief": item.new_brief})
                 updated_slots[item.page_number - 1] = slot
+            evidence = None
+            evidence_data = checkpoints.load("evidence_store.json")
+            if evidence_data is not None:
+                from ppt_agent.v2.evidence import EvidenceStore
+                current = (originals[slot.page_number] or {}).get("content") or {}
+                query = " ".join([slot.brief.title if slot.brief else "", slot.section_title or "",
+                                  current.get("title", ""), item.instruction or message])
+                evidence = EvidenceStore.from_dict(evidence_data).select(query, section_query=slot.section_title)
             content, record = await generate_content(
                 client, checkpoints, slot, brief, profile,
+                evidence=evidence,
                 revision_instruction=item.instruction or message, force_regenerate=True,
                 current_content=(originals[slot.page_number] or {}).get("content"),
                 source_references=config.get("source_references", []),
