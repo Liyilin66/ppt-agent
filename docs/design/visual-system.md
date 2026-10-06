@@ -1,15 +1,16 @@
 # 视觉系统：风格档案 × 版式原型 × 构图
 
-状态：第 3a 步（设计与样张）完成，尚未接入生成主流程。分支 `feat/visual-system`。
+状态：视觉线第二轮（`feat/visual-archetypes`，基于接线分支 `cd7bd94`）。内容页与结构页均已由排版器生成；内容生成侧的多样性由第 3c 步处理。
 
-- 样张：[visual-system/visual-system-decks.pdf](visual-system/visual-system-decks.pdf)（同一份 8 页 CNNIC 管理层简报 × 4 种风格 = 32 页，PowerPoint 实际导出）
+- 样张：[visual-system/visual-system-decks.pdf](visual-system/visual-system-decks.pdf)（同一份 13 页 CNNIC 管理层简报，含封面、目录、结尾 × 4 种风格 = 52 页，PowerPoint 实际导出）
 - 总览图：[咨询](visual-system/deck-consulting.png) · [企业](visual-system/deck-corporate.png) · [发布](visual-system/deck-launch.png) · [培训](visual-system/deck-training.png)
 - 改造前：[mock 成品](visual-system/before-mock.png) · [真实模型 T2](visual-system/before-real-t2.png)
 - 代码：`src/ppt_agent/v2/visual/`
   - `content.py` 内容 schema（模型要写的东西）
   - `profiles.py` 风格档案
   - `layout.py` 测量、孤行控制、页眉页脚等公共排版件
-  - `compositions.py` 17 种构图
+  - `compositions.py` 22 种构图
+  - `structural.py` 封面、目录、章节分隔页、结尾页（按风格）
   - `archetypes.py` 引擎：选构图、定字号、出 PageDesign
   - `samples.py` 样张内容（全部取自评测资料，逐页注明出处）
 - 复现：`uv run python scripts/visual_samples.py` → `scripts/pptx_snapshot.sh <out> <pptx...>` → `scripts/contact_sheet.py`
@@ -44,7 +45,7 @@
   1. **构图**：每种版式有多种排法（17 种构图，见 §5）；
   2. **节奏**：同一份 PPT 内避免连续或近距离重复同一构图；
   3. **风格 = 外观 + 构图偏好**：档案不只换颜色，还决定偏好哪些构图——咨询偏图表主导和细线，企业偏仪表盘和网格，发布偏单个大数字，培训偏步骤和提示框。
-- **可测量的底线**（`tests/test_v2_visual_system.py`，17 种构图 × 4 种档案 × 全部样张，共 752 个用例）：
+- **可测量的底线**（`tests/test_v2_visual_system.py`，22 种构图 × 4 种档案 × 全部样张 + 结构页 4 类 × 4 档案 × 3 种章节数，共 960 个用例）：
   - 元素在画布内；文字框互不重叠；阅读文字 ≥ 12pt；
   - 排版给的字号渲染器不会再缩小（框一定装得下）；
   - 每种构图都被测到；同一份 PPT 不连续重复构图；4 种档案的构图序列互不相同；
@@ -80,19 +81,20 @@
 | `chart` 图表 + 结论 | bar/column、categories ≤8、values、unit_format、insights 1–3（**第一条是核心结论**） | 已实现 |
 | `metrics` 关键指标 | metrics 2–4：value ≤10、label ≤16、note ≤40 | 已实现 |
 | `statement` 一句话结论 | statement ≤44、support ≤100 | 已实现（呼吸页） |
-| `compare` 对比 | 2 栏，各 heading + 2–5 条 + 结论 | 待实现 |
-| `timeline` 时间线 | 3–6 节点：date、label、body | 待实现 |
+| `compare` 对比 | left / right 各 heading ≤16 + points 2–5（每条 ≤40）；**right 是推荐方** | 已实现 |
+| `timeline` 时间线 | milestones 3–6：date ≤12、label ≤14、body ≤40 | 已实现 |
 | `table` 表格 | headers ≤6、rows ≤7 | 渲染已支持（minimal 样式），排版待实现 |
 
 每页公共字段：`title`（结论式 ≤40）、`kicker`、`lead`、`takeaway`（要点条）、`source`（出处，显示在页脚——正好是第 4 步「页面标注出处」的位置）。
 
 **顺序即语义**：`insights[0]`、`metrics[0]` 是这一页最重要的信息，"大数字"类构图会把它提升为主角，指标卡会把第一张反色。模型只需按重要性排序，不需要懂版式。
 
-## 5. 构图（17 种）
+## 5. 构图（22 种）
 
 | 原型 | 构图 | 说明 | 页眉 |
 |---|---|---|---|
-| points | columns | 2–3 条等宽分栏 | 标准 |
+| points | columns | 2–4 条等宽分栏 | 标准 |
+| | list2 | 4–5 条两栏编号列表 | 标准 |
 | | grid | 4 条 2×2 网格 | 标准 |
 | | feature | 3 条：首条放大在左，其余两条叠在右 | 标准 |
 | | rows | 行式列表，小标题列按最长标题定宽 | 标准 |
@@ -106,6 +108,10 @@
 | | stacked | 通栏图表 + 下方一排结论 | 标准 |
 | metrics | cards | 指标卡（首张反色） | 标准 |
 | | columns | 细线 + 大数字，无卡片 | 标准 |
+| compare | split | 双栏，推荐方表头反色 | 标准 |
+| | versus | 两张对峙卡片 + VS 徽章 | 标准 |
+| timeline | axis | 横轴，日期在上、说明在下，最后一个节点强调 | 标准 |
+| | cards | 日期胶囊 + 里程碑卡片 | 标准 |
 | statement | left | 左对齐大字 + 强调竖线 | 无 |
 | | center | 居中大字 | 无 |
 | | band | 通栏品牌色带 | 无 |
@@ -119,28 +125,42 @@
 
 同样的输入每次得到同样的结果（无随机），便于复现和回归测试。
 
-## 6. 排版器的关键处理
+## 6. 结构页（`structural.py`）
+
+只用骨架里的事实（标题、副标题、章节标题与起始页码），不需要模型写内容，完全确定性。
+
+| | 封面 | 目录 | 章节页 | 结尾 |
+|---|---|---|---|---|
+| 咨询 | 白底，左侧细竖条 + 标题，底部细线 | 编号 + 细线分隔，超过 4 章分两栏 | 白底，橙色大号章节号 | 左侧竖条 + "谢谢" |
+| 企业 | 左 60% 品牌色块放标题，右侧预览章节 | 卡片网格 + 徽章编号 + 页码 | 品牌色满版 | 品牌色满版 |
+| 发布 | 深色居中超大标题 | 大号数字网格 | 深色大号章节号 | 深色居中 |
+| 培训 | 课程标签 + 标题，底部色带列出前 4 章 | 圆形编号列表 | 主色满版 | "感谢参与" 居中 |
+
+接线：`typeset_pipeline.build_typeset_deck` 中结构页改为调用 `typeset_structural`，章节由 `_skeleton_sections` 从骨架取得。
+
+## 7. 排版器的关键处理
 
 - **固定行距（全局修复）**：渲染器改为按「字号 × 行距系数」写入固定磅值，渲染行距与 `metrics.py` 的估算一致，不再依赖字体自身行高。阅读文字行距系数同时调到适合中文的值（正文 1.5、小字 1.45、导语 1.4、小标题 1.3、标题 1.2）。旧版自由布局页面也受益：估算更准，溢出判断不再偏乐观。全量 1321 个测试通过。
 - **孤行控制**：中文段落最后一行只剩 1–2 字时收窄文本框 1–4 个字宽，而不是缩字号。估算按 1em 中文宽度 + 避头规则；西文宽度在雅黑和等线间有差异，要求偏宽、偏窄两种估算都不孤行。测量和绘制使用同一个收窄后的宽度，避免收窄后多出一行压到下方元素。
 - **中文断行（全局修复）**：含中文的文字标注 `lang="zh-CN"`，段落开启 `eaLnBrk`、`hangingPunct`。
-- **大数字一行化**：指标和结论里的数字按可用宽度自动收字号，保证"5.15 亿"不被拆成两行。
+- **大数字一行化**：指标和结论里的数字按可用宽度自动收字号；按**粗体**宽度估算（粗体约宽 12%），真实运行中"+18.8pp"换行压住标签即由此修复。
+- **英文单词不拆行**：换行估算把连续的英文、数字当作整体（PowerPoint 不会把 "OpenAI" 拆到两行），取它和保守估算中行数更多者。
 - **稀疏列表撑开**：行式列表和纵向步骤在内容少时加大行内留白，而不是留下半页空白。
 - **渲染器扩展**（向后兼容）：图表 `font_pt`、`show_value_axis`、`show_gridlines`、`number_format`，条形图从上到下排列；表格 `style="minimal"` 与 `font_pt`。
 
-## 7. 迁移方案（第 3b 步）
+## 8. 迁移方案（第 3b 步，已由接线分支完成主体）
 
 1. **页面设计提示词**：从「输出 PageDesign 坐标」改为「选原型 + 按 schema 填内容 + 按重要性排序」。章节规划的 `layout_hint` 映射到原型（cards/list→points、timeline→timeline、chart→chart、table→table、comparison→compare、stats→metrics、quote→statement）。
-2. **补齐 compare、timeline、table** 三种原型及其构图，纳入同一套不变量测试。
+2. ~~补齐 compare、timeline~~（已完成）；table 原型排版仍待实现。内容提示词与 `layout_hint` 映射需在第 3c 步加入 compare / timeline。
 3. **回退页走同一套排版**：模型失败时用 `points` + 章节要点排版。
-4. **封面、目录、章节页、结尾页**：保留确定性生成，改用档案的字体、颜色和装饰，去掉旧的盖章母题。
+4. ~~封面、目录、章节页、结尾页~~（已完成，见 §6）。
 5. **QA 调整**：坐标类检查由排版器构造时保证；QA 保留内容类检查（重复标题、未注明出处的数字等）。
 6. **图片「忠实重建」**仍需任意坐标，继续走自由布局。
 
-## 8. 已知限制
+## 9. 已知限制
 
 - 样张内容是人工从报告整理的，真实模型输出的内容长度和结构会更不稳定，需在 3b 用真实生成验证。
-- 孤行控制基于估算，个别字体和字号组合仍可能出现。
+- 孤行控制基于估算，个别字体和字号组合仍可能出现（例：培训档案时间线卡片中"OpenAI 视频生成模型正式向用户开放"末尾的"放"）。
 - 图表精排只覆盖单系列条形图 / 柱状图；折线、饼图沿用渲染器默认样式。
 - 产品发布档案用纯色背景：渐变在 PowerPoint 导出 PDF 时出现条纹。
 - 内容很少的页面（如 4 步流程）在咨询档案下仍偏空，这是该风格偏上对齐的取舍。

@@ -8,6 +8,7 @@ decide how a block of text is sized and drawn.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ppt_agent.v2.design import TYPE_SCALE
@@ -38,10 +39,16 @@ def _height(text: str, role: str, size: float, width: float) -> float:
     narrowed to avoid one-character last lines, which can add a line.
     """
 
-    if role in _WIDOW_ROLES:
+    if role in _WIDOW_ROLES and "\n" not in text:
         width = _widow_safe_width(text, size, width)
     spacing = TYPE_SCALE[role].line_spacing
-    return text_height_units(text, size, spacing, width) * 1.04 + 2.0
+    estimate = text_height_units(text, size, spacing, width)
+    # The overflow metric breaks Latin words anywhere; PowerPoint moves the
+    # whole word down. Take whichever wrap needs more lines.
+    lines = sum(len(_cjk_line_chars(part, size, width)) if part else 1
+                for part in text.split("\n"))
+    by_tokens = lines * size * spacing * 96 / 72
+    return max(estimate, by_tokens) * 1.04 + 2.0
 
 
 def _cjk_line_chars(text: str, size: float, width: float, latin_scale: float = 1.0) -> list[int]:
@@ -53,11 +60,13 @@ def _cjk_line_chars(text: str, size: float, width: float, latin_scale: float = 1
 
     em_px = size * 96 / 72
     counts, current, used = [], 0, 0.0
-    for char in text:
-        em = _advance_em(char)
-        advance = em_px * (em if em == 1.0 else em * latin_scale)
+    for token in _TOKEN.findall(text):
+        advance = sum(
+            em_px * (em if em == 1.0 else em * latin_scale)
+            for em in (_advance_em(char) for char in token)
+        )
         if used + advance > width and current:
-            if char in _NO_LINE_START and current > 1:
+            if token[0] in _NO_LINE_START and current > 1:
                 # Kinsoku: punctuation may not start a line, so PowerPoint
                 # carries the previous character down with it.
                 counts.append(current - 1)
@@ -65,10 +74,14 @@ def _cjk_line_chars(text: str, size: float, width: float, latin_scale: float = 1
             else:
                 counts.append(current)
                 current, used = 0, 0.0
-        current += 1
+        current += len(token)
         used += advance
     counts.append(current)
     return counts
+
+
+# Latin words and numbers never break mid-token in PowerPoint; CJK breaks anywhere.
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.,%+\-/]*|.", re.S)
 
 
 def _advance_em(char: str) -> float:
@@ -143,14 +156,15 @@ class _Builder:
     def text(
         self, text: str, *, x: float, y: float, w: float, h: float, role: str, size: float,
         color: str = "text", bold: bool | None = None, align: str = "left",
-        valign: str = "top",
+        valign: str = "top", bullet: str = "none",
     ) -> None:
-        if role in _WIDOW_ROLES and align == "left":
+        if role in _WIDOW_ROLES and align == "left" and "\n" not in text:
             w = _widow_safe_width(text, size, w)
         self.elements.append(
             TextItem(
                 id=self._id("t"), frame=Frame(x=x, y=y, w=w, h=h), text=text, role=role,
                 size_pt=size, color=color, bold=bold, align=align, valign=valign,
+                bullet=bullet,
             )
         )
 

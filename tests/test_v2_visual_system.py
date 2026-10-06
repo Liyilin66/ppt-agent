@@ -151,3 +151,41 @@ def test_styles_differ_in_arrangement_not_only_colour() -> None:
         for name, p in PROFILES.items()
     }
     assert len(set(arrangements.values())) == len(arrangements), arrangements
+
+
+from ppt_agent.v2.visual.structural import typeset_structural  # noqa: E402
+
+_SECTIONS = [(f"第 {n} 部分：一个比较长的章节标题用于测试换行", 3 + n * 2) for n in range(9)]
+STRUCTURAL_CASES = [
+    (profile, kind, count)
+    for profile in PROFILES.values()
+    for kind in ("cover", "toc", "section_divider", "closing")
+    for count in (3, 6, 9)
+]
+
+
+@pytest.mark.parametrize(
+    ("profile", "kind", "count"), STRUCTURAL_CASES,
+    ids=[f"{p.name}-{k}-{c}" for p, k, c in STRUCTURAL_CASES],
+)
+def test_structural_pages_keep_the_same_invariants(profile, kind, count) -> None:
+    page = typeset_structural(
+        kind, profile, page_number=2, deck_title="中国生成式 AI 应用发展：管理层简报与投资方向",
+        subtitle="基于 CNNIC《生成式人工智能应用发展报告（2025）》", sections=_SECTIONS[:count],
+        section_index=3, section_title="用户普及：从快速渗透到分层使用",
+    )
+    texts = [e for e in page.elements if isinstance(e, TextItem)]
+    assert texts
+    for element in page.elements:
+        if isinstance(element, LineItem):
+            continue
+        assert element.frame.x >= 0 and element.frame.right <= CANVAS_WIDTH + 0.5
+        assert element.frame.y >= 0 and element.frame.bottom <= CANVAS_HEIGHT + 0.5
+    for a, b in itertools.combinations(texts, 2):
+        ix = min(a.frame.right, b.frame.right) - max(a.frame.x, b.frame.x)
+        iy = min(a.frame.bottom, b.frame.bottom) - max(a.frame.y, b.frame.y)
+        assert ix <= 1 or iy <= 1, f"{a.text!r} overlaps {b.text!r}"
+    for text in texts:
+        assert fit_font_size(text.text, role=text.role, frame_width_units=text.frame.w,
+                             frame_height_units=text.frame.h,
+                             requested_size_pt=text.size_pt) == text.size_pt, text.text

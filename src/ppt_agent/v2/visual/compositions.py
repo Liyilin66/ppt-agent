@@ -21,6 +21,8 @@ from ppt_agent.v2.metrics import text_width_units
 from ppt_agent.v2.visual.content import (
     AnyContent,
     ChartContent,
+    CompareContent,
+    TimelineContent,
     MetricsContent,
     PointItem,
     PointsContent,
@@ -115,10 +117,17 @@ def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: floa
                size=_ref_size(sz), color="secondary" if p.dark else "primary")
 
 
-def _one_line(text: str, size: float, width: float, floor: float = 18.0) -> float:
-    """Largest size <= ``size`` at which a short stat stays on one line."""
+_BOLD_WIDTH = 1.12  # bold YaHei / DengXian digits and Latin run ~10-12% wider
 
-    while size > floor and text_width_units(text, size) > width * 0.96:
+
+def _one_line(text: str, size: float, width: float, floor: float = 14.0) -> float:
+    """Largest size <= ``size`` at which a short bold stat stays on one line.
+
+    Stats render bold, and the width metric is calibrated on regular weight:
+    "+18.8pp" at 40 pt wrapped in a real run because of that gap.
+    """
+
+    while size > floor and text_width_units(text, size) * _BOLD_WIDTH > width * 0.92:
         size -= 1.0
     return size
 
@@ -197,6 +206,59 @@ def points_feature(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, 
             _draw_point_cell(b, item, index, zone.x + left_w + gap, y, right_w, h + extra, sz,
                              pad=pad)
             y += h + extra + small_gap
+    return block
+
+
+def points_list2(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Four or five points as a two-column list: number, heading, short body."""
+
+    p = b.profile
+    items = content.items
+    carded = p.card_style != "none"
+    gap_x = 48.0 if not carded else p.item_gap
+    gap_y = 28.0 if not carded else p.item_gap
+    col_w = (zone.w - gap_x) / 2
+    pad = 22.0 if carded else 0.0
+    num_w = 48.0
+    text_w = col_w - 2 * pad - num_w
+
+    def cell_h(item: PointItem) -> float:
+        h = _height(item.heading, "h3", sz.heading, text_w) + 6
+        h += _height(item.body, "body", sz.body, text_w)
+        if item.ref:
+            h += 8 + _height(item.ref, "caption", _ref_size(sz), text_w)
+        return h + 2 * pad
+
+    rows = [items[i:i + 2] for i in range(0, len(items), 2)]
+    heights = [max(cell_h(it) for it in row) for row in rows]
+    block = sum(heights) + gap_y * (len(rows) - 1)
+    if draw:
+        y = top
+        for r, row in enumerate(rows):
+            for c, item in enumerate(row):
+                index = r * 2 + c
+                x = zone.x + c * (col_w + gap_x)
+                b.card(x, y, col_w, heights[r])
+                if not carded:
+                    b.shape(x=x, y=y - 12, w=col_w, h=1.5,
+                            fill="primary" if p.name == "consulting" else "surface_alt")
+                ix, iy = x + pad, y + pad
+                b.text(f"{index + 1:02d}", x=ix, y=iy, w=num_w,
+                       h=_height("00", "h3", sz.heading, num_w), role="h3", size=sz.heading,
+                       color="accent" if p.name == "consulting" else "primary")
+                hx = ix + num_w
+                hh = _height(item.heading, "h3", sz.heading, text_w)
+                b.text(item.heading, x=hx, y=iy, w=text_w, h=hh, role="h3", size=sz.heading,
+                       color="text")
+                bh = _height(item.body, "body", sz.body, text_w)
+                b.text(item.body, x=hx, y=iy + hh + 6, w=text_w, h=bh, role="body",
+                       size=sz.body, color="muted" if p.dark else "text")
+                if item.ref:
+                    rh = _height(item.ref, "caption", _ref_size(sz), text_w)
+                    b.text(item.ref, x=hx, y=iy + hh + 6 + bh + 8, w=text_w, h=rh,
+                           role="caption", size=_ref_size(sz),
+                           color="secondary" if p.dark else "primary")
+            y += heights[r] + gap_y
     return block
 
 
@@ -480,7 +542,10 @@ def chart_hero(b, content: ChartContent, zone: _Zone, sz: _Sizes, *, draw, top) 
     rest_hs = [_height(f"{i.value or ''} {i.text}", "body", sz.body, left_w) for i in rest]
     left = hero_h + 10 + text_h + (28 + sum(rest_hs) + 12 * max(0, len(rest_hs) - 1)
                                    if rest else 0)
-    block = max(left, zone.h * 0.9)
+    pad = _pad(b)
+    chart_need = (_height(content.chart_title, "h3", sz.heading, chart_w - 2 * pad) + 12
+                  + _chart_min_h(b, content) + 2 * pad)
+    block = max(left, chart_need, zone.h * 0.9)
     if draw:
         y = top + max(0.0, (block - left) / 2)
         b.text(hero.value or "", x=zone.x, y=y, w=left_w, h=hero_h, role="stat", size=hero_size,
@@ -687,6 +752,161 @@ def statement_band(b, content: StatementContent, zone: _Zone, sz: _Sizes, *, dra
 
 
 # --------------------------------------------------------------------------
+# compare
+# --------------------------------------------------------------------------
+
+
+def _bullets(points: list[str]) -> str:
+    return "\n".join(point.rstrip("。.") for point in points)
+
+
+def compare_split(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Two columns under coloured header strips; the right side is favoured."""
+
+    p = b.profile
+    gap = p.item_gap * 1.6
+    col_w = (zone.w - gap) / 2
+    pad = 26.0
+    inner = col_w - 2 * pad
+    head_h = _height("标题", "h3", sz.heading + 2, inner) + 24
+    sides = (content.left, content.right)
+    body_hs = [_height(_bullets(side.points), "body", sz.body, inner - 18) for side in sides]
+    block = head_h + 20 + max(body_hs) + pad
+    if draw:
+        for index, side in enumerate(sides):
+            x = zone.x + index * (col_w + gap)
+            favoured = index == 1
+            if p.card_style != "none" or favoured:
+                b.shape(x=x, y=top, w=col_w, h=block,
+                        shape="rounded_rectangle" if p.card_radius else "rectangle",
+                        fill="surface" if not favoured else "primary_soft",
+                        stroke="surface_alt" if p.card_style == "outlined" else None)
+            b.shape(x=x, y=top, w=col_w, h=head_h,
+                    shape="rectangle", fill="primary" if favoured else "surface_alt")
+            b.text(side.heading, x=x + pad, y=top, w=inner, h=head_h, role="h3",
+                   size=sz.heading + 2, color="on_primary" if favoured else "text",
+                   valign="middle")
+            b.text(_bullets(side.points), x=x + pad, y=top + head_h + 20, w=inner - 18,
+                   h=body_hs[index], role="body", size=sz.body, bullet="dot",
+                   color="muted" if p.dark else "text")
+    return block
+
+
+def compare_versus(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Two cards facing each other with a VS badge between them."""
+
+    p = b.profile
+    badge = 64.0
+    gap = badge + 40
+    col_w = (zone.w - gap) / 2
+    pad = 30.0
+    inner = col_w - 2 * pad
+    sides = (content.left, content.right)
+    head_hs = [_height(side.heading, "title", sz.heading + 6, inner) for side in sides]
+    body_hs = [_height(_bullets(side.points), "body", sz.body, inner - 18) for side in sides]
+    block = max(h + 18 + bh for h, bh in zip(head_hs, body_hs)) + 2 * pad
+    if draw:
+        for index, side in enumerate(sides):
+            x = zone.x + index * (col_w + gap)
+            favoured = index == 1
+            shape = "rounded_rectangle" if p.card_radius else "rectangle"
+            b.shape(x=x, y=top, w=col_w, h=block, shape=shape,
+                    fill="primary" if favoured else "surface",
+                    stroke="surface_alt" if (p.card_style == "outlined" and not favoured) else None)
+            on = "on_primary" if favoured else "text"
+            b.text(side.heading, x=x + pad, y=top + pad, w=inner, h=head_hs[index], role="title",
+                   size=sz.heading + 6, color=on)
+            b.text(_bullets(side.points), x=x + pad, y=top + pad + head_hs[index] + 18,
+                   w=inner - 18, h=body_hs[index], role="body", size=sz.body, bullet="dot",
+                   color="primary_soft" if favoured else ("muted" if p.dark else "text"))
+        cx = zone.x + col_w + (gap - badge) / 2
+        cy = top + block / 2 - badge / 2
+        b.shape(x=cx, y=cy, w=badge, h=badge, shape="ellipse", fill="accent")
+        b.text("VS", x=cx, y=cy, w=badge, h=badge, role="h3", size=20, color="on_primary",
+               align="center", valign="middle")
+    return block
+
+
+# --------------------------------------------------------------------------
+# timeline
+# --------------------------------------------------------------------------
+
+
+def _milestone_heights(b, content: TimelineContent, w: float, sz: _Sizes, date_size: float):
+    date_h = _height("2025.06", "stat", date_size, w)
+    label_hs = [_height(m.label, "h3", sz.heading, w) for m in content.milestones]
+    body_hs = [_height(m.body, "body", sz.body, w) if m.body else 0.0
+               for m in content.milestones]
+    return date_h, label_hs, body_hs
+
+
+def timeline_axis(b, content: TimelineContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Dates above a horizontal axis, labels and detail below it."""
+
+    p = b.profile
+    n = len(content.milestones)
+    gap = 28.0
+    col_w = (zone.w - gap * (n - 1)) / n
+    date_size = min(_one_line(m.date, sz.stat * 0.6, col_w) for m in content.milestones)
+    date_h, label_hs, body_hs = _milestone_heights(b, content, col_w, sz, date_size)
+    axis_y = date_h + 18
+    below = max(lh + (8 + bh if bh else 0) for lh, bh in zip(label_hs, body_hs))
+    block = axis_y + 26 + below
+    if draw:
+        b.line(zone.x, top + axis_y, zone.x + zone.w, top + axis_y,
+               color="surface_alt" if p.card_style == "none" else "primary_soft", width=3)
+        for index, m in enumerate(content.milestones):
+            x = zone.x + index * (col_w + gap)
+            b.text(m.date, x=x, y=top, w=col_w, h=date_h, role="stat", size=date_size,
+                   color="accent" if index == n - 1 else "primary")
+            b.shape(x=x, y=top + axis_y - 8, w=16, h=16, shape="ellipse",
+                    fill="accent" if index == n - 1 else "primary")
+            y = top + axis_y + 26
+            b.text(m.label, x=x, y=y, w=col_w, h=label_hs[index], role="h3", size=sz.heading,
+                   color="text")
+            if m.body:
+                b.text(m.body, x=x, y=y + label_hs[index] + 8, w=col_w, h=body_hs[index],
+                       role="body", size=sz.body, color="muted")
+    return block
+
+
+def timeline_cards(b, content: TimelineContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Milestone cards hanging off a track, each with a date chip."""
+
+    p = b.profile
+    n = len(content.milestones)
+    gap = p.item_gap
+    col_w = (zone.w - gap * (n - 1)) / n
+    pad = 22.0
+    inner = col_w - 2 * pad
+    chip_size = max(MIN_BODY_PT, min(sz.small, p.sizes.small + 1))
+    chip_h = _height("2025", "h3", chip_size, inner) + 12
+    _, label_hs, body_hs = _milestone_heights(b, content, inner, sz, 20)
+    card_h = max(lh + (8 + bh if bh else 0) for lh, bh in zip(label_hs, body_hs)) + 2 * pad
+    block = chip_h / 2 + card_h + chip_h / 2
+    if draw:
+        b.line(zone.x, top + chip_h / 2, zone.x + zone.w, top + chip_h / 2,
+               color="primary_soft", width=3)
+        for index, m in enumerate(content.milestones):
+            x = zone.x + index * (col_w + gap)
+            shape = "rounded_rectangle" if p.card_radius else "rectangle"
+            b.shape(x=x, y=top + chip_h, w=col_w, h=card_h, shape=shape, fill="surface",
+                    stroke="surface_alt" if p.card_style == "outlined" else None)
+            chip_w = min(inner, text_width_units(m.date, chip_size) * _BOLD_WIDTH + 28)
+            b.shape(x=x + pad, y=top, w=chip_w, h=chip_h, shape="pill",
+                    fill="accent" if index == n - 1 else "primary")
+            b.text(m.date, x=x + pad, y=top, w=chip_w, h=chip_h, role="h3", size=chip_size,
+                   color="on_primary", align="center", valign="middle")
+            y = top + chip_h + pad
+            b.text(m.label, x=x + pad, y=y, w=inner, h=label_hs[index], role="h3",
+                   size=sz.heading, color="text")
+            if m.body:
+                b.text(m.body, x=x + pad, y=y + label_hs[index] + 8, w=inner, h=body_hs[index],
+                       role="body", size=sz.body, color="muted" if p.dark else "text")
+    return block
+
+
+# --------------------------------------------------------------------------
 # Registry
 # --------------------------------------------------------------------------
 
@@ -700,8 +920,10 @@ def _always(_: AnyContent) -> bool:
 
 
 COMPOSITIONS: list[Composition] = [
-    Composition("points", "columns", points_columns, _n("items", 2, 3),
-                description="等宽分栏"),
+    Composition("points", "columns", points_columns, _n("items", 2, 4),
+                description="等宽分栏（2–4 条）"),
+    Composition("points", "list2", points_list2, _n("items", 4, 5),
+                description="两栏编号列表（4–5 条）"),
     Composition("points", "grid", points_grid, _n("items", 4, 4),
                 description="2×2 网格"),
     Composition("points", "feature", points_feature, _n("items", 3, 3),
@@ -723,6 +945,10 @@ COMPOSITIONS: list[Composition] = [
                 description="通栏图表 + 下方一排结论"),
     Composition("metrics", "cards", metrics_cards, _always, description="指标卡片（首张反色）"),
     Composition("metrics", "columns", metrics_columns, _always, description="细线大数字"),
+    Composition("compare", "split", compare_split, _always, description="双栏对比（右侧为推荐方）"),
+    Composition("compare", "versus", compare_versus, _always, description="两张对峙卡片 + VS"),
+    Composition("timeline", "axis", timeline_axis, _always, description="横轴时间线"),
+    Composition("timeline", "cards", timeline_cards, _always, description="日期标签 + 里程碑卡片"),
     Composition("statement", "left", statement_left, _always, header="none",
                 description="左对齐大字 + 强调竖线"),
     Composition("statement", "center", statement_center, _always, header="none",

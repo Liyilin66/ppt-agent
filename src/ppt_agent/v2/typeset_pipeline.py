@@ -16,6 +16,7 @@ from ppt_agent.v2.providers import BudgetExceededError
 from ppt_agent.v2.qa import PageQAResult, QAIssue, review_page, summarize
 from ppt_agent.v2.render import render_deck
 from ppt_agent.v2.visual.archetypes import typeset_page
+from ppt_agent.v2.visual.structural import typeset_structural
 from ppt_agent.v2.visual.content import PointsContent
 from ppt_agent.v2.visual.profiles import PROFILES
 
@@ -131,9 +132,20 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     return parsed, record
 
 
+def _skeleton_sections(skeleton) -> list[tuple[str, int]]:
+    """(section title, first page) in deck order, for the cover and TOC."""
+
+    seen: dict[int, tuple[str, int]] = {}
+    for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
+        if slot.section_index is not None and slot.section_index not in seen:
+            title = slot.section_title or f"第 {slot.section_index} 部分"
+            seen[slot.section_index] = (title, slot.page_number)
+    return [seen[index] for index in sorted(seen)]
+
+
 async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, progress):
     # Lazy imports keep the orchestrator's delegation free of import cycles.
-    from ppt_agent.v2.orchestrator import BuildResult, PageOutcome, _build_anchor_pages, _anchor_fallback_page
+    from ppt_agent.v2.orchestrator import BuildResult, PageOutcome
     started = time.perf_counter()
     output_dir = Path(request.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -150,7 +162,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     # Complete all model calls before the first layout call; rhythm is serial.
     results = dict(await asyncio.gather(*(generate(slot) for slot in skeleton.content_slots())))
     content_seconds = time.perf_counter() - started
-    anchors = _build_anchor_pages(skeleton, brief, theme)
+    sections = _skeleton_sections(skeleton)
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     seen_titles = set()
     for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
@@ -180,9 +192,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 model_attempts=record['attempts'], warning_issues=len(qa.issues),
                 note='; '.join(notes))
         else:
-            page = anchors.get(slot.page_number)
-            if page is None:
-                page = _anchor_fallback_page(slot, skeleton, brief, theme)
+            # Cover, TOC, dividers and closing come from the profile's own
+            # structural designs, built only from skeleton facts.
+            page = typeset_structural(
+                slot.kind, profile, page_number=slot.page_number,
+                deck_title=skeleton.deck_title, subtitle=skeleton.subtitle,
+                sections=sections, section_index=slot.section_index,
+                section_title=slot.section_title,
+            )
             page, qa = review_page(page, theme)
             outcome = PageOutcome(page_number=slot.page_number, status='anchor',
                 error_issues=len(qa.errors), warning_issues=len(qa.issues)-len(qa.errors))

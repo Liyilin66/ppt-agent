@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from ppt_agent.v2.render import render_deck
-from ppt_agent.v2.visual.archetypes import typeset_deck
+from ppt_agent.v2.visual.archetypes import assemble_deck
 from ppt_agent.v2.visual.profiles import PROFILES
 from ppt_agent.v2.visual.samples import CNNIC_DECK, CNNIC_DECK_TITLE
 
@@ -21,7 +21,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     report = {}
     for name, profile in PROFILES.items():
-        deck, notes = typeset_deck(CNNIC_DECK, profile, deck_title=CNNIC_DECK_TITLE)
+        deck, notes = assemble_deck(CNNIC_DECK, profile, deck_title=CNNIC_DECK_TITLE,
+                                    subtitle="基于 CNNIC《生成式人工智能应用发展报告（2025）》")
         path = render_deck(deck, out / f"{name}.pptx")
         (out / f"{name}_design.json").write_text(deck.model_dump_json(indent=1), encoding="utf-8")
         report[name] = {"pptx": str(path), "notes": notes}

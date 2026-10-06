@@ -79,6 +79,35 @@ class StatementContent(PageCopy):
     support: str | None = Field(default=None, max_length=100)
 
 
-AnyContent = PointsContent | ProcessContent | ChartContent | MetricsContent | StatementContent
+class CompareSide(StrictModel):
+    heading: str = Field(..., min_length=1, max_length=16)
+    points: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(
+        ..., min_length=2, max_length=5
+    )
+
+
+class CompareContent(PageCopy):
+    """Two options, states or camps side by side; ``right`` is the favoured one."""
+
+    archetype: Literal["compare"] = "compare"
+    left: CompareSide
+    right: CompareSide
+
+
+class Milestone(StrictModel):
+    date: str = Field(..., min_length=1, max_length=12)
+    label: str = Field(..., min_length=1, max_length=14)
+    body: str | None = Field(default=None, max_length=40)
+
+
+class TimelineContent(PageCopy):
+    archetype: Literal["timeline"] = "timeline"
+    milestones: list[Milestone] = Field(..., min_length=3, max_length=6)
+
+
+AnyContent = (
+    PointsContent | ProcessContent | ChartContent | MetricsContent | StatementContent
+    | CompareContent | TimelineContent
+)
 
 ArchetypeContent = Annotated[AnyContent, Field(discriminator="archetype")]
