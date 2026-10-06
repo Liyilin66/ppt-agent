@@ -401,7 +401,7 @@ function updateStageTrack(job) {
   const stages = Array.from(document.querySelectorAll(".stage-step"));
   let activeIndex = 0;
   const stage = job.current_stage || "";
-  if (/generating_batch_|generating_v2_page_|v2_page_|merging_long_deck_ir|generate_deck/.test(stage)) activeIndex = 1;
+  if (/generating_batch_|generating_v2_page_|v2_page_|v2_content_generation|v2_typesetting|merging_long_deck_ir|generate_deck/.test(stage)) activeIndex = 1;
   if (/qa|quality_gate|failed_quality_gate/.test(stage) || job.status === "failed_quality_gate" || job.status === "partial_failed_quality_gate") activeIndex = 2;
   if (/rendering|save_artifacts/.test(stage)) activeIndex = 3;
   if (job.ppt_master_output?.detected || job.status === "succeeded") activeIndex = 4;
@@ -977,6 +977,8 @@ function stageLabel(stage) {
     v2_outline: "正在规划长演示叙事结构",
     v2_page_briefs: "正在细化逐页内容",
     v2_page_designs: "正在并发生成自由布局页面",
+    v2_content_generation: "正在编写各页内容",
+    v2_typesetting: "正在逐页排版",
     v2_quality_gate: "正在执行全页质量检查",
     v2_rendering_complete: "可编辑 PPTX 已导出",
     v2_completed: "长演示已完成",

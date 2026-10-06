@@ -79,6 +79,7 @@ def test_parallel_content_finishes_before_ordered_layout(tmp_path, monkeypatch):
     request = BuildRequest(prompt='企业方案', page_count=20, output_dir=str(tmp_path), deck_name='ordered')
     planned = asyncio.run(plan_deck_async(request, client, progress=lambda _: None))
     calls = []
+    events = []
     total = len(planned.skeleton.content_slots())
     def spy(content, profile, **kwargs):
         assert len(client.completed) == total
@@ -86,7 +87,9 @@ def test_parallel_content_finishes_before_ordered_layout(tmp_path, monkeypatch):
         return original(content, profile, **kwargs)
     monkeypatch.setattr(pipeline, 'typeset_page', spy)
     result = asyncio.run(build_typeset_deck(request, client, _Checkpoints(tmp_path / 'checkpoints', resume=False),
-                      planned.brief, planned.skeleton, progress=lambda _: None))
+                      planned.brief, planned.skeleton, progress=events.append))
+    assert [event for event in events if event.startswith('[typeset]')] == [
+        f'[typeset] page {n} done' for n in range(1, 21)]
     assert [n for n, _ in calls] == sorted(n for n, _ in calls)
     assert [len(h) for _, h in calls] == list(range(total))
     assert result.page_count == 20 and result.pptx_path

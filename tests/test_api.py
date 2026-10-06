@@ -2616,3 +2616,32 @@ def test_deck_plan_confirm_can_change_layout_engine(tmp_path, monkeypatch):
     confirmed = client.post(f'/api/deck-plans/{plan_id}/confirm', json={'layout_engine': 'typeset'})
     assert confirmed.status_code == 202
     assert captured['request'].layout_engine == 'typeset'
+
+
+def test_typeset_progress_reports_content_and_ordered_typesetting(tmp_path, monkeypatch):
+    _install_fake_v2_long_deck_backend(monkeypatch)
+    original_build = api.build_v2_deck
+    snapshots = []
+    client = _client(tmp_path)
+    store = client.app.state.job_store
+
+    def build_with_typeset_progress(request, model, *, progress=print, **kwargs):
+        result = original_build(request, model, progress=lambda _: None, **kwargs)
+        for message in ('[stage] page_briefs finished in 0.1s',
+                        '[content] page 7 ready', '[content] page 4 ready',
+                        '[typeset] page 1 done', '[typeset] page 2 done',
+                        '[stage] typeset_pages finished in 0.1s'):
+            progress(message)
+            record = store.get_job(Path(request.output_dir).name)
+            snapshots.append((record.current_stage, record.completed_batches, record.current_batch))
+        return result
+
+    monkeypatch.setattr(api, 'build_v2_deck', build_with_typeset_progress)
+    response = client.post('/api/long-deck-jobs', json={**_long_deck_payload(), 'slide_count': 20})
+    assert response.status_code == 202
+    assert snapshots[0][0] == 'v2_content_generation'
+    assert snapshots[1] == ('v2_content_generation', 1, 'page_007')
+    assert snapshots[2] == ('v2_content_generation', 2, 'page_004')
+    assert snapshots[3][0] == snapshots[4][0] == 'v2_typesetting'
+    assert snapshots[4][2] == 'page_002'
+    assert snapshots[5][0] == 'v2_rendering_complete'

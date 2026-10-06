@@ -191,6 +191,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         outcomes.append(outcome)
         checkpoints.save(f'pages/page_{slot.page_number:03d}.json', {'page': page.model_dump(mode='json'),
                         'qa': qa.model_dump(mode='json'), 'outcome': outcome.model_dump(mode='json')})
+        progress(f'[typeset] page {slot.page_number} done')
     deck = DeckDesign(deck_title=skeleton.deck_title, subtitle=skeleton.subtitle,
                       language=brief.language, theme=theme, pages=pages)
     fallbacks = [item.page_number for item in outcomes if item.status == 'fallback']

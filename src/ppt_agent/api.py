@@ -1743,6 +1743,9 @@ def _run_v2_long_deck_job(
         failed_batches=0,
     )
 
+    content_ready: set[int] = set()
+    typeset_ready: set[int] = set()
+
     def progress_logger(message: str) -> None:
         if store.is_cancel_requested(job_id):
             raise _V2JobCancelled("v2 long deck generation was cancelled.")
@@ -1751,8 +1754,20 @@ def _run_v2_long_deck_job(
         completed_pages: int | None = None
         current_page: str | None = None
         design_match = re.match(r"^\[design\] (\d+)/(\d+) content pages done$", message)
+        content_match = re.match(r"^\[content\] page (\d+) ready$", message)
+        typeset_match = re.match(r"^\[typeset\] page (\d+) done$", message)
         stage_match = re.match(r"^\[stage\] ([a-z_]+) finished", message)
-        if design_match:
+        if content_match or typeset_match:
+            page_number = int((content_match or typeset_match).group(1))
+            if content_match:
+                content_ready.add(page_number)
+                current_stage = "v2_content_generation"
+            else:
+                typeset_ready.add(page_number)
+                current_stage = "v2_typesetting"
+            completed_pages = min(max(len(content_ready), len(typeset_ready)), payload.slide_count)
+            current_page = f"page_{page_number:03d}"
+        elif design_match:
             completed_pages = min(int(design_match.group(1)), payload.slide_count)
             current_stage = f"generating_v2_page_{completed_pages}_of_{payload.slide_count}"
             current_page = f"page_{completed_pages:03d}"
@@ -1769,7 +1784,9 @@ def _run_v2_long_deck_job(
                 "brief": "v2_theme",
                 "theme": "v2_outline",
                 "outline": "v2_page_briefs",
-                "page_briefs": "v2_page_designs",
+                "page_briefs": ("v2_content_generation"
+                                if payload.layout_engine == "typeset" else "v2_page_designs"),
+                "typeset_pages": "v2_rendering_complete",
                 "page_designs": "v2_quality_gate",
                 "assemble_qa": "v2_quality_gate",
                 "render": "v2_rendering_complete",
