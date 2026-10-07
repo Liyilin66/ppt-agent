@@ -218,3 +218,10 @@ def test_ordinal_timeline_steps_and_units_in_labels():
     text = '据IDC预测，2024年全球人工智能产业规模将达到 6233亿美元。'
     assert check_content_numbers(_claim('6233', '产业规模（亿美元）'), text) == []
     assert check_content_numbers(_claim('6233', '产业规模（万美元）'), text)
+
+
+def test_optional_sentence_with_a_bad_number_is_dropped_whole():
+    page = MetricsContent(title='规模', takeaway='2024年全球产业规模预计达6233亿美元，同比增长21.5%', metrics=[
+        {'value': '47.1%', 'label': '比例', 'note': '较上年提升99%'}, {'value': '定性', 'label': '说明'}])
+    clean, _ = sanitize_content_numbers(page, check_content_numbers(page, '比例 47.1%'))
+    assert clean.takeaway is None and clean.metrics[0].note is None and clean.metrics[0].value == '47.1%'

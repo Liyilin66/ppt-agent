@@ -255,14 +255,16 @@ def sanitize_content_numbers(content, issues: list[dict]):
         # A numeric chart value and its category form one inseparable item.
         if path[0]=='values':
             remove.add(('values',int(path[1])))
-        elif path[0] in {'metrics','items','steps','milestones','insights'} and len(path)>2:
+        elif path[0] in {'metrics','items','steps','milestones','insights'} and len(path)>2 and path[-1]!='note':
             remove.add((path[0],int(path[1])))
         else:
             target=data
             for part in path[:-1]:
                 target=target[int(part)] if isinstance(target,list) else target[part]
             key=int(path[-1]) if isinstance(target,list) else path[-1]
-            if isinstance(target[key],str):
+            if key in ('lead','takeaway','kicker','support','note'):
+                target[key]=None  # optional copy goes whole; "预计达美元，同比增长" reads broken
+            elif isinstance(target[key],str):
                 bad=_key(issue['value'])
                 target[key]=_NUMBER.sub(lambda m:'' if _key(m.group())==bad else m.group(),target[key]).strip() or '定性信息'
         item_removed = len(path)>1 and path[1].isdigit() and (path[0],int(path[1])) in remove
