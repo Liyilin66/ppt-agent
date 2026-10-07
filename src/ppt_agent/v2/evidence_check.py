@@ -41,13 +41,16 @@ def _covers(segment: str, tokens: list[str], head: str, *, tail: bool) -> bool:
     matched = [(i, token) for i, token in zip(found, tokens) if i >= 0]
     if len(matched) < min(2, len(tokens)) or len(matched) < len(tokens) / 2:
         return False
-    if head and not any(char in segment for char in head):
-        # Chinese metric names are head-final: 融资金额 is not 融资事件.
+    end = max(i + len(token) for i, token in matched)
+    if head and not any(char in segment for char in head) and \
+            len(re.findall(r'[\u3400-\u9fff]', segment[end:])) >= 2:
+        # Chinese metric names are head-final: 融资金额 is not 融资事件. A missing
+        # head with nothing after the match ("552吨二氧化碳" for 碳排放) is fine.
         return False
     if tail:
         # The label must sit right before the value: "GPT-4 Turbo 128k" does
         # not support "GPT-4 128k", and a far-away mention binds nothing.
-        gap = segment[max(i + len(token) for i, token in matched):]
+        gap = segment[end:]
         if re.search(r'[a-z]', gap) or len(gap) > 12:
             return False
     return True
@@ -68,7 +71,11 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
     head = runs[-1][-2:] if runs else ''
 
     def skip(n):
-        return _key(n.group()) in own or _YEAR.fullmatch(n.group().strip())
+        if _key(n.group()) in own or _YEAR.fullmatch(n.group().strip()):
+            return True
+        # Footnote markers ("21.5%1。", "遭到“劫持”12。") are not values.
+        return bool(re.fullmatch(r'\d{1,3}', n.group()) and n.start() and not text[n.start() - 1].isspace()
+                    and text[n.end():n.end() + 1] in ('', '\n', '。', '，', '；'))
 
     lo = max(0, match.start() - 40)
     for n in reversed(numbers):
@@ -76,18 +83,46 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
             lo = n.end()
             break
     before = re.sub(r'\s+', '', text[lo:match.start()]).lower()
-    if re.search(r'[\u3400-\u9fffa-z]', before):
-        return _covers(before, tokens, head, tail=True)
-    # Value-first rows ("30.0% 生活助手") own the text up to the next number,
-    # but only when the value opens its line.
-    if re.search(r'[\u3400-\u9fffA-Za-z]', text[text.rfind('\n', 0, match.start()) + 1:match.start()]):
-        return False
-    hi = min(len(text), match.end() + 40)
+    opens_line = not re.search(r'[\u3400-\u9fffA-Za-z]', text[text.rfind('\n', 0, match.start()) + 1:match.start()])
+    labelled_before = bool(re.search(r'[\u3400-\u9fffa-z]', before))
+    if labelled_before and _covers(before, tokens, head, tail=True):
+        return True
+    # Chinese prose often puts the value first ("78% 的企业应用了…", "552吨二氧化碳").
+    # The value owns the following words up to the end of its clause; text that
+    # runs into the next value belongs to that value instead, except on rows
+    # that open with the value ("30.0% 生活助手").
+    hi, closed = min(len(text), match.end() + 40), False
+    for i in range(match.end(), hi):
+        if text[i] in '。，；！？,;':
+            hi, closed = i, True
+            break
     for n in numbers:
         if match.end() <= n.start() < hi and not skip(n):
-            hi = n.start()
+            hi, closed = n.start(), False
             break
+    if not (closed or (opens_line and not labelled_before)):
+        return False
     return _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False)
+
+
+_DECREASE = re.compile(r'减少|下降|降低|缩短|减轻|降幅|下滑|减重|减')
+
+
+def number_contexts(issues: list[dict], evidence, width: int = 50, limit: int = 2) -> list[str]:
+    """Source sentences around each rejected value, so a retry can reuse the wording."""
+    text = evidence if isinstance(evidence, str) else getattr(evidence, 'text', '')
+    text = re.sub(r'^\[[^\n]*\]\s*$', '', text, flags=re.M)
+    result = []
+    for issue in issues:
+        try:
+            wanted = _key(issue['value'].lstrip('-+'))
+        except (TypeError, ValueError, ArithmeticError):
+            continue
+        hits = [m for m in _NUMBER.finditer(text) if _key(m.group()) == wanted][:limit]
+        for m in hits:
+            snippet = re.sub(r'\s+', '', text[max(0, m.start() - width):m.end() + width // 2])
+            result.append(f"{issue['value']}: …{snippet}…")
+    return result
 
 
 def _fields(data: dict):
@@ -154,6 +189,10 @@ def check_content_numbers(content, evidence) -> list[dict]:
     for path,value,label in _fields(content.model_dump(mode='json')):
         for match in _NUMBER.finditer(value):
             candidates=indexed.get(_key(match.group()),[])
+            if not candidates and match.group().strip().startswith('-'):
+                # "-11%" for "运动次数减少 11%": a decline written as a negative value.
+                candidates=[c for c in indexed.get(_key(match.group().strip()[1:]),[])
+                            if _DECREASE.search(text[max(0,c.start()-8):c.start()]+label)]
             reason = 'number_missing' if not candidates else None
             if candidates and label and not any(_metric_match(text,numbers,c,label) for c in candidates):
                 reason='metric_mismatch'

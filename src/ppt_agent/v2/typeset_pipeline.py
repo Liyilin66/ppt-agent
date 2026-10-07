@@ -389,12 +389,16 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 raise ValueError('archetype violates deck diversity; choose from ' + str(diversity['allowed_archetypes']))
             if parsed.archetype == 'chart' and len(parsed.categories) != len(parsed.values):
                 raise ValueError('categories and values must have identical lengths')
-            from ppt_agent.v2.evidence_check import check_content_numbers
+            from ppt_agent.v2.evidence_check import check_content_numbers, number_contexts
             numeric_issues = check_content_numbers(parsed, cited_evidence(parsed.source, evidence))
             if numeric_issues:
                 numeric_candidate = parsed
                 numeric_failures.append({'attempt': attempts, 'issues': numeric_issues})
-                raise ValueError('Numeric evidence check failed: ' + json.dumps(numeric_issues, ensure_ascii=False))
+                quotes = number_contexts(numeric_issues, evidence) if evidence is not None else []
+                raise ValueError('Numeric evidence check failed: ' + json.dumps(numeric_issues, ensure_ascii=False)
+                                 + ('\nSource wording around these values (label each value with the words '
+                                    'next to it in the source, cite that page, or drop the value):\n'
+                                    + '\n'.join(quotes) if quotes else ''))
             break
         except BudgetExceededError as exc:
             errors.append({'attempt': attempts, 'kind': 'budget', 'error': str(exc)})

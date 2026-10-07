@@ -159,3 +159,19 @@ def test_number_removal_never_leaves_instructional_placeholder():
     text = clean.model_dump_json()
     assert '审阅' not in text and '请核实' not in text
     assert clean.statement == '全球产业保持增长'
+
+
+def test_value_first_prose_declines_and_footnotes():
+    assert check_content_numbers(_claim('552', '二氧化碳排放'), 'GPT-3模型能耗相当于 1287兆瓦时的电力，还产生了552吨二氧化碳排放15。') == []
+    assert check_content_numbers(_claim('10亿', '被劫持算力'), '数千家网络服务器遭受攻击，超过 10亿美元算力遭到“劫持”12。') == []
+    assert check_content_numbers(_claim('-11%', '运动次数'), '协调对象的数量增加 66%，运动次数减少 11%。') == []
+    assert check_content_numbers(_claim('-66%', '协调对象数量'), '协调对象的数量增加 66%，运动次数减少 11%。')
+    # Clause text that runs into the next value is that value's label.
+    assert check_content_numbers(_claim('30%', '使用B'), '30%的用户使用A，29.7%的用户使用B。')
+
+
+def test_retry_feedback_quotes_the_source_wording():
+    from ppt_agent.v2.evidence_check import number_contexts
+    lines = number_contexts([{'value': '80%', 'label': '企业采用率'}],
+                            '据Gartner预测，到2026年，超过 80%的企业将使用生成式人工智能 API。')
+    assert lines and '80%的企业将使用生成式人工智能' in lines[0]
