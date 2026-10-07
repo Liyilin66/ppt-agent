@@ -147,3 +147,18 @@ def test_fallback_does_not_change_existing_primary_heading_family():
     chapters = store(['第一章 用户规模\n一、总体态势\n用户增长。',
                       '第二章 发展趋势\n二、技术创新\n发展趋势。']).chapters
     assert [c['title'] for c in chapters] == ['第一章 用户规模', '第二章 发展趋势']
+
+
+def test_web_results_do_not_switch_the_report_off_chapter_routing():
+    from ppt_agent.v2.evidence import EvidenceStore
+    from ppt_agent.v2.search import SearchResult
+    pages = [{'page': 1, 'text': '第一章 用户普及\n用户规模达到5亿，普及率持续上升。' * 20},
+             {'page': 2, 'text': '第二章 投融资环境\n投融资事件362起，金额403.9亿元。' * 20}]
+    store = EvidenceStore([{'doc_id': 'doc1', 'name': 'r.pdf', 'path': 'r.pdf', 'sha256': '',
+                            'page_kind': 'PDF', 'pages': pages}])
+    web = store.with_search_results([SearchResult(title='融资', url='https://example.com/a',
+                                                  snippet='2025年投融资事件与金额统计，投融资环境趋暖。')])
+    packet = web.select('投融资事件 金额', section_query='投融资环境 投融资事件 金额')
+    assert packet.strategy == 'chapter'
+    assert packet.allowed_pages.get('r.pdf') == [2]
+    assert 'https://example.com/a' in packet.references

@@ -195,7 +195,7 @@ class EvidenceStore:
         self.warnings = list(warnings or [])
         self.parsed_files = [doc.get('path', doc['name']) for doc in documents]
         self.chunks = [chunk for doc in documents for chunk in _chunk_document(doc)]
-        self.chapters = [chapter for doc in documents for chapter in _chapters(doc)]
+        self.chapters = [chapter for doc in documents if doc['page_kind'] != 'web' for chapter in _chapters(doc)]
         self.retriever: Retriever = BM25Retriever([c['text'] for c in self.chunks])
         self._chapter_index = BM25Retriever([c['title'] + '\n' + c['lead'] for c in self.chapters])
         self._docs = {doc['doc_id']: doc for doc in documents}
@@ -319,8 +319,11 @@ class EvidenceStore:
         if mode not in {'auto', 'chapter', 'retrieval', 'bm25'}:
             raise ValueError(f'Unknown evidence mode: {mode}')
         strategy, candidates = 'bm25', []
-        total = sum(len(p['text']) for d in self.documents for p in d['pages'])
-        if mode in {'auto', 'chapter'} and len(self.documents) == 1 and total <= 80000 and self.chapters:
+        # Web snippets are added beside the uploaded report; they must not
+        # switch the report itself from chapter routing to flat retrieval.
+        files = [d for d in self.documents if d['page_kind'] != 'web']
+        total = sum(len(p['text']) for d in files for p in d['pages'])
+        if mode in {'auto', 'chapter'} and len(files) == 1 and total <= 80000 and self.chapters:
             chapter_query = section_query or query
             ranked = self._chapter_index.search(chapter_query, 2)
             if ranked:
@@ -346,6 +349,9 @@ class EvidenceStore:
         else:
             ranked = BM25Retriever([c['text'] for c in candidates]).search(query, 4)
             candidates = [candidates[i] for i, _ in ranked] if ranked else candidates[:4]
+            web = [self.chunks[i] for i, _ in self.retriever.search(query, 8)
+                   if self._docs[self.chunks[i]['doc_id']]['page_kind'] == 'web'][:1]
+            candidates = candidates[:4 - len(web)] + web
         packet = EvidencePacket(strategy=strategy, page_counts={d['name']: len(d['pages']) for d in self.documents})
         blocks = []
         for chunk in candidates[:4]:

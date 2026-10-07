@@ -152,3 +152,11 @@ def test_large_sections_are_planned_in_batches_and_survive_a_timeout(tmp_path):
     fallbacks = [e for e in report["planning_events"] if e["action"] == "fallback"]
     assert 0 < len(fallbacks) <= SECTION_PAGES_BATCH  # only the failed batch degraded
     assert result.pptx_path
+
+
+def test_structural_titles_keep_years_but_drop_statistics():
+    from ppt_agent.v2.typeset_pipeline import qualitative_structural_text
+    removed = []
+    assert qualitative_structural_text('人工智能发展报告（2024年）', 'deck_title', 1, removed) == '人工智能发展报告（2024年）'
+    assert qualitative_structural_text('用户规模达5.15亿', 'subtitle', 1, removed) == '用户规模达'
+    assert [r['value'] for r in removed] == ['5.15亿']

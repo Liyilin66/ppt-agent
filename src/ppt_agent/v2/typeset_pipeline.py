@@ -97,6 +97,37 @@ def source_is_valid(source, references, page_counts=None, allowed_pages=None):
     return bool(names or spans)
 
 
+def trim_source(source, references, page_counts=None, allowed_pages=None):
+    """Keep the cited pages that were actually supplied; return (source, dropped).
+
+    A model often lists one real page beside pages it never received. Dropping
+    only the unsupported pages keeps the page; numbers are then checked against
+    the remaining citation alone. With nothing valid left the source is unchanged.
+    """
+    if not source or source_is_valid(source, references, page_counts, allowed_pages):
+        return source, []
+    known = [Path(ref).name for ref in references if not ref.startswith(('http://', 'https://'))]
+    kept, dropped = [], []
+    for clause in [item.strip() for item in re.split(r'[;；]', str(source)) if item.strip()]:
+        if source_is_valid(clause, references, page_counts, allowed_pages):
+            kept.append(clause)
+            continue
+        names = [name for name in known if name in clause]
+        pages = []
+        if len(names) == 1:
+            locator = re.sub(r'^.*?(?=第|\bp)', '', clause.replace(names[0], ''), flags=re.I)
+            pages = re.findall(r'\d+(?:\s*[-–—]\s*\d+)?', locator)
+        for span in pages:
+            span = re.sub(r'\s+', '', span)
+            candidate = f"{names[0]} 第{span}页"
+            (kept if source_is_valid(candidate, references, page_counts, allowed_pages) else dropped).append(candidate)
+        if not pages:
+            dropped.append(clause)
+    if not kept:
+        return source, []
+    return '；'.join(kept), dropped
+
+
 def cited_evidence(source, packet):
     """Restrict numeric checks to excerpts actually named by the citation."""
     from ppt_agent.v2.evidence import EvidencePacket
@@ -151,6 +182,8 @@ def qualitative_structural_text(text, field, page_number, removed):
         return text
     from ppt_agent.v2.evidence_check import _NUMBER
     def drop(match):
+        if re.fullmatch(r'(?:19|20)\d{2}', match.group().strip()):
+            return match.group()  # a year dates the report; it is not a statistic
         removed.append({'page_number': page_number, 'field': field, 'value': match.group(),
                         'action': 'removed_number', 'reason': 'structural_copy_without_citation'})
         return ''
@@ -328,6 +361,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     numeric_failures = []
     numeric_candidate = None
     trims = []
+    source_trims = []
     parsed = None
     for _ in range(2):
         attempts += 1
@@ -338,6 +372,11 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 trims.extend(trimmed)
             parsed = content_adapter().validate_python(payload)
             empty_sources += int(not parsed.source or not parsed.source.strip())
+            trimmed_source, dropped_pages = trim_source(parsed.source, source_references, source_page_counts,
+                                                        evidence.allowed_pages if evidence is not None else None)
+            if dropped_pages:
+                parsed = parsed.model_copy(update={'source': trimmed_source})
+                source_trims.append({'attempt': attempts, 'dropped': dropped_pages})
             if not source_is_valid(parsed.source, source_references, source_page_counts,
                                    evidence.allowed_pages if evidence is not None else None):
                 invalid_sources += 1
@@ -382,7 +421,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         parsed = parsed.model_copy(update={'speaker_notes': page_brief.speaker_notes})
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
               'validation_errors': errors, 'archetype': parsed.archetype,
-              'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources,
+              'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources, 'source_trimmed': source_trims,
               'trimmed_items': trims,
               'evidence': evidence.to_dict() if evidence is not None else None,
               'numeric_check': {'blocked_attempts': len(numeric_failures), 'failures': numeric_failures,

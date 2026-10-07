@@ -28,7 +28,8 @@ class PageCopy(StrictModel):
 class PointItem(StrictModel):
     heading: str = Field(..., min_length=1, max_length=18)
     body: str = Field(..., min_length=1, max_length=80)
-    ref: str | None = Field(default=None, max_length=24)
+    # Real file citations ("caict_ai_2024.pdf 第15-16页") run past 24 characters.
+    ref: str | None = Field(default=None, max_length=40)
 
 
 class PointsContent(PageCopy):

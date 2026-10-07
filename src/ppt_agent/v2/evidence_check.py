@@ -15,7 +15,6 @@ from .visual.content import ArchetypeContent, StatementContent
 _NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|万亿|亿|万|千|百|pp)?', re.I)
 _SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart'}
 _ADAPTER = TypeAdapter(ArchetypeContent)
-_STOP = re.compile(r'(?:占比|比例|规模|增长率|使用率)$')
 
 
 def _key(value: str) -> tuple[Decimal, str]:
@@ -23,49 +22,72 @@ def _key(value: str) -> tuple[Decimal, str]:
     return Decimal(match[1].replace(',', '')), match[2].lower().replace('％', '%')
 
 
-def _terms(label: str) -> list[str]:
-    label = re.sub(r'\d+(?:\.\d+)?[%％]?', '', label)
-    result=[]
-    for term in re.findall(r'[\u3400-\u9fff]+|[A-Za-z]+', label):
-        term = _STOP.sub('', term).strip()
-        # "生成" describes the action, not the metric identity.
-        term = re.sub(r'^(?:生成|用于|作为)', '', term)
-        if len(term) >= 2:
-            result.append(term.lower())
-    return result
+_YEAR = re.compile(r'(?:19|20)\d{2}')
+
+
+def _label_tokens(label: str) -> list[str]:
+    """Bigrams survive paraphrase and PDF line breaks; digits in names count."""
+    tokens = []
+    for run in re.findall(r'[\u3400-\u9fff]+', label):
+        tokens.extend(run[i:i + 2] for i in range(len(run) - 1))
+    tokens.extend(word.lower() for word in re.findall(r'[A-Za-z]+', label))
+    tokens.extend(m.group().strip().lower() for m in _NUMBER.finditer(label)
+                  if not _YEAR.fullmatch(m.group().strip()))
+    return tokens
+
+
+def _covers(segment: str, tokens: list[str], head: str, *, tail: bool) -> bool:
+    found = [segment.rfind(token) for token in tokens]
+    matched = [(i, token) for i, token in zip(found, tokens) if i >= 0]
+    if len(matched) < min(2, len(tokens)) or len(matched) < len(tokens) / 2:
+        return False
+    if head and not any(char in segment for char in head):
+        # Chinese metric names are head-final: 融资金额 is not 融资事件.
+        return False
+    if tail:
+        # The label must sit right before the value: "GPT-4 Turbo 128k" does
+        # not support "GPT-4 128k", and a far-away mention binds nothing.
+        gap = segment[max(i + len(token) for i, token in matched):]
+        if re.search(r'[a-z]', gap) or len(gap) > 12:
+            return False
+    return True
 
 
 def _metric_match(text: str, numbers: list, match, label: str) -> bool:
-    terms = _terms(label)
-    if not terms:
+    """A value is supported when the label occupies the text the value owns.
+
+    That text runs back to the previous number (or 40 characters), so in
+    "生活助手 30.0% 会议纪要 29.7%" the label 会议纪要 owns only 29.7%. Numbers that
+    are part of the label (Llama 2) and years do not end the span.
+    """
+    tokens = _label_tokens(label)
+    if not tokens:
         return False
-    lo, hi = max(0, match.start()-40), min(len(text), match.end()+40)
-    window = text[lo:hi].lower()
-    for term in terms:
-        occurrences = list(re.finditer(re.escape(term), window))
-        supported = False
-        for occurrence in occurrences:
-            start, end = lo+occurrence.start(), lo+occurrence.end()
-            # Associate a table/category label with the next value on its row,
-            # or the preceding value for number-before-label tables.
-            line_lo = text.rfind('\n', 0, start)+1
-            newline = text.find('\n', end)
-            line_hi = newline if newline >= 0 else len(text)
-            row = [n for n in numbers if line_lo <= n.start() < line_hi]
-            following = [n for n in row if n.start() >= end and n.start()-end <=40]
-            previous = [n for n in row if n.end() <= start and start-n.end() <=40]
-            candidate = min(following, key=lambda n:n.start()) if following else (max(previous,key=lambda n:n.end()) if previous else None)
-            # PDF extractors frequently put category and value on adjacent lines.
-            if candidate is None:
-                following = [n for n in numbers if n.start() >= end and n.start()-end<=40]
-                previous = [n for n in numbers if n.end() <= start and start-n.end()<=40]
-                candidate = min(following,key=lambda n:n.start()) if following else (max(previous,key=lambda n:n.end()) if previous else None)
-            if candidate is not None and candidate.start() == match.start():
-                supported = True
-                break
-        if not supported:
-            return False
-    return True
+    own = {_key(m.group()) for m in _NUMBER.finditer(label)}
+    runs = re.findall(r'[\u3400-\u9fff]{2,}', label)
+    head = runs[-1][-2:] if runs else ''
+
+    def skip(n):
+        return _key(n.group()) in own or _YEAR.fullmatch(n.group().strip())
+
+    lo = max(0, match.start() - 40)
+    for n in reversed(numbers):
+        if lo < n.end() <= match.start() and not skip(n):
+            lo = n.end()
+            break
+    before = re.sub(r'\s+', '', text[lo:match.start()]).lower()
+    if re.search(r'[\u3400-\u9fffa-z]', before):
+        return _covers(before, tokens, head, tail=True)
+    # Value-first rows ("30.0% 生活助手") own the text up to the next number,
+    # but only when the value opens its line.
+    if re.search(r'[\u3400-\u9fffA-Za-z]', text[text.rfind('\n', 0, match.start()) + 1:match.start()]):
+        return False
+    hi = min(len(text), match.end() + 40)
+    for n in numbers:
+        if match.end() <= n.start() < hi and not skip(n):
+            hi = n.start()
+            break
+    return _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False)
 
 
 def _fields(data: dict):
@@ -180,5 +202,12 @@ def sanitize_content_numbers(content, issues: list[dict]):
         for fragment in fragments:
             if len('；'.join([*kept,fragment])) <=100:
                 kept.append(fragment)
-        clean=StatementContent(**base,statement='请结合所列证据审阅剩余信息',support='；'.join(kept) or '请核实资料后补充具体指标')
+        # Promote the page's own message; never put instructions on a slide.
+        for field in ('takeaway','lead'):
+            if base[field] and len(base[field])<=44:
+                statement=base.pop(field)
+                break
+        else:
+            statement=base['title']
+        clean=StatementContent(**base,statement=statement,support='；'.join(kept) or None)
         return clean,records

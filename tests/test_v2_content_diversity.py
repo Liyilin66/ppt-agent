@@ -105,3 +105,13 @@ def test_fallback_keeps_long_factual_body_instead_of_soft_limit_truncation():
     point='资料原文中的背景说明'*4+'数量538项'
     c=fallback_content(PageSlot(page_number=3,kind='content',brief=PageBrief(title='保留事实',points=[point,'核查来源'])))
     assert c.items[0].body==point and '538项' in c.items[0].body
+
+
+def test_unsupplied_pages_are_dropped_from_an_otherwise_valid_citation():
+    from ppt_agent.v2.typeset_pipeline import trim_source
+    refs, counts = ['report.pdf'], {'report.pdf': 64}
+    allowed = {'report.pdf': [25, 26, 27]}
+    assert trim_source('report.pdf 第21、25、26、40页', refs, counts, allowed) == (
+        'report.pdf 第25页；report.pdf 第26页', ['report.pdf 第21页', 'report.pdf 第40页'])
+    assert trim_source('report.pdf 第21页', refs, counts, allowed) == ('report.pdf 第21页', [])
+    assert trim_source('report.pdf 第25-27页', refs, counts, allowed) == ('report.pdf 第25-27页', [])

@@ -124,3 +124,38 @@ def test_amount_and_event_rate_are_different_metric_keywords():
     issues=check_content_numbers(c,'机器人融资事件38.7%\n机器人融资金额占比35.5%')
     assert any(i['path']=='metrics.0.value' and i['reason']=='metric_mismatch' for i in issues)
     assert not any(i['path']=='metrics.1.value' for i in issues)
+
+
+def _claim(value, label):
+    return MetricsContent(title='指标', metrics=[{'value': value, 'label': label}, {'value': '定性', 'label': '说明'}])
+
+
+def test_paraphrased_labels_from_unseen_report_are_supported():
+    # Real CAICT 2024 evidence: PDF line breaks split words and labels paraphrase.
+    defect = '如TCL通过视觉技术实现液晶面板缺陷检 测，准确率超 90%、生产周期缩短了 60%。'
+    assert check_content_numbers(_claim('90%', '缺陷检测准确率'), defect) == []
+    assert check_content_numbers(_claim('90%', '质检准确率'), defect) == []
+    assert check_content_numbers(_claim('60%', '准确率'), defect)[0]['reason'] == 'metric_mismatch'
+    assert check_content_numbers(_claim('70%', '研发成本降幅'), '使先导药 的研发周期从数年缩短至数月，研发成本降低约 70%。') == []
+    assert check_content_numbers(_claim('66%', '协调对象增加'), '实现制 造产线优化，协调对象的数量增加 66%，运动次数减少 11%。') == []
+    assert check_content_numbers(_claim('66%', '调度优化'), '实现制 造产线优化，协调对象的数量增加 66%，运动次数减少 11%。')
+    scale = '据IDC 预测，2024年全球人 工智能产业规模将达到 6233亿美元，同比增长 21.5%。'
+    assert check_content_numbers(_claim('6233亿', '2024年产业规模'), scale) == []
+
+
+def test_labels_with_their_own_digits_bind_to_the_table_value():
+    text = '表 1 语言大模型演进迭代情况 公司 模型 上下文长度 Meta AI Llama 2 8k Llama 3.1 128k OpenAI GPT-4 32k GPT-4 Turbo 128k'
+    chart = ChartContent(title='上下文', chart_title='上下文长度', categories=['Llama 2', 'Llama 3.1', 'GPT-4'],
+                         values=[8, 128, 32], insights=[{'text': '持续扩展'}])
+    assert check_content_numbers(chart, text) == []
+    wrong = chart.model_copy(update={'values': [8, 32, 128]})
+    assert {i['path'] for i in check_content_numbers(wrong, text)} == {'values.1', 'values.2'}
+
+
+def test_number_removal_never_leaves_instructional_placeholder():
+    page = MetricsContent(title='产业规模', lead='全球产业保持增长', metrics=[
+        {'value': '99%', 'label': '编造指标'}, {'value': '98%', 'label': '编造指标二'}])
+    clean, _ = sanitize_content_numbers(page, check_content_numbers(page, ''))
+    text = clean.model_dump_json()
+    assert '审阅' not in text and '请核实' not in text
+    assert clean.statement == '全球产业保持增长'
