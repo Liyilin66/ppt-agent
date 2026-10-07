@@ -21,6 +21,7 @@ from ppt_agent.v2.visual.archetypes import typeset_page
 from ppt_agent.v2.visual.structural import typeset_structural
 from ppt_agent.v2.visual.content import PointsContent
 from ppt_agent.v2.visual.profiles import PROFILES
+from ppt_agent.v2.source_names import document_display_names, short_name
 
 
 HINT_ARCHETYPES = {
@@ -160,20 +161,106 @@ def cited_evidence(source, packet):
                           strategy=packet.strategy, chunk_ids=packet.chunk_ids)
 
 
-def display_source(source, website_titles):
+# One caption line between the margin and the page number, in em: the tightest
+# profile (88 margins, 11 pt caption) leaves 1024 units, about 69 em.
+_FOOTER_EMS = 64
+_WEB_TITLE_CHARS = 24
+
+
+def _site(url):
+    return re.sub(r'^www\.', '', urlparse(url).netloc)
+
+
+def _pages(clause):
+    """'第7-13页' -> '第 7–13 页'."""
+    return re.sub(r'第\s*([^页]+?)\s*页',
+                  lambda m: '第 ' + re.sub(r'\s*[-–—]\s*', '–', m[1].strip()) + ' 页', clause)
+
+
+def _merge_pages(text):
+    """'第 9 页、第 12 页' -> '第 9、12 页'."""
+    previous = None
+    while previous != text:
+        previous, text = text, re.sub(r'第 ([\d–、]+) 页\s*[、，,；;]\s*第 ', r'第 \1、', text)
+    return text
+
+
+def _clip(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def display_source(source, website_titles, document_names=None):
+    """Footer text a reader can use; validation keeps the filename form."""
     if not source:
         return None
-    result = []
-    for clause in re.split(r'[;；]', source):
-        clause = clause.strip()
-        if not clause:
-            continue
-        if clause.startswith(('https://', 'http://')):
-            result.append(urlparse(clause).netloc + ' · ' + (website_titles.get(clause) or '网页资料'))
-        else:
-            clause = re.sub(r'第\s*([^页]+)\s*页', lambda m: '第 ' + m[1].strip() + ' 页', clause)
-            result.append(clause)
-    return '；'.join(result) or None
+    document_names = document_names or {}
+    clauses = [clause.strip() for clause in re.split(r'[;；]', source) if clause.strip()]
+
+    def render(names_for, web_limit):
+        entries, spans = [], {}
+        for clause in clauses:
+            if clause.startswith(('https://', 'http://')):
+                title = website_titles.get(clause) or '网页资料'
+                entries.append(_site(clause) + (' · ' + _clip(title, web_limit) if web_limit else ''))
+                continue
+            filename = next((name for name in document_names if name in clause), None)
+            if filename is None:
+                entries.append(_pages(clause))
+                continue
+            label = names_for(document_names[filename])
+            if label not in spans:  # one mention per report, its pages merged
+                spans[label] = []
+                entries.append(label)
+            spans[label] += [re.sub(r'\s*[-–—]\s*', '–', span.strip())
+                             for span in re.findall(r'第\s*([^页]+?)\s*页', clause)]
+        result = []
+        for entry in entries:
+            pages = '、'.join(dict.fromkeys(spans.get(entry, [])))
+            result.append(entry + ('' if entry.endswith('》') else ' ') + f'第 {pages} 页'
+                          if pages else entry)
+        return '资料来源：' + '；'.join(dict.fromkeys(result))
+
+    # Shorten in steps rather than clipping mid-title: issuer, then web titles.
+    for names_for, web_limit in ((lambda name: name, _WEB_TITLE_CHARS), (short_name, _WEB_TITLE_CHARS),
+                                 (short_name, None)):
+        text = render(names_for, web_limit)
+        if _ems(text) <= _FOOTER_EMS:
+            return text
+    while _ems(text) > _FOOTER_EMS:
+        text = text[:-2] + '…'
+    return text
+
+
+def _ems(text):
+    from ppt_agent.v2.visual.layout import _advance_em
+    return sum(_advance_em(char) for char in text)
+
+
+def display_ref(ref, document_names, page_documents):
+    """Card-level citation: the page number when the footer already names the report."""
+    if not ref:
+        return ref
+    for filename, name in document_names.items():
+        if filename in ref:
+            label = '' if page_documents == {filename} else short_name(name)
+            return _merge_pages(_pages(re.sub(r'》\s+第', '》第', ref.replace(filename, label)).strip()))
+    if re.match(r'https?://', ref) or re.fullmatch(r'[\w.-]+\.[a-z]{2,}', ref):
+        return re.sub(r'^(?:https?://)?(?:www\.)?([^/\s]+).*$', r'\1', ref)
+    return _merge_pages(_pages(ref))
+
+
+def display_copy(content, website_titles, document_names):
+    """The reader-facing copy of a page: readable sources, small non-repeating card refs."""
+    document_names = document_names or {}
+    update = {'source': display_source(content.source, website_titles, document_names)}
+    items = getattr(content, 'items', None)
+    if items and any(item.ref for item in items):
+        page_documents = {name for name in document_names if name in (content.source or '')}
+        refs = [display_ref(item.ref, document_names, page_documents) for item in items]
+        if len(items) > 1 and all(ref for ref in refs) and len(set(refs)) == 1:
+            refs = [None] * len(items)  # the same page on every card says nothing per card
+        update['items'] = [item.model_copy(update={'ref': ref}) for item, ref in zip(items, refs)]
+    return content.model_copy(update=update)
 
 
 def qualitative_structural_text(text, field, page_number, removed):
@@ -561,8 +648,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         if Path(path).suffix.lower() == '.pdf':
             page_counts[Path(path).name] = len(PdfReader(path).pages)
     references += re.findall(r'https?://[^\s]+', brief.source_digest or '')
+    document_names = dict(previous_config.get('source_display_names', {})) if request.resume else {}
+    document_names.update(document_display_names(request.source_paths))
     checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
-                                           'source_references': references, 'source_page_counts': page_counts})
+                                           'source_references': references, 'source_page_counts': page_counts,
+                                           'source_display_names': document_names})
     from ppt_agent.v2.evidence import EvidenceStore
     evidence_path = checkpoints.root / 'evidence_store.json'
     evidence_store = EvidenceStore.from_dict(json.loads(evidence_path.read_text())) if evidence_path.is_file() else None
@@ -653,10 +743,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
         if slot.kind == 'content':
             content, record = results[slot.page_number]
-            display_copy = content.model_copy(update={'source': display_source(content.source, website_titles)})
-            record = {**record, 'source_display': display_copy.source}
+            reader_copy = display_copy(content, website_titles, document_names)
+            record = {**record, 'source_display': reader_copy.source}
             try:
-                page, notes = typeset_page(display_copy, profile, page_number=slot.page_number,
+                page, notes = typeset_page(reader_copy, profile, page_number=slot.page_number,
                                           deck_title=skeleton.deck_title, history=history)
             except ValueError as exc:
                 # A legal schema may still be too dense for a composition.

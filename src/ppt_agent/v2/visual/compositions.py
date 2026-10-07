@@ -64,7 +64,8 @@ class Composition:
 
 
 def _ref_size(sz: _Sizes) -> float:
-    return max(MIN_BODY_PT, sz.small - 2)
+    # A citation is a footnote: it stays small when sparse pages enlarge the body.
+    return MIN_BODY_PT
 
 
 def _point_cell_height(b: _Builder, item: PointItem, w: float, sz: _Sizes,
@@ -115,7 +116,7 @@ def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: floa
     if item.ref:
         ref_h = _height(item.ref, "caption", _ref_size(sz), inner_w)
         b.text(item.ref, x=ix, y=y + block - pad - ref_h, w=inner_w, h=ref_h, role="caption",
-               size=_ref_size(sz), color="secondary" if p.dark else "primary")
+               size=_ref_size(sz), color="muted")
 
 
 _BOLD_WIDTH = 1.0  # _advance_em is already calibrated on YaHei Bold
@@ -258,7 +259,7 @@ def points_list2(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, to
                     rh = _height(item.ref, "caption", _ref_size(sz), text_w)
                     b.text(item.ref, x=hx, y=iy + hh + 6 + bh + 8, w=text_w, h=rh,
                            role="caption", size=_ref_size(sz),
-                           color="secondary" if p.dark else "primary")
+                           color="muted")
             y += heights[r] + gap_y
     return block
 

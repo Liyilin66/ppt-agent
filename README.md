@@ -4,9 +4,9 @@
 
 ![四页由 ppt-agent 根据信通院 64 页报告生成的幻灯片](docs/readme/showcase.png)
 
-<sub>上图四页来自 [样例 PPTX](examples/caict-2024-sample.pptx)：输入是一份项目此前没用过的 64 页行业报告，20 页成稿未经人工修改。页脚和卡片底部是引用的文件名与 PDF 页码。</sub>
+<sub>上图四页来自 [样例 PPTX](examples/caict-2024-sample.pptx)：输入是一份项目此前没用过的 64 页行业报告，20 页成稿未经人工修改。页脚是引用的报告名与 PDF 页码（报告名从封面识别），卡片底部是该要点所在的页。</sub>
 
-- **有出处**：资料按页码切分，每页只拿到与它相关的原文段落，页脚标注文件名和 PDF 页码；引用了没拿到的页会被剔除。
+- **有出处**：资料按页码切分，每页只拿到与它相关的原文段落，页脚标注报告名和 PDF 页码，联网资料标注网站和标题；引用了没拿到的页会被剔除。
 - **数字核对**：页面上的每个数字都要在引用页里找到，而且要和它说明的指标对得上，否则重试，仍不过就删除。
 - **原生可编辑**：文字、形状、图表都是 PowerPoint 原生元素，不是截图；图表数据可以在 PowerPoint 里直接编辑。
 
@@ -145,7 +145,7 @@ claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mc
 uv run pytest
 ```
 
-1689 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
+1699 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
 
 ## License
 

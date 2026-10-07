@@ -12,8 +12,8 @@ def test_web_snippets_enter_the_same_retrieval_store():
 def test_display_source_has_domain_title_and_local_page_format():
     from ppt_agent.v2.typeset_pipeline import display_source
     metadata={'https://example.com/report':'可信统计'}
-    assert display_source('https://example.com/report',metadata)=='example.com · 可信统计'
-    assert display_source('report.pdf 第12页',{})=='report.pdf 第 12 页'
+    assert display_source('https://example.com/report',metadata)=='资料来源：example.com · 可信统计'
+    assert display_source('report.pdf 第12页',{})=='资料来源：report.pdf 第 12 页'
     assert display_source(None,metadata) is None
 
 
