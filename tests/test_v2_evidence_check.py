@@ -208,3 +208,13 @@ def test_measure_words_bind_the_counted_noun():
     assert check_content_numbers(_claim('1.1万', '打击目标'), '如以色列军队利用人工智能技术打击了加沙地带1.1万多个目标，一天内发现并摧毁了150个隧道14。') == []
     assert check_content_numbers(_claim('1287', '兆瓦时能耗'), '1750亿个参数的GPT-3模型能耗相当于1287兆瓦时的电力，还产生了552吨二氧化碳15。') == []
     assert check_content_numbers(_claim('4.5%', '全行业融资占比'), '人工智能领域融资占全行业融资比例持续上升，从2022年的4.5%上升至2024年上半年的12.1%。') == []
+
+
+def test_ordinal_timeline_steps_and_units_in_labels():
+    from ppt_agent.v2.visual.content import TimelineContent
+    plan = TimelineContent(title='路线', milestones=[{'date': '01', 'label': '诊断'}, {'date': '第2阶段', 'label': '试点'},
+                                                   {'date': '2030年', 'label': '推广'}])
+    assert [i['value'] for i in check_content_numbers(plan, '')] == ['2030']
+    text = '据IDC预测，2024年全球人工智能产业规模将达到 6233亿美元。'
+    assert check_content_numbers(_claim('6233', '产业规模（亿美元）'), text) == []
+    assert check_content_numbers(_claim('6233', '产业规模（万美元）'), text)

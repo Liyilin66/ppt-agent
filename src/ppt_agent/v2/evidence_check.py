@@ -208,8 +208,14 @@ def check_content_numbers(content, evidence) -> list[dict]:
         indexed.setdefault(_key(match.group()),[]).append(match)
     issues=[]
     for path,value,label in _fields(content.model_dump(mode='json')):
+        if re.fullmatch(r'milestones\.\d+\.date',path) and re.fullmatch(r'\s*(?:第|阶段|step|phase)?\s*\d{1,2}\s*(?:步|阶段)?\s*',value,re.I):
+            continue  # "01", "第2阶段": an ordinal step, not a statistic
+        # "6233" labelled "产业规模（亿美元）": the unit sits in the label.
+        unit=re.search(r'[（(]\s*(万亿|亿|万|[%％])',label)
         for match in _NUMBER.finditer(value):
             candidates=indexed.get(_key(match.group()),[])
+            if not candidates and unit and not _key(match.group())[1]:
+                candidates=indexed.get(_key(match.group()+unit[1]),[])
             if not candidates and match.group().strip().startswith('-'):
                 # "-11%" for "运动次数减少 11%": a decline written as a negative value.
                 candidates=[c for c in indexed.get(_key(match.group().strip()[1:]),[])
