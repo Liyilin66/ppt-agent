@@ -16,6 +16,57 @@ from typing import Protocol
 _TERMS = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff]+|[A-Za-z0-9]+')
 _HEADING = re.compile(r'^(?:第\s*[一二三四五六七八九十百0-9]+\s*[章篇部]|#{1,3}\s+).{1,100}$')
 _SUBHEADING = re.compile(r'^[一二三四五六七八九十]+、.{2,65}$')
+_NUMBERED_HEADING = re.compile(r'^([一二三四五六七八九十]+、|[1-9][0-9]?[.．])\s*([^\d\W].{1,64})$', re.UNICODE)
+
+
+def _numbered_chapters(document: dict) -> list[tuple[int, str]]:
+    """Conservative fallback when a report has no chapter/Markdown headings.
+
+    A contents entry can confirm a heading even halfway down a page. Without
+    contents, require page-leading headings forming an ordinal sequence, rather
+    than promoting arbitrary numbered prose or every repeated running header.
+    """
+    toc_titles = set()
+    for page in document['pages']:
+        if re.search(r'目\s*录', page['text'][:180]):
+            for line in page['text'].splitlines():
+                title = re.split(r'\.{3,}|…{2,}', line.strip())[0].strip()
+                if _NUMBERED_HEADING.match(title):
+                    toc_titles.add(re.sub(r'\s+', '', title))
+    candidates = {'chinese': [], 'arabic': []}
+    seen = set()
+    for page in document['pages']:
+        if re.search(r'目\s*录', page['text'][:180]):
+            continue
+        offset = 0
+        for line in page['text'].splitlines():
+            clean = line.strip()
+            match = _NUMBERED_HEADING.match(clean)
+            key = re.sub(r'\s+', '', clean)
+            if match and key not in seen and not re.search(r'[。；，,;!?！？]|\.{3}|…{2}', clean):
+                confirmed = key in toc_titles
+                # Unconfirmed lines below introductory/body text are lists.
+                prefix = page['text'][:offset].strip().splitlines()
+                near_top = offset <= 120 and len(prefix) <= 2 and all(
+                    re.fullmatch(r'\d+', p.strip()) or '报告' in p or 'Report' in p
+                    for p in prefix)
+                if confirmed or (not toc_titles and near_top):
+                    ordinal = match.group(1).rstrip('、.．')
+                    family = 'arabic' if ordinal.isascii() else 'chinese'
+                    chinese = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+                    number = int(ordinal) if family == 'arabic' else (chinese.index(ordinal) + 1 if ordinal in chinese else 0)
+                    candidates[family].append((number, page['page'], clean))
+                    seen.add(key)
+            offset += len(line) + 1
+    sequences = []
+    for family in candidates.values():
+        sequence = []
+        for number, page, title in family:
+            if number == len(sequence) + 1:
+                sequence.append((page, title))
+        if len(sequence) >= 2:
+            sequences.append(sequence)
+    return max(sequences, key=len, default=[])
 
 
 def tokenize(text: str) -> list[str]:
@@ -108,6 +159,8 @@ def _chapters(document: dict) -> list[dict]:
                     if page['page'] > starts[-1][0] and len(clean) < 50:
                         starts.append((page['page'], clean))
                         break
+    if not starts:
+        starts = _numbered_chapters(document)
     if not starts:
         return []
     starts = sorted(set(starts))

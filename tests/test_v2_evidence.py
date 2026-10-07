@@ -113,3 +113,37 @@ def test_chapter_boundary_chunk_retains_new_chapter_start():
     assert packet.strategy == 'chapter'
     assert 'UNIQUE_FIRST_SENTENCE' in packet.text
     assert packet.allowed_pages == {'report.pdf': [2]}
+
+
+def test_chinese_top_level_headings_match_toc_and_midpage_starts():
+    # Excerpts preserve the CAICT report's headings and physical-page positions.
+    pages = ['版权声明', '目 录\n一、总体态势........1\n二、技术创新........8\n三、应用赋能........32\n四、安全治理........44\n五、发展展望........54']
+    pages += ['人工智能发展报告（2024 年）\n1\n一、总体态势\n人工智能浪潮席卷全球。',
+              '人工智能发展报告（2024 年）\n2\n一、总体态势\n续页正文。',
+              '人工智能发展报告（2024 年）\n8\n二、技术创新\n基础模型仍在快速演进迭代。',
+              '三、应用赋能\n行业应用不断发展。',
+              '人工智能发展报告（2024 年）\n44\n' + '上一章节的安全技术分析。' * 30 + '\n四、安全治理\n安全治理体系发展。',
+              '人工智能发展报告（2024 年）\n54\n' + '上一章节的治理技术分析。' * 30 + '\n五、发展展望\n未来发展趋势。']
+    chapters = store(pages).chapters
+    assert [c['title'] for c in chapters] == ['一、总体态势', '二、技术创新', '三、应用赋能', '四、安全治理', '五、发展展望']
+    assert [c['pages'][0] for c in chapters] == [3, 5, 6, 7, 8]
+
+
+def test_arabic_headings_without_toc_require_a_consistent_sequence():
+    chapters = store(['1. Industry overview\nMarket analysis.',
+                      '1. Industry overview\nContinued analysis.',
+                      '2. Technology trends\nTechnology analysis.',
+                      '3. Future outlook\nFuture analysis.']).chapters
+    assert [c['title'] for c in chapters] == ['1. Industry overview', '2. Technology trends', '3. Future outlook']
+    assert [c['pages'] for c in chapters] == [[1, 2], [3], [4]]
+
+
+def test_inline_numbered_lists_do_not_create_chapters():
+    assert store(['正文先介绍行业。\n一、建议加强技术创新，形成新的机制。\n二、建议完善应用。',
+                  '本页继续正文分析。\n1. 短期落实政策\n2. 长期持续建设']).chapters == []
+
+
+def test_fallback_does_not_change_existing_primary_heading_family():
+    chapters = store(['第一章 用户规模\n一、总体态势\n用户增长。',
+                      '第二章 发展趋势\n二、技术创新\n发展趋势。']).chapters
+    assert [c['title'] for c in chapters] == ['第一章 用户规模', '第二章 发展趋势']
