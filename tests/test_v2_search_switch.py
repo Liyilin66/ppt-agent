@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from ppt_agent import api
+from ppt_agent import api, deck_jobs
 
 
 def payload(**extra):
@@ -29,7 +29,7 @@ def test_search_without_config_rejected_before_model_call(tmp_path, monkeypatch)
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     def unexpected():
         raise AssertionError("model must not initialize")
-    monkeypatch.setattr(api, "_create_v2_model_client", unexpected)
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", unexpected)
     client = TestClient(api.create_app(data_dir=tmp_path))
     for path in ["/api/deck-plans", "/api/long-deck-jobs"]:
         response = client.post(path, json=payload(enable_search=True))
@@ -58,9 +58,9 @@ def test_search_survives_plan_and_confirmation_override(tmp_path, monkeypatch, o
     _install_fake_deck_plan_backend(monkeypatch, captured)
     _install_fake_v2_long_deck_backend(monkeypatch, captured)
     provider = object()
-    monkeypatch.setattr(api, "default_search_provider", lambda: provider)
+    monkeypatch.setattr(deck_jobs, "default_search_provider", lambda: provider)
     original_plan = api.plan_v2_deck
-    original_build = api.build_v2_deck
+    original_build = deck_jobs.build_v2_deck
     def plan(request, client, **kwargs):
         captured["plan_search_provider"] = kwargs["search_provider"]
         return original_plan(request, client, **kwargs)
@@ -68,7 +68,7 @@ def test_search_survives_plan_and_confirmation_override(tmp_path, monkeypatch, o
         captured["build_search_provider"] = kwargs["search_provider"]
         return original_build(request, client, **kwargs)
     monkeypatch.setattr(api, "plan_v2_deck", plan)
-    monkeypatch.setattr(api, "build_v2_deck", build)
+    monkeypatch.setattr(deck_jobs, "build_v2_deck", build)
     client = TestClient(api.create_app(data_dir=tmp_path))
     created = client.post("/api/deck-plans", json=payload(enable_search=True))
     assert created.status_code == 202
@@ -87,7 +87,7 @@ def test_confirm_rechecks_search_capability_before_creating_job(tmp_path, monkey
     monkeypatch.setattr(api, "load_dotenv_file", lambda: [])
     monkeypatch.setenv("TAVILY_API_KEY", "test-key")
     _install_fake_deck_plan_backend(monkeypatch)
-    monkeypatch.setattr(api, "default_search_provider", lambda: object())
+    monkeypatch.setattr(deck_jobs, "default_search_provider", lambda: object())
     client = TestClient(api.create_app(data_dir=tmp_path))
     created = client.post("/api/deck-plans", json=payload(enable_search=True))
     plan_id = created.json()["plan_id"]

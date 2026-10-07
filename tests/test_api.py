@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import ppt_agent.api as api
+from ppt_agent import deck_jobs
 from ppt_agent.generation import GenerationAttempt, GenerationResult
 from ppt_agent.job_store import JobStore
 from ppt_agent.load import load_deck, load_patch
@@ -403,7 +404,7 @@ def _install_fake_v2_long_deck_backend(
     status: str = "succeeded",
 ) -> None:
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
-    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", lambda: object())
 
     def fake_build_v2_deck(request, client, *, search_provider=None, progress=print):
         if captured is not None:
@@ -467,7 +468,7 @@ def _install_fake_v2_long_deck_backend(
             stage_seconds={"render": 0.1},
         )
 
-    monkeypatch.setattr(api, "build_v2_deck", fake_build_v2_deck)
+    monkeypatch.setattr(deck_jobs, "build_v2_deck", fake_build_v2_deck)
 
 
 def _install_fake_long_deck_quality_gate_failure(monkeypatch, captured: dict | None = None) -> None:
@@ -2081,7 +2082,7 @@ def test_missing_artifact_returns_404(tmp_path: Path) -> None:
 
 def _install_fake_deck_plan_backend(monkeypatch, captured: dict | None = None, *, planning_events=None) -> None:
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
-    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", lambda: object())
 
     def fake_plan_v2_deck(request, client, *, search_provider=None, progress=print):
         from ppt_agent.v2.orchestrator import PlanResult
@@ -2186,7 +2187,7 @@ def test_deck_plan_lifecycle_edit_confirm_generates_with_seeded_checkpoints(
 
 def test_deck_plan_marks_failed_when_planning_raises(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
-    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", lambda: object())
 
     def broken_plan(request, client, *, search_provider=None, progress=print):
         raise RuntimeError("planner exploded")
@@ -2244,7 +2245,7 @@ def _install_fake_revision_backend(monkeypatch, captured: dict | None = None, *,
             usage={"estimated_cost_usd": 0.2},
         )
 
-    monkeypatch.setattr(api, "revise_v2_deck", fake_revise_v2_deck)
+    monkeypatch.setattr(deck_jobs, "revise_v2_deck", fake_revise_v2_deck)
 
 
 def _create_succeeded_v2_job(client, tmp_path: Path, *, slide_count: int = 10) -> str:
@@ -2400,7 +2401,7 @@ def _install_fake_rebuild_backend(monkeypatch, captured: dict | None = None):
     from ppt_agent.v2.rebuild import RebuildResult
 
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
-    monkeypatch.setattr(api, "_create_v2_model_client", lambda: object())
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", lambda: object())
 
     def fake_rebuild_v2_deck(*, items, output_dir, client, deck_name="generated_long_deck_v2",
                              deck_title="图片重建", language="zh-CN", concurrency=4, progress=print):
@@ -2443,7 +2444,7 @@ def test_image_analysis_endpoint(tmp_path: Path, monkeypatch) -> None:
     from ppt_agent.v2.mock import MockLLMClient
 
     monkeypatch.setenv("PPT_AGENT_API_KEY", "test-key")
-    monkeypatch.setattr(api, "_create_v2_model_client", lambda: MockLLMClient())
+    monkeypatch.setattr(deck_jobs, "create_v2_model_client", lambda: MockLLMClient())
     client = _client(tmp_path)
 
     slide_id = _upload_test_image(client, tmp_path, "slide_deck.png")
@@ -2620,7 +2621,7 @@ def test_deck_plan_confirm_can_change_layout_engine(tmp_path, monkeypatch):
 
 def test_typeset_progress_reports_content_and_ordered_typesetting(tmp_path, monkeypatch):
     _install_fake_v2_long_deck_backend(monkeypatch)
-    original_build = api.build_v2_deck
+    original_build = deck_jobs.build_v2_deck
     snapshots = []
     client = _client(tmp_path)
     store = client.app.state.job_store
@@ -2636,7 +2637,7 @@ def test_typeset_progress_reports_content_and_ordered_typesetting(tmp_path, monk
             snapshots.append((record.current_stage, record.completed_batches, record.current_batch))
         return result
 
-    monkeypatch.setattr(api, 'build_v2_deck', build_with_typeset_progress)
+    monkeypatch.setattr(deck_jobs, 'build_v2_deck', build_with_typeset_progress)
     response = client.post('/api/long-deck-jobs', json={**_long_deck_payload(), 'slide_count': 20})
     assert response.status_code == 202
     assert snapshots[0][0] == 'v2_content_generation'
