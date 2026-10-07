@@ -67,3 +67,10 @@
 - commit `dacdeab`：修复E3/E8中未知layout_hint导致整章脚本退化，未知栏布局归一化，其他校验错误按单页回退并记录run report。
 - 修复E4/E8结构页比例：20页6章变为3结构+17内容，100页8章保留11结构+89内容；<12页固定3结构是明确数学例外。
 - 595测试通过，20页mock已在PowerPoint检查；证据见 `data/evaluation/step2a/REPORT.md` 和截图。无付费调用；E1/E2设计几何问题、E7章节匹配问题不在本次修复范围。
+
+## 第3b步视觉系统真实生成验证（2026-10-06）
+
+<!-- 历史运行记录：描述生成版本的观察结果，不代表当前 main 仍存在该问题。 -->
+
+- V1：T3第8页consulting/metrics:cards中`+18.8pp`第二个p换行覆盖标签。schema、排版notes和内容QA均未报错，PowerPoint PDF实查发现；不能把QA0 error宣传为实际无溢出。
+- 证据：`data/evaluation/step3b/T3/pdf-pages/slide-08.png` 与 `data/evaluation/step3b/visual-handoff/T3-page8-content.json`，生成版本 `5739164`。当时由视觉线核查，接线分支未修改 `visual/` 内部，并暂停合并；这是当时的处理记录，不是当前分支状态。
