@@ -1,7 +1,8 @@
-"""One audited generalization run; production prompts and retrieval are unchanged."""
+"""One audited generalization run; production prompts and retrieval are unchanged.
+
+Needs tiktoken (not a project dependency): uv run --with tiktoken python ...
+"""
 import asyncio
-import sys
-sys.path.append("/Users/jay/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages")
 from contextvars import ContextVar
 import hashlib
 import json
