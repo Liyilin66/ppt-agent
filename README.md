@@ -108,7 +108,7 @@ uv --directory <仓库绝对路径> run ppt-agent mcp
 |---|---|---|
 | Claude Code | `claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mcp` | 已真实运行：生成 20 页并修订 1 页（[记录](eval/results/mcp-claude-code-2026-10-07.md)） |
 | Codex | 在 `~/.codex/config.toml` 中加入下面的 `[mcp_servers.ppt-agent]` | 已实测连接与调用：查询上面那次任务的状态，返回与记录一致；未在 Codex 中跑完整生成 |
-| Cursor、Claude Desktop 等 | 在各自的 MCP 配置文件中加入下面的 `mcpServers` JSON | 通用配置，未逐一实测 |
+| Cursor、Claude Desktop 等 | 在各自的 MCP 配置文件中加入下面的 `mcpServers` JSON | 通用配置 |
 
 Codex（`~/.codex/config.toml`）：
 
