@@ -164,12 +164,22 @@ def _cmd_patch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from ppt_agent.mcp_server import run_server
+
+    run_server()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ppt-agent",
         description="Validate, generate, QA, and render ppt-agent Slide IR.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    mcp = subparsers.add_parser("mcp", help="Run the local stdio MCP server.")
+    mcp.set_defaults(func=_cmd_mcp)
 
     generate = subparsers.add_parser("generate", help="Generate Deck IR JSON with structured output.")
     generate.add_argument("--topic", required=True, help="Presentation topic.")
