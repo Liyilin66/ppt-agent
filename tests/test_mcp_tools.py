@@ -291,3 +291,37 @@ def test_mcp_status_reads_existing_report_fields_and_preserves_missing_values(tm
             assert result['statistics'] is None
             assert result['statistics_error']
     asyncio.run(check())
+
+
+def test_mcp_jpeg_source_is_accepted_and_forwarded_as_image(tmp_path, runtime, monkeypatch):
+    from PIL import Image
+
+    source = tmp_path / 'diagram.jpeg'
+    Image.new('RGB', (16, 16), 'white').save(source, format='JPEG')
+    captured = {}
+    actual = deck_jobs.build_v2_deck
+
+    def capture(request, client, **kwargs):
+        captured['request'] = request
+        return actual(request, client, **kwargs)
+
+    monkeypatch.setattr(deck_jobs, 'build_v2_deck', capture)
+
+    async def check():
+        async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
+            result = _value(await client.call_tool('create_deck', {
+                'topic': '图片培训', 'requirements': '清晰说明图片信息',
+                'pages': 4, 'source_paths': [str(source)],
+            }))
+            assert 'error' not in result, result
+            await _wait(runtime)
+            request = captured['request']
+            assert request.source_paths == []
+            assert len(request.image_paths) == 1
+            staged = Path(request.image_paths[0])
+            assert staged.suffix == '.jpeg'
+            assert staged.read_bytes() == source.read_bytes()
+            status = _value(await client.call_tool('get_deck_status', {'job_id': result['job_id']}))
+            assert status['status'] == 'succeeded', status
+
+    asyncio.run(check())

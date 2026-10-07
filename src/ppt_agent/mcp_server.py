@@ -22,7 +22,7 @@ from ppt_agent.runtime import load_dotenv_file, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 DOCUMENT_SUFFIXES = {'.pdf', '.docx', '.md', '.txt'}
-IMAGE_SUFFIXES = {'.png', '.jpg', '.webp'}
+IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp'}
 MAX_SOURCES = 20  # Same limit as CreateLongDeckJobRequest.attachment_ids.
 
 

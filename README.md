@@ -94,8 +94,37 @@ uv run ppt-agent v2 build --prompt "基于附件为管理层做一份行业汇�
 
 不调用模型的离线演示：`uv run ppt-agent v2 demo --prompt "AI Agent 入门" --pages 20 --output-dir out/demo`。
 
+## 在 Claude Code 中使用
+
+先按“快速开始”配置仓库根目录的 `.env`，再注册本地 stdio MCP 服务：
+
+```bash
+claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mcp
+```
+
+将 `<仓库绝对路径>` 换成实际路径；路径包含空格时加引号。必须保留 `--directory`：服务靠工作目录找到 `.env` 和默认的 `data/`，否则可能读不到配置，或创建另一份任务数据库。网页与 MCP 应使用同一仓库目录；若配置了 `PPT_AGENT_DATA_DIR`，两边须指向同一个数据目录。注册或更新工具后，重新打开 Claude Code 会话。
+
+- `create_deck`：提交需求、页数和本地附件的绝对路径，立即返回 `job_id`。
+- `get_deck_status`：查询进度、已有质量与费用统计、完成后的 PPTX 绝对路径，以及最近一次修订结果。
+- `revise_deck`：提交修改要求和可选页码，立即返回 `revision_id`，结果通过 `get_deck_status` 查看。
+
+以下是示例指令，不是已经录制的真实运行结果：
+
+```text
+你：用 /绝对路径/报告.pdf 做20页管理层汇报，使用咨询风格，覆盖各章并保留资料出处。
+你：查询刚才任务的进度，完成后给我 PPTX 路径。
+你：把第5页改成对比形式，再查询修订结果。
+```
+
+**MCP 是对外入口，内部仍是固定的生成流程，不是让模型自己决定步骤。** Claude Code 调用工具提交需求和修改要求；生成、检索、核对和排版复用现有流程。
+
+任务跑在 MCP 进程里，会话关闭导致进程退出后，尚未完成的任务会中断，可以在网页的演示历史里续跑。同一个 MCP 进程同一时间只能有一个生成任务；同一份演示文稿也只能有一个修订在跑。工具返回本地绝对路径，不返回文件内容。
+
+<!-- TODO: 在完成真实 Claude Code 创建、查询、修订验收后，加入 MCP 演示 GIF。 -->
+
 ## 其他能力
 
+- **MCP 入口**：在 Claude Code 中创建演示、查询进度和提交修订，复用现有生成流程。
 - **对话式创建**：一句话需求也能开始，Agent 每轮只追问一个关键问题；4-100 页可先编辑大纲和逐页脚本再生成。
 - **成片后用自然语言修改**：如「第 5 页改成对比」「全稿换成深蓝色」，只重做受影响的页面。
 - **图片转可编辑页面**：把 PPT 截图或信息图重建为原生文本、形状和图表。
@@ -117,7 +146,7 @@ uv run ppt-agent v2 build --prompt "基于附件为管理层做一份行业汇�
 uv run pytest
 ```
 
-1673 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
+1688 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
 
 ## License
 
