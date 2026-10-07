@@ -13,7 +13,7 @@ from ppt_agent import __version__, deck_jobs
 from ppt_agent.mcp_server import create_server
 
 
-def test_ping_over_sdk_memory_connection_loads_dotenv_and_shared_store(tmp_path, monkeypatch):
+def test_status_over_sdk_memory_connection_loads_dotenv_and_shared_store(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('PPT_AGENT_DATA_DIR', '')
     monkeypatch.delenv('PPT_AGENT_DATA_DIR')
@@ -25,11 +25,13 @@ def test_ping_over_sdk_memory_connection_loads_dotenv_and_shared_store(tmp_path,
     async def check():
         async with create_connected_server_and_client_session(create_server()) as client:
             tools = await client.list_tools()
-            assert [tool.name for tool in tools.tools] == ['ping']
-            result = await client.call_tool('ping', {})
+            assert {tool.name for tool in tools.tools} == {'create_deck', 'get_deck_status', 'revise_deck'}
+            result = await client.call_tool('get_deck_status', {'job_id': job.job_id})
             assert result.isError is False
             value = result.structuredContent or json.loads(result.content[0].text)
-            assert value == {'version': __version__, 'data_dir': str(directory.resolve())}
+            assert value['version'] == __version__
+            assert value['data_dir'] == str(directory.resolve())
+            assert value['job_id'] == job.job_id
 
     asyncio.run(check())
     assert deck_jobs.JobStore(directory / 'jobs.sqlite3').get_latest_job().job_id == job.job_id
@@ -37,6 +39,7 @@ def test_ping_over_sdk_memory_connection_loads_dotenv_and_shared_store(tmp_path,
 
 def test_stdio_cli_emits_only_protocol_and_logs_to_stderr(tmp_path):
     environment = {**os.environ, 'PPT_AGENT_DATA_DIR': str(tmp_path / 'data')}
+    job = deck_jobs.JobStore(tmp_path / 'data' / 'jobs.sqlite3').create_job(job_type='long_deck_v2')
     # A pre-existing stdout log handler must not leak into protocol output.
     command = [sys.executable, '-c',
                'import logging,sys; logging.basicConfig(stream=sys.stdout); '
@@ -62,12 +65,14 @@ def test_stdio_cli_emits_only_protocol_and_logs_to_stderr(tmp_path):
         assert receive()['id'] == 1
         send({'jsonrpc':'2.0','method':'notifications/initialized'})
         send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}})
-        assert [t['name'] for t in receive()['result']['tools']] == ['ping']
-        send({'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'ping','arguments':{}}})
+        assert {t['name'] for t in receive()['result']['tools']} == {'create_deck', 'get_deck_status', 'revise_deck'}
+        send({'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'get_deck_status','arguments':{'job_id':job.job_id}}})
         result = receive()['result']
         assert result.get('isError', False) is False
         value = result.get('structuredContent') or json.loads(result['content'][0]['text'])
-        assert value == {'version':__version__, 'data_dir':str((tmp_path / 'data').resolve())}
+        assert value['version'] == __version__
+        assert value['data_dir'] == str((tmp_path / 'data').resolve())
+        assert value['job_id'] == job.job_id
         process.stdin.close()
         process.wait(timeout=10)
         assert process.returncode == 0
@@ -80,7 +85,8 @@ def test_stdio_cli_emits_only_protocol_and_logs_to_stderr(tmp_path):
             process.wait(timeout=5)
 
 
-def test_mcp_import_does_not_load_api():
+def test_mcp_import_does_not_load_api(tmp_path):
     subprocess.run([sys.executable, '-c',
                     "import sys; import ppt_agent.mcp_server; assert 'ppt_agent.api' not in sys.modules"],
-                   check=True)
+                   check=True, cwd=tmp_path,
+                   env={**os.environ, 'PPT_AGENT_DATA_DIR': str(tmp_path / 'data')})
