@@ -198,3 +198,13 @@ def test_chart_fallback_support_reads_as_phrases():
                                                {'path': 'values.2', 'value': '99', 'label': ''}])
     assert clean.archetype == 'statement'
     assert clean.support == '2022年 4.5%；占比持续上升'
+
+
+def test_measure_words_bind_the_counted_noun():
+    text = '截至8月，国内已有近1919个深度合成算法、190个生成式人工智能服务在国家网信办完成备案。'
+    assert check_content_numbers(_claim('1919', '深度合成算法'), text) == []
+    assert check_content_numbers(_claim('190', '生成式AI服务'), text) == []
+    assert check_content_numbers(_claim('1919', '生成式AI服务'), text)
+    assert check_content_numbers(_claim('1.1万', '打击目标'), '如以色列军队利用人工智能技术打击了加沙地带1.1万多个目标，一天内发现并摧毁了150个隧道14。') == []
+    assert check_content_numbers(_claim('1287', '兆瓦时能耗'), '1750亿个参数的GPT-3模型能耗相当于1287兆瓦时的电力，还产生了552吨二氧化碳15。') == []
+    assert check_content_numbers(_claim('4.5%', '全行业融资占比'), '人工智能领域融资占全行业融资比例持续上升，从2022年的4.5%上升至2024年上半年的12.1%。') == []

@@ -23,6 +23,7 @@ def _key(value: str) -> tuple[Decimal, str]:
 
 
 _YEAR = re.compile(r'(?:19|20)\d{2}')
+_COUNTED = re.compile(r'[ \t]*(?:[个家项款台人吨元种位名件次倍兆]|多个|多家|多项|余|以上|的|美元|欧元)')
 
 
 def _label_tokens(label: str) -> list[str]:
@@ -54,8 +55,8 @@ def _covers(segment: str, tokens: list[str], head: str, *, tail: bool, years=())
     if tail:
         # The label must sit right before the value: "GPT-4 Turbo 128k" does
         # not support "GPT-4 128k", and a far-away mention binds nothing.
-        gap = segment[end:]
-        if re.search(r'[a-z]', gap) or len(gap) > 12:
+        gap = re.sub(r'\d', '', segment[end:])
+        if re.search(r'[a-z]', gap) or len(gap) > 16:
             return False
     return True
 
@@ -96,16 +97,23 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
     # The value owns the following words up to the end of its clause; text that
     # runs into the next value belongs to that value instead, except on rows
     # that open with the value ("30.0% 生活助手").
+    # A measure word right after the value ("1919个深度合成算法", "1.1万多个目标")
+    # makes the following noun the thing counted, up to the next list item.
+    counted = bool(_COUNTED.match(text, match.end()))
     hi, closed = min(len(text), match.end() + 40), False
     for i in range(match.end(), hi):
-        if text[i] in '。，；！？,;':
+        if text[i] in '。，；！？,;' or (counted and text[i] == '、'):
             hi, closed = i, True
             break
     for n in numbers:
         if match.end() <= n.start() < hi and not skip(n):
-            hi, closed = n.start(), False
+            hi, closed = n.start(), counted
             break
-    if closed or (opens_line and not labelled_before):
+    if counted:
+        after = re.sub(r'\s+', '', text[match.end():hi]).lower()
+        if _covers(before + '|' + after, tokens, head, tail=False, years=years):
+            return True
+    elif closed or (opens_line and not labelled_before):
         if _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False, years=years):
             return True
     # One subject, several values: "融资占比从2022年的4.5%上升至2024年上半年的12.1%".
