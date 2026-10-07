@@ -181,4 +181,4 @@ uv run pytest
 
 ## License
 
-当前仓库未声明开源许可证。使用或分发前请先补充明确的 license。
+代码以 [MIT License](LICENSE) 开源。`examples/` 中的样例 PPT 和 `eval/` 中的评测材料引用了第三方报告与公开文件的内容，这些内容的版权归原作者所有，不在 MIT 许可范围内。
