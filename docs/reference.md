@@ -1,0 +1,471 @@
+# ppt-agent 参考文档
+
+README 只保留产品介绍；这里是完整的功能说明、Web 工作台、管线细节、CLI、Web API 与旧路线（v1 / legacy 30 页 / PPT Master）。
+
+> 下文部分 Web 截图拍摄于新排版系统之前，画布里的幻灯片是旧版式；界面本身没有变化。
+
+## 产品工作台
+
+Web UI 使用对话式 Agent 作为唯一创建入口：用户可以只给一句模糊想法，也可以直接提交完整需求。Agent 每轮只追问一个会影响内容、结构或视觉结果的问题，提供快捷选项，同时保留自由输入；信息充分后进入生成确认。结构化 Brief 只作为内部生成契约和恢复依据，不再让普通用户填写右侧表单。
+
+创建和成片修改对话都支持按钮选择、拖拽或粘贴附件。PDF、DOCX、Markdown 和 TXT 会在本地提取文本摘要；PNG、JPG、JPEG 和 WEBP 会发送给支持视觉输入的模型生成描述和图中文字，并复制到 job 的 `assets/` 目录。页面设计模型只会引用已登记的文件名，renderer 再把对应图片放入可编辑幻灯片；单文件限制为 20MB，每条对话最多 5 个附件。
+
+| 对话创建 | 实时生成工作台 |
+| --- | --- |
+| ![Conversational presentation creation](readme/web-conversational-create.jpg) | ![Live slide generation studio](readme/web-live-studio.jpg) |
+
+清晰需求会直接进入生成确认；模糊需求会按实际缺口继续追问，不预设固定问题数量。用户可以继续用自然语言调整已经收敛的需求；短演示或用户明确要求“直接生成 / 不用再问”时可以自动开始，长演示默认保留一次确认。访谈状态和完整消息保存在 SQLite，并通过 `interview_id` 与最终 presentation job 关联。
+
+4-100 页任务可以先生成一份**可编辑大纲与页面脚本**。用户可在正式生成前调整演示标题、章节目标、页面标题、逐页要点、版式提示、数据建议和演讲备注，也可以增删页面。确认后的计划会写入 checkpoint，正式生成复用已批准内容，不再重新规划；用户也可以选择跳过大纲直接生成。
+
+![Editable outline and speaker notes](readme/web-outline-editor.jpg)
+
+生成开始后，页面会逐步出现在左侧缩略图和中央画布中。缩略图只加载当前滚动区域附近的页面，因此 100 页任务不会同时创建 100 个 iframe；用户可以手动查看任意已生成页面，也可以继续跟随最新页面。
+
+成片生成后，用户可以继续用自然语言提出修改，例如“第 5 页改成对比图表”“把附件里的架构图放到第 8 页”或“全稿换成深蓝科技风并隐藏页码”。修订编排器会先生成结构化修改计划，只重做受影响页面或主题，再重新汇总 DeckDesign、执行全页 QA 并原位更新 PPTX；无法执行的请求会明确说明，不会把未修改的文件伪报为成功。
+
+![Conversational revisions after generation](readme/web-agent-revision.jpg)
+
+### 图片理解与可编辑页面重建
+
+独立的“图片转可编辑 PPT”工作台支持点击、拖拽或粘贴图片。Agent 不会把任何图片都机械地描成一页：它先通过视觉模型判断图片属于完整演示页、可用于演示的信息图片，还是与演示无关的普通图片，再给出适合的处理路线。
+
+![Image understanding and editable slide rebuild](readme/web-image-rebuild.jpg)
+
+| 图片与用户意图 | 默认处理 |
+| --- | --- |
+| PPT 截图、AI 生成演示页、信息图、海报式页面 | 重建标题、正文、形状、表格和图表为原生可编辑元素 |
+| 产品截图、流程图、数据图、白板、文档照片 | 根据内容重新设计，或保留原图并补充可编辑解读 |
+| 只需要图片中的文字或数据 | OCR 后重建为文本、表格或图表 |
+| 只想参考配色与构图 | 提取主题和视觉语言，不复制原内容 |
+| 自拍、宠物、风景等无明确演示用途的图片 | 默认不生成，等待用户明确选择嵌入、内容设计或风格参考 |
+
+一次最多处理 10 张图，每张图对应一页。页面结构、文字、形状、表格和可识别图表尽量重建为 PowerPoint 原生元素；照片和复杂插画区域仍然保留为裁剪后的位图，因此“可编辑”不等于把每个像素或照片中的物体都矢量化。若模型重建失败，系统会保留原图作为 fallback，并把 QA 问题写入报告，不会伪报完全重建成功。
+
+**两条不同的出图路径。** 忠实重建（以及风格参考）需要任意坐标，仍由模型自己摆放元素。而“根据内容设计一页”“仅提取文字”“嵌入并补充解读”这三条路线走模板化排版：模型只输出内容结构（标题、可核对的数字、2–4 段要点、提醒），四套版式（数据卡 / 要点 / 对比 / 流程）由代码按实际文字量计算每个框的位置和字号。这样做的原因是视觉模型不擅长像素级排版——放手让它算坐标会得到装不下正文的框、视觉重量完全相同的卡片和贴着画布边缘的文字。
+
+模板化路线同时会主动剔除来源图里的**界面与营销元素**：状态栏、导航、按钮、价格、销量、满赠、运费、店铺名，以及被手指遮挡或截断因而无法确认的内容。产品照片通过一步确定性的裁剪收紧提取（放大候选框后按连通区域定位主体，再用面积、长宽比和色彩丰富度校验）；无法可靠定位时**宁可不放图**，而不是把一块截图贴到页面上——那会把上面刚剔除的内容以像素形式带回来。
+
+| SQLite 演示历史 | 交付中心 |
+| --- | --- |
+| ![SQLite presentation history](readme/web-presentation-history.jpg) | ![Presentation delivery center](readme/web-delivery-center.jpg) |
+
+Web 前端保持零额外框架依赖，但已经从 FastAPI 模块中拆出：`webui/index.html` 负责语义结构，`webui/styles.css` 负责深色产品视觉，`webui/app.js` 负责对话、轮询、实时预览、历史和交付交互。FastAPI 在 `/static` 提供这些资源，setuptools 通过 package data 将它们带入安装包。这样修改 UI 不再需要在 `api.py` 中维护数千行内嵌字符串。
+
+当前 Web 路由：
+
+| 页数 | 内部管线 | 适用场景 |
+| --- | --- | --- |
+| 1-3 | v1 快速管线 | 极短汇报、单页说明、快速提案 |
+| 4-100 | v2 管线（默认 typeset 确定性排版，可选 free 自由布局） | 课堂展示、产品方案、深度分享与长文档 |
+
+`POST /api/long-deck-jobs` 仍兼容没有指定 `deck_type=visual_design_v2` 的 legacy 30 页任务，用于已有 batch resume、quality gate 和 PPT Master recovery 工作流。
+
+Web 工作台还包括：
+
+- 五阶段任务进度与前端平滑运行计时。
+- 临时请求失败后自动继续轮询。
+- 对话状态、内部 Brief 与 job 关联恢复。
+- 创建、修订和图片重建中的文档/图片上传、拖拽、粘贴和状态提示。
+- 生成前大纲、逐页脚本和 speaker notes 编辑确认。
+- v2 checkpoint 页面生成后立即进入 storyboard。
+- 真实 SVG / PageDesign HTML 单页预览与视觉高光页选择。
+- QA、成本、章节分配与交付状态。
+- 成片后定向页面重设计、全局主题修改与重新导出。
+- PPTX、IR、QA、run report 与 PPT Master artifacts 下载。
+- SQLite 演示历史：搜索主题/观众/任务 ID、按状态筛选、打开旧任务、直接下载最终 PPTX。
+
+每次创建演示时，系统会把主题、目标观众、页数和详细要求写入 `data/jobs.sqlite3` 的请求快照表。历史页将请求快照与 job 状态、QA 分数和最终 PPTX artifact 联结展示；旧任务会从已有 `long_deck_request.json` 或 `generated_deck_brief.json` 自动回填，不修改原始 artifact。
+
+## 从 Prompt 到 PPTX
+
+~~~mermaid
+flowchart TD
+    A["自然语言需求 / 文档 / 用户图片"] --> B["对话式需求访谈"]
+    B --> C["内部结构化 Brief"]
+    C --> D{"Web 页数路由"}
+    D -->|"1-3"| E["v1 DeckBrief + DeckPlan"]
+    D -->|"4-100"| F["v2 ContentBrief + ThemeSpec"]
+    F --> F1["可编辑大纲 + 逐页脚本"]
+    F1 --> F2{"确认或跳过"}
+    F2 -->|"确认"| I["Approved DeckSkeleton + PageDesign"]
+    F2 -->|"跳过"| I
+    C -.->|"兼容 API: 30 页"| G["legacy batch generation"]
+
+    E --> H["Strict Deck IR"]
+    G --> J["Batch Deck IR merge"]
+
+    H --> K["Rule QA"]
+    I --> L["Per-page QA + deterministic repair"]
+    J --> M["Long-deck QA + hard gate"]
+    M --> N["PPT Master normal / recovery package"]
+
+    K --> O["Editable PPTX"]
+    L --> P{"Strict gate passed?"}
+    M --> Q{"Gate passed?"}
+
+    P -->|"Yes"| R["v2 editable PPTX"]
+    P -->|"No"| S["Keep design / QA / run report"]
+    Q -->|"Yes"| T["legacy editable PPTX"]
+    Q -->|"No"| U["PPT Master recovery package"]
+
+    O --> V["SQLite job + artifacts"]
+    R --> W["自然语言修改计划"]
+    W --> X["重做受影响页面 / 更新主题"]
+    X --> L
+    R --> V
+    S --> V
+    T --> V
+    U --> V
+    N --> V
+~~~
+
+核心原则：
+
+1. LLM 不直接写 PPTX。
+2. LLM 生成严格 JSON IR；Pydantic 拒绝 schema 外字段。
+3. long-deck QA 与 hard gate 决定坏内容能否进入最终成片。
+4. PowerPoint 由确定性 renderer 导出，保留原生可编辑元素。
+5. 每个阶段都产生可检查 artifact，失败 job 仍可诊断和恢复。
+
+## v2 100 页管线
+
+v2 是当前 100 页主线。默认 `typeset` 引擎下，模型只为每页选择版式原型（要点 / 流程 / 图表 / 指标 / 观点 / 对比 / 时间线）并填写内容，坐标、字号和换行全部由代码计算；`free` 引擎保留旧的模型自由布局。下图中的 PageDesign 步骤在 typeset 模式下对应「内容 JSON → 确定性排版」。
+
+~~~text
+Prompt / source digest / image digest / optional search
+                ↓
+ContentBrief → ThemeSpec → DeckOutline → DeckSkeleton
+                ↓
+可编辑大纲与逐页脚本 → 用户确认 → approved checkpoints
+                ↓
+Section PageBriefs（按章节并发）
+                ↓
+Anchor pages（封面/目录/章节页/结尾，代码生成）
+                +
+Content PageDesign（每页独立 LLM 请求，并发生成）
+                ↓
+Rule QA → deterministic repair → optional LLM repair
+                ↓
+Strict full-deck quality gate
+                ↓
+DeckDesign JSON → editable PPTX → artifacts
+                ↓
+自然语言修订 → 结构化 RevisionPlan → 局部重设计 / 主题更新
+                ↓
+全页 QA → 重新渲染 PPTX → revision history
+~~~
+
+### 为什么能稳定处理 100 页
+
+- **每页一个请求**：避免把 100 页塞进一次超长模型调用。
+- **并发池**：默认 concurrency 为 8。
+- **checkpoint**：brief、theme、skeleton、section briefs 和每个内容页都独立保存。
+- **plan approval**：确认后的章节、页面要点和 speaker notes 直接写入 checkpoint，正式生成不会推翻用户批准的大纲。
+- **resume**：中断后跳过已经完成且有效的页面。
+- **结构页确定性生成**：减少 token，并稳定整份演示的视觉锚点。
+- **严格 QA**：文本容量、重叠、越界和页面结构都进入检查。
+- **局部修订**：成片后只删除并重建受影响页面 checkpoint，全局主题修改则复用全部页面内容重新渲染。
+- **预算护栏**：记录 token 和估算成本；内容页失败时可以进入确定性 fallback。
+
+### v2 产物
+
+| 文件 | 用途 |
+| --- | --- |
+| &lt;name&gt;.pptx | hard gate 通过后生成的可编辑 PowerPoint |
+| &lt;name&gt;_design.json | ThemeSpec + 全部 PageDesign |
+| &lt;name&gt;_qa_report.json | 全页 QA、自动修复与 fallback 记录 |
+| &lt;name&gt;_run_report.json | 调用次数、token、成本估算、阶段耗时和逐页状态 |
+| checkpoints/ | 断点续跑所需的阶段与逐页数据 |
+| assets/ | 已登记并可被页面 `ImageItem` 引用的用户图片 |
+
+修订记录另外保存在 SQLite `deck_revisions` 表中；每次成功修订都会更新 design、QA report、run report 和 PPTX artifact，同时保留用户请求、Agent 回复和受影响页码。
+
+## PPT Master 集成边界
+
+项目没有复制或内置 [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) 源码。当前实现的是本地 workflow bridge：
+
+~~~text
+merged Deck IR
+    ↓
+sanitized source.md + run_prompt.md + manifest.json
+    ↓
+execution plan / visual project scaffold
+    ↓
+外部 AI IDE / Codex / Claude Code 生成 SVG visual project
+    ↓
+local runner:
+  svg_quality_checker.py
+  finalize_svg.py
+  svg_to_pptx.py --only native
+    ↓
+generated_by_ppt_master.pptx
+    ↓
+注册到 ppt-agent job/artifact/Web UI
+~~~
+
+必须明确：
+
+- PPT Master 的 AI 视觉项目生成阶段仍需要外部 AI IDE / skill workflow。
+- ppt-agent 不会假装仅靠确定性脚本就能从 source.md 生成完整 SVG。
+- Local Runner 只处理已经存在的 SVG project 或已有 PPTX。
+- 当前 Web PPT Master endpoints 面向 legacy long_deck job；100 页 long_deck_v2 不会自动调用 PPT Master。
+- v2 100 页成片使用自身 PageDesign renderer，不经过 PPT Master。
+
+本地检测：
+
+~~~bash
+export PPT_MASTER_DIR="/Users/you/Documents/ppt-master"
+
+uv run python scripts/check_ppt_master_setup.py \
+  --ppt-master-dir "$PPT_MASTER_DIR"
+~~~
+
+主要辅助命令：
+
+~~~bash
+uv run python scripts/prepare_ppt_master_package.py --input ... --output-dir ...
+uv run python scripts/prepare_ppt_master_execution.py --job-id ... --job-dir ...
+uv run python scripts/bootstrap_ppt_master_project.py --job-id ... --job-dir ...
+uv run python scripts/run_ppt_master_local_export.py --job-id ... --job-dir ...
+uv run python scripts/register_ppt_master_output.py --job-id ... --output-dir ...
+~~~
+
+## 搜索、文档与工具能力
+
+| 能力 | 实现方式 | Web | CLI |
+| --- | --- | ---: | ---: |
+| PDF / DOCX / MD / TXT | 本地解析，PDF 保留物理页码；加密 PDF 需 `cryptography`（已列入依赖） | 已支持 | 已支持 |
+| PNG / JPG / JPEG / WEBP | 多模态模型生成图片描述和 OCR 摘要，原图进入 job assets | 已支持 | `BuildRequest.image_paths` |
+| Tavily 搜索 | 编排器按章节调用 Tavily，结果作为带网址的证据入库 | 已支持（需配置 `TAVILY_API_KEY`） | `--search` |
+| LLM provider | OpenAI-compatible / Anthropic JSON 与图片输入 | 服务端环境变量 | BYOK 参数 |
+| 通用 function calling | 未实现 | 否 | 否 |
+| 资料检索（RAG） | 本地解析并保留页码，按章节分配 + BM25 检索每页原文；不使用向量库 | 已支持 | 已支持 |
+
+Tavily 是编排器明确调用的搜索适配器，不是模型自主选择工具。目前项目属于结构化 workflow agent，不是通用 ReAct/tool-calling agent。
+
+## 快速开始
+
+要求：
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- 一个 OpenAI-compatible 或 Anthropic API endpoint
+
+安装并验证：
+
+~~~bash
+git clone https://github.com/Liyilin66/ppt-agent.git
+cd ppt-agent
+
+uv sync
+uv lock --check
+uv run pytest
+~~~
+
+### 启动 Web UI
+
+Web UI 不接收用户输入 API key。项目启动时会读取根目录 `.env`，已导出的系统环境变量优先级更高；`.env` 已被 Git 忽略：
+
+~~~bash
+PPT_AGENT_API_KEY=sk-你的key
+
+# OpenAI-compatible 代理按需设置：
+# PPT_AGENT_BASE_URL=https://your-openai-compatible-endpoint/v1
+# PPT_AGENT_MODEL=gpt-5.5
+~~~
+
+启动服务：
+
+~~~bash
+export PPT_MASTER_DIR="/Users/you/Documents/ppt-master"  # optional
+export LONG_DECK_JOB_TIMEOUT_SECONDS=7200
+
+uv run uvicorn ppt_agent.api:app --reload
+~~~
+
+打开 [http://127.0.0.1:8000](http://127.0.0.1:8000/)。
+
+### v2 离线 demo
+
+不调用真实模型：
+
+~~~bash
+uv run ppt-agent v2 demo \
+  --prompt "AI Agent 产品经理成长路线" \
+  --pages 100 \
+  --output-dir examples/output/v2_demo
+~~~
+
+### v2 真实生成
+
+~~~bash
+export OPENAI_API_KEY="..."
+
+uv run ppt-agent v2 build \
+  --prompt "从 0 到 1 设计一座 AI 驱动的未来智慧校园" \
+  --pages 100 \
+  --provider openai \
+  --model gpt-5.5 \
+  --base-url https://your-openai-compatible-endpoint/v1 \
+  --concurrency 8 \
+  --budget-usd 15 \
+  --input-cost 3 \
+  --output-cost 12 \
+  --output-dir out/smart-campus
+~~~
+
+断点续跑：
+
+~~~bash
+uv run ppt-agent v2 build \
+  --prompt "从 0 到 1 设计一座 AI 驱动的未来智慧校园" \
+  --pages 100 \
+  --provider openai \
+  --model gpt-5.5 \
+  --base-url https://your-openai-compatible-endpoint/v1 \
+  --output-dir out/smart-campus \
+  --resume
+~~~
+
+文档提炼与联网搜索：
+
+~~~bash
+export TAVILY_API_KEY="..."
+
+uv run ppt-agent v2 build \
+  --prompt "把白皮书整理成一份技术产品分享" \
+  --source docs/whitepaper.pdf \
+  --search \
+  --pages 80 \
+  --output-dir out/whitepaper-deck
+~~~
+
+浏览器预览设计稿：
+
+~~~bash
+uv run ppt-agent v2 preview \
+  --design out/smart-campus/deck_design.json \
+  --output out/smart-campus/preview.html
+~~~
+
+## CLI
+
+~~~text
+ppt-agent generate     Generate strict Deck IR
+ppt-agent build        Generate + QA + editable PPTX (v1)
+ppt-agent render       Render existing Deck IR
+ppt-agent qa           Analyze existing Deck IR
+ppt-agent patch        Apply structured JSON patch
+
+ppt-agent v2 demo      Offline deterministic 4-100 page demo
+ppt-agent v2 build     Real-model 4-100 page generation
+ppt-agent v2 preview   Render DeckDesign as browser HTML
+~~~
+
+## Web API
+
+| Endpoint | 作用 |
+| --- | --- |
+| GET /health | 健康检查 |
+| POST /api/jobs | 1-3 页 Web 快速任务；API 仍支持 1-10 页 |
+| POST /api/long-deck-jobs | 4-100 页任务；Web 默认传入 `visual_design_v2` |
+| POST /api/long-deck-jobs/{job_id}/resume | 从 checkpoint 恢复 |
+| POST /api/jobs/{job_id}/cancel | 请求取消 long-deck job |
+| GET /api/jobs/{job_id} | 状态、QA、PPT Master 状态 |
+| POST /api/presentation-interviews | 开始自适应需求访谈 |
+| POST /api/presentation-interviews/{id}/messages | 回答当前问题并继续收敛 Brief |
+| GET /api/presentation-interviews/{id} | 恢复 SQLite 中的访谈状态 |
+| POST /api/uploads?filename=... | 上传单个文档或图片，返回 `upload_id` |
+| GET /api/uploads/{upload_id} | 下载已上传的原始附件 |
+| POST /api/image-analyses | 对上传图片分类、描述、OCR，并返回推荐处理路线 |
+| POST /api/image-rebuild-jobs | 按用户确认的路线创建图片重建 job |
+| POST /api/deck-plans | 为 4-100 页任务生成可编辑大纲和逐页脚本 |
+| GET /api/deck-plans/{plan_id} | 查询规划状态或恢复待确认计划 |
+| PUT /api/deck-plans/{plan_id} | 保存用户编辑后的章节和页面脚本 |
+| POST /api/deck-plans/{plan_id}/confirm | 确认计划、写入 checkpoint 并启动生成 |
+| POST /api/jobs/{job_id}/revisions | 用自然语言和可选附件修改已完成的 v2 演示 |
+| GET /api/jobs/{job_id}/revisions | 查询该演示的修订历史 |
+| GET /api/presentations | SQLite 演示历史、筛选和最终 PPTX 下载入口 |
+| GET /api/jobs/{job_id}/preview-slides | 可用预览页清单 |
+| GET /api/jobs/{job_id}/preview-slides/{n} | SVG 或 v2 HTML 单页预览 |
+| GET /api/jobs/{job_id}/artifacts | 任务 artifacts |
+| GET /api/artifacts/{artifact_id} | 下载 artifact |
+
+PPT Master endpoints：
+
+~~~text
+POST /api/long-deck-jobs/{job_id}/prepare-ppt-master-execution
+POST /api/long-deck-jobs/{job_id}/bootstrap-ppt-master-project
+POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
+~~~
+
+## 质量与安全边界
+
+- Pydantic models 使用 strict schema，未知字段不会静默进入 IR。
+- v2 默认 strict quality gate；全页仍有硬错误时不发布 PPTX。
+- legacy 30 页 hard gate 失败时不生成旧 renderer PPTX，但可生成 sanitized PPT Master recovery package。
+- PPT Master adapter 会清理 instruction leakage、matrix placeholders 与内部 schema 字段。
+- job 超时、取消和失败均保留可检查 artifacts。
+- 本地 runner 使用 subprocess timeout，不自动安装依赖，不自动更新 PPT Master。
+
+## 当前限制
+
+- 最高页数承诺为 100；200 页没有真实验证，因此已从产品和 CLI 上限移除。
+- Web UI 不允许用户直接填写 API key。
+- 图片重建依赖支持视觉输入的模型；结构和文字可编辑，但照片与复杂插画区域仍是位图。
+- 截图中不可辨认的字体、数据或遮挡内容只能近似恢复；重建结果必须结合 QA 报告和预览检查。
+- 没有通用 LLM tool calling、向量数据库或多 Agent runtime；资料检索是本地 BM25 + 章节分配。
+- 没有登录、多租户、云端队列或生产级权限系统。
+- v2 100 页与 PPT Master 当前是两条独立视觉生成路线。
+- PPT Master 的 SVG 创作阶段仍依赖外部 AI IDE / skill workflow。
+- 项目优先保证可编辑性、可检查性和失败可恢复，不保证所有模型都能产生同等视觉质量。
+
+## 项目结构
+
+~~~text
+src/ppt_agent/
+├── api.py                     # FastAPI + Web workspace + job endpoints
+├── webui/                     # 独立、无框架依赖的 Web 产品界面
+│   ├── index.html             # 六个产品视图和语义结构
+│   ├── styles.css             # 深色设计系统与响应式布局
+│   └── app.js                 # 对话、任务轮询、实时预览和历史交互
+├── requirements_interview.py  # 自适应对话访谈与内部 Brief
+├── job_store.py               # SQLite jobs、访谈、计划、修订与 artifacts
+├── generation.py              # v1 structured generation
+├── pipeline.py                # v1 build/QA/render pipeline
+├── long_deck_orchestrator.py  # legacy 30-page batching/resume
+├── long_deck_quality.py       # legacy hard quality gate
+├── ppt_master_*.py            # handoff, execution, project, runner, output
+└── v2/
+    ├── orchestrator.py        # 100-page pipeline
+    ├── providers.py           # OpenAI-compatible / Anthropic JSON 与视觉输入
+    ├── planning.py            # brief, outline, skeleton, page briefs
+    ├── revise.py              # 结构化修订计划、局部重设计和重新导出
+    ├── rebuild.py             # 图片分类后的可编辑页面重建与 fallback
+    ├── image_layout.py        # 图片内容的确定性排版：四套版式、裁剪收紧与校验
+    ├── ir.py                  # PageDesign / DeckDesign
+    ├── qa.py                  # page QA and deterministic repair
+    ├── render.py              # editable PPTX renderer
+    ├── preview.py             # browser preview
+    ├── intake.py              # PDF/DOCX/MD/TXT
+    └── search.py              # Tavily adapter
+
+scripts/                       # PPT Master bridge and registration CLIs
+tests/                         # v1, v2, Web API and PPT Master tests
+docs/readme/                   # current README screenshots
+docs/design/                   # UI visual QA evidence
+~~~
+
+## 测试
+
+当前验证基线：
+
+~~~text
+uv sync
+uv lock --check
+uv run pytest
+git diff --check
+~~~
+
+测试不会调用真实模型，不会打开 PowerPoint，也不会执行完整 PPT Master AI workflow。
