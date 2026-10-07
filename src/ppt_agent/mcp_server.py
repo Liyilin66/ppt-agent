@@ -178,16 +178,20 @@ def _statistics(output_dir: Path) -> tuple[dict | None, str | None]:
         # This is the same fallback count already used by the generation result,
         # exposed from its persisted per-page outcomes rather than a new check.
         outcomes = report.get('outcomes')
-        fallback_count = (sum(item.get('status') == 'fallback' for item in outcomes)
-                          if isinstance(outcomes, list) else None)
+        fallback_numbers = ([item['page_number'] for item in outcomes
+                             if item.get('status') == 'fallback']
+                            if isinstance(outcomes, list) else None)
+        fallback_count = len(fallback_numbers) if fallback_numbers is not None else None
         return {
             'fallback_pages': fallback_count,
+            'fallback_page_numbers': fallback_numbers,
             'source_empty_pages': content.get('source_empty_pages'),
             'source_invalid_pages': content.get('source_invalid_pages'),
             'source_invalid_attempts': content.get('source_invalid_attempts'),
-            'estimated_cost_usd': usage.get('estimated_cost_usd'),
+            # Revisions overwrite this report; this is not a lifetime total.
+            'last_run_estimated_cost_usd': usage.get('estimated_cost_usd'),
         }, None
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return None, '运行报告尚不可读，可能正在写入或更新，请稍后重试。'
 
 

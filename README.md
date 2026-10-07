@@ -50,6 +50,7 @@ flowchart LR
 |---|---|---|
 | 100 页真实生成（联网资料，87 个内容页） | 约 10.5 分钟；退化 1 页（1.1%）；出处不合格 0 页；PowerPoint 实际抽查 28 页无溢出 | [scale-up-100](eval/results/scale-up-100-2026-10-06.md) |
 | 换一份没用过的 64 页报告（信通院） | 5 个一级章节全部识别；20 页导出后逐页检查无溢出；按章节分配资料 10/17 页 | [generalization](eval/results/generalization-2026-10-07.md) |
+| Claude Code 通过 MCP 真实运行 | 20 页约 5 分钟；修订 1 页约 1 分钟 | [MCP Claude Code 运行记录](eval/results/mcp-claude-code-2026-10-07.md) |
 | T3：63 页 CNNIC 报告，15 条标准事实 | 资料页送达 14/15（标准事实所在页是否进入了某一页的检索结果；不是语义召回率） | [T3 page recall](eval/results/T3-page-recall-2026-10-07.md) |
 
 数字核对的修正也用历史数据验证过：所有历史运行中被判为「指标不匹配」的 59 个数值重新检查，25 个改为放行，逐条对照原文均正确，34 个仍拦下。
@@ -105,7 +106,7 @@ claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mc
 将 `<仓库绝对路径>` 换成实际路径；路径包含空格时加引号。必须保留 `--directory`：服务靠工作目录找到 `.env` 和默认的 `data/`，否则可能读不到配置，或创建另一份任务数据库。网页与 MCP 应使用同一仓库目录；若配置了 `PPT_AGENT_DATA_DIR`，两边须指向同一个数据目录。注册或更新工具后，重新打开 Claude Code 会话。
 
 - `create_deck`：提交需求、页数和本地附件的绝对路径，立即返回 `job_id`。
-- `get_deck_status`：查询进度、已有质量与费用统计、完成后的 PPTX 绝对路径，以及最近一次修订结果。
+- `get_deck_status`：查询进度、已有质量统计、最近一次运行的估算费用（不累计）、完成后的 PPTX 绝对路径，以及最近一次修订结果。
 - `revise_deck`：提交修改要求和可选页码，立即返回 `revision_id`，结果通过 `get_deck_status` 查看。
 
 以下是示例指令，不是已经录制的真实运行结果：
@@ -119,8 +120,6 @@ claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mc
 **MCP 是对外入口，内部仍是固定的生成流程，不是让模型自己决定步骤。** Claude Code 调用工具提交需求和修改要求；生成、检索、核对和排版复用现有流程。
 
 任务跑在 MCP 进程里，会话关闭导致进程退出后，尚未完成的任务会中断，可以在网页的演示历史里续跑。同一个 MCP 进程同一时间只能有一个生成任务；同一份演示文稿也只能有一个修订在跑。工具返回本地绝对路径，不返回文件内容。
-
-<!-- TODO: 在完成真实 Claude Code 创建、查询、修订验收后，加入 MCP 演示 GIF。 -->
 
 ## 其他能力
 
@@ -146,7 +145,7 @@ claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mc
 uv run pytest
 ```
 
-1688 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
+1689 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
 
 ## License
 

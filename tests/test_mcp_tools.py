@@ -263,9 +263,11 @@ def test_mcp_status_reads_existing_report_fields_and_preserves_missing_values(tm
             output.mkdir(parents=True)
             report_path = output / 'generated_long_deck_v2_run_report.json'
             report_path.write_text(json.dumps({
-                'outcomes': [{'page_number': 1, 'status': 'ok'},
+                'outcomes': [{'page_number': 1, 'status': 'anchor'},
                              {'page_number': 2, 'status': 'fallback'},
-                             {'page_number': 3, 'status': 'fallback'}],
+                             {'page_number': 3, 'status': 'fallback'},
+                             {'page_number': 4, 'status': 'model'},
+                             {'page_number': 5, 'status': 'repaired'}],
                 'content_statistics': {'source_empty_pages': 3, 'source_invalid_pages': 2,
                                        'source_invalid_attempts': 4},
                 'usage': {'estimated_cost_usd': 0.125},
@@ -273,15 +275,15 @@ def test_mcp_status_reads_existing_report_fields_and_preserves_missing_values(tm
             before = report_path.read_bytes()
             result = _value(await client.call_tool('get_deck_status', {'job_id': job.job_id}))
             assert result['statistics'] == {
-                'fallback_pages': 2, 'source_empty_pages': 3, 'source_invalid_pages': 2,
-                'source_invalid_attempts': 4, 'estimated_cost_usd': 0.125,
+                'fallback_pages': 2, 'fallback_page_numbers': [2, 3], 'source_empty_pages': 3, 'source_invalid_pages': 2,
+                'source_invalid_attempts': 4, 'last_run_estimated_cost_usd': 0.125,
             }
             assert report_path.read_bytes() == before
             report_path.write_text('{}')
             result = _value(await client.call_tool('get_deck_status', {'job_id': job.job_id}))
             assert result['statistics'] == dict.fromkeys([
-                'fallback_pages', 'source_empty_pages', 'source_invalid_pages',
-                'source_invalid_attempts', 'estimated_cost_usd',
+                'fallback_pages', 'fallback_page_numbers', 'source_empty_pages', 'source_invalid_pages',
+                'source_invalid_attempts', 'last_run_estimated_cost_usd',
             ])
             report_path.unlink()
             result = _value(await client.call_tool('get_deck_status', {'job_id': job.job_id}))
@@ -324,4 +326,26 @@ def test_mcp_jpeg_source_is_accepted_and_forwarded_as_image(tmp_path, runtime, m
             status = _value(await client.call_tool('get_deck_status', {'job_id': result['job_id']}))
             assert status['status'] == 'succeeded', status
 
+    asyncio.run(check())
+
+
+def test_mcp_status_replaces_last_run_cost_and_fallback_pages_after_revision(tmp_path, runtime):
+    async def check():
+        async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
+            job = runtime[0].store.create_job(job_type='long_deck_v2')
+            runtime[0].store.update_job(job.job_id, status='succeeded')
+            output = tmp_path / 'data' / 'jobs' / job.job_id
+            output.mkdir(parents=True)
+            report_path = output / 'generated_long_deck_v2_run_report.json'
+            for cost, outcomes, expected in [
+                (0.5, [{'page_number': 4, 'status': 'fallback'}], [4]),
+                (0.0626, [{'page_number': 4, 'status': 'model'}], []),
+            ]:
+                report_path.write_text(json.dumps({'usage': {'estimated_cost_usd': cost},
+                                                   'outcomes': outcomes}))
+                value = _value(await client.call_tool('get_deck_status', {'job_id': job.job_id}))
+                assert value['statistics']['last_run_estimated_cost_usd'] == cost
+                assert value['statistics']['fallback_page_numbers'] == expected
+                assert value['statistics']['fallback_pages'] == len(expected)
+                assert 'estimated_cost_usd' not in value['statistics']
     asyncio.run(check())
