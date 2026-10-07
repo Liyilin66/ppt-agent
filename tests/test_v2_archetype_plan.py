@@ -168,3 +168,18 @@ def test_card_refs_show_the_domain_not_the_full_url():
         {'heading': 'a', 'body': 'b', 'ref': 'https://www.ckgsb.com/faculty/detail/78/21190.html 第1页'},
         {'heading': 'c', 'body': 'd', 'ref': 'report.pdf 第3页'}]})
     assert [i['ref'] for i in payload['items']] == ['www.ckgsb.com 第1页', 'report.pdf 第3页']
+
+
+def test_outline_section_with_zero_pages_does_not_abort_the_deck(tmp_path):
+    from ppt_agent.v2.mock import MockLLMClient
+    from ppt_agent.v2.orchestrator import BuildRequest, build_deck
+
+    class ZeroPages(MockLLMClient):
+        async def complete_json(self, **kw):
+            payload = await super().complete_json(**kw)
+            if kw['task'] == 'outline':
+                payload['sections'][-1]['content_pages'] = 0
+            return payload
+    result = build_deck(BuildRequest(prompt='零页章节', page_count=20, output_dir=str(tmp_path)),
+                        ZeroPages(), progress=lambda _: None)
+    assert result.pptx_path and result.page_count == 20

@@ -426,6 +426,11 @@ async def _run_outline_stage(
         user=prompts.build_outline_user_prompt(brief, content_budget=content_budget),
         context={"brief": brief.model_dump(mode="json"), "content_budget": content_budget},
     )
+    # content_pages are only weights (build_skeleton redistributes the budget),
+    # so a model's 0 or 50 for one section must not abort the whole deck.
+    for section in payload.get("sections") or [] if isinstance(payload, dict) else []:
+        if isinstance(section, dict) and isinstance(section.get("content_pages"), (int, float)):
+            section["content_pages"] = min(40, max(1, int(section["content_pages"])))
     outline = DeckOutline.model_validate(payload)
     skeleton = build_skeleton(
         outline, total_pages=request.page_count, language=brief.language
