@@ -9,6 +9,7 @@
 - **有出处**：资料按页码切分，每页只拿到与它相关的原文段落，页脚标注报告名和 PDF 页码，联网资料标注网站和标题；引用了没拿到的页会被剔除。
 - **数字核对**：页面上的每个数字都要在引用页里找到，而且要和它说明的指标对得上，否则重试，仍不过就删除。
 - **原生可编辑**：文字、形状、图表都是 PowerPoint 原生元素，不是截图；图表数据可以在 PowerPoint 里直接编辑。
+- **能被 AI Agent 调用**：自带 MCP 服务，可接入 Claude Code、Codex、Cursor 等，用一句话生成、查进度、改页（[接入方法](#作为-mcp-工具接入-claude-codecodex-等-agent)）。
 
 ## 解决什么问题
 
@@ -95,35 +96,67 @@ uv run ppt-agent v2 build --prompt "基于附件为管理层做一份行业汇�
 
 不调用模型的离线演示：`uv run ppt-agent v2 demo --prompt "AI Agent 入门" --pages 20 --output-dir out/demo`。
 
-## 在 Claude Code 中使用
+## 作为 MCP 工具接入 Claude Code、Codex 等 Agent
 
-先按“快速开始”配置仓库根目录的 `.env`，再注册本地 stdio MCP 服务：
+ppt-agent 自带一个本地 stdio MCP 服务，任何支持 MCP 的 Agent 都能直接调用它生成和修改 PPT。先按「快速开始」配置仓库根目录的 `.env`，所有客户端用的都是同一条启动命令：
 
 ```bash
-claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mcp
+uv --directory <仓库绝对路径> run ppt-agent mcp
 ```
 
-将 `<仓库绝对路径>` 换成实际路径；路径包含空格时加引号。必须保留 `--directory`：服务靠工作目录找到 `.env` 和默认的 `data/`，否则可能读不到配置，或创建另一份任务数据库。网页与 MCP 应使用同一仓库目录；若配置了 `PPT_AGENT_DATA_DIR`，两边须指向同一个数据目录。注册或更新工具后，重新打开 Claude Code 会话。
+| 客户端 | 配置方式 | 验证 |
+|---|---|---|
+| Claude Code | `claude mcp add ppt-agent -- uv --directory <仓库绝对路径> run ppt-agent mcp` | 已真实运行：生成 20 页并修订 1 页（[记录](eval/results/mcp-claude-code-2026-10-07.md)） |
+| Codex | 在 `~/.codex/config.toml` 中加入下面的 `[mcp_servers.ppt-agent]` | 已实测连接与调用：查询上面那次任务的状态，返回与记录一致；未在 Codex 中跑完整生成 |
+| Cursor、Claude Desktop 等 | 在各自的 MCP 配置文件中加入下面的 `mcpServers` JSON | 通用配置，未逐一实测 |
+
+Codex（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.ppt-agent]
+command = "uv"
+args = ["--directory", "<仓库绝对路径>", "run", "ppt-agent", "mcp"]
+startup_timeout_sec = 30  # 首次启动 uv 可能要先同步依赖
+```
+
+Cursor（`~/.cursor/mcp.json`）、Claude Desktop（`claude_desktop_config.json`）等使用 `mcpServers` 格式的客户端：
+
+```json
+{
+  "mcpServers": {
+    "ppt-agent": {
+      "command": "uv",
+      "args": ["--directory", "<仓库绝对路径>", "run", "ppt-agent", "mcp"]
+    }
+  }
+}
+```
+
+配置要点：
+
+- 必须保留 `--directory`：服务靠工作目录找到 `.env` 和默认的 `data/`，否则读不到模型配置，或另建一份任务数据库。网页与 MCP 使用同一个仓库目录，演示历史就是共享的；若设置了 `PPT_AGENT_DATA_DIR`，两边须指向同一个目录。
+- 桌面应用（Codex、Claude Desktop、Cursor）可能找不到 `uv`：把 `command` 换成 `which uv` 输出的绝对路径。
+- 注册或修改后，重开会话才会加载新工具。
+
+三个工具：
 
 - `create_deck`：提交需求、页数和本地附件的绝对路径，立即返回 `job_id`。
-- `get_deck_status`：查询进度、已有质量统计、最近一次运行的估算费用（不累计）、完成后的 PPTX 绝对路径，以及最近一次修订结果。
+- `get_deck_status`：查询进度、已有质量统计（含退化页页码）、最近一次运行的估算费用（不累计）、完成后的 PPTX 绝对路径，以及最近一次修订结果。
 - `revise_deck`：提交修改要求和可选页码，立即返回 `revision_id`，结果通过 `get_deck_status` 查看。
 
-以下是示例指令，不是已经录制的真实运行结果：
+生成要几分钟，所以工具都立即返回编号，由 Agent 轮询进度。对 Agent 说的话可以很简单：
 
 ```text
-你：用 /绝对路径/报告.pdf 做20页管理层汇报，使用咨询风格，覆盖各章并保留资料出处。
-你：查询刚才任务的进度，完成后给我 PPTX 路径。
-你：把第5页改成对比形式，再查询修订结果。
+你：用 /绝对路径/报告.pdf 给管理层做 20 页汇报，咨询风格，不联网。每分钟查一次进度，完成后告诉我 PPTX 路径和出处统计。
+你：把第 5 页改成对比形式，然后查询修订结果。
 ```
 
-**MCP 是对外入口，内部仍是固定的生成流程，不是让模型自己决定步骤。** Claude Code 调用工具提交需求和修改要求；生成、检索、核对和排版复用现有流程。
+**MCP 是对外入口，内部仍是固定的生成流程，不是让模型自己决定步骤。** Agent 负责提交需求和修改要求；生成、检索、核对和排版复用现有流程。
 
-任务跑在 MCP 进程里，会话关闭导致进程退出后，尚未完成的任务会中断，可以在网页的演示历史里续跑。同一个 MCP 进程同一时间只能有一个生成任务；同一份演示文稿也只能有一个修订在跑。工具返回本地绝对路径，不返回文件内容。
+限制：任务跑在 MCP 进程里，会话关闭导致进程退出后，未完成的任务会中断，可以在网页的演示历史里续跑。同一个 MCP 进程同一时间只能有一个生成任务；同一份演示文稿同时只能有一个修订。工具返回本地绝对路径，不返回文件内容。
 
 ## 其他能力
 
-- **MCP 入口**：在 Claude Code 中创建演示、查询进度和提交修订，复用现有生成流程。
 - **对话式创建**：一句话需求也能开始，Agent 每轮只追问一个关键问题；4-100 页可先编辑大纲和逐页脚本再生成。
 - **成片后用自然语言修改**：如「第 5 页改成对比」「全稿换成深蓝色」，只重做受影响的页面。
 - **图片转可编辑页面**：把 PPT 截图或信息图重建为原生文本、形状和图表。
