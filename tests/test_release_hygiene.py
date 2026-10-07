@@ -27,13 +27,12 @@ def test_readme_does_not_make_unsupported_marketing_claims() -> None:
     assert "production-ready SaaS" not in readme_text
     assert "perfect PPT generation" not in readme_text
 
-    rag_lines = [line for line in readme_text.splitlines() if "RAG" in line]
-    assert rag_lines
-    assert all("不支持 RAG" in line for line in rag_lines)
-
-    image_to_ppt_lines = [line for line in readme_text.splitlines() if "image-to-PPT" in line]
-    assert image_to_ppt_lines
-    assert all("不支持 image-to-PPT" in line for line in image_to_ppt_lines)
+    # Retrieval and image rebuild now exist; the README must not deny them, and
+    # rule-QA counts are not evidence that PowerPoint renders cleanly.
+    assert "不支持 RAG" not in readme_text
+    assert "不支持 image-to-PPT" not in readme_text
+    assert "0 error" not in readme_text
+    assert "尚未接搜索" not in readme_text and "尚未接入联网搜索" not in readme_text
 
 
 def test_release_checklist_exists_and_mentions_required_checks() -> None:
