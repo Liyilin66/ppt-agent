@@ -175,3 +175,26 @@ def test_retry_feedback_quotes_the_source_wording():
     lines = number_contexts([{'value': '80%', 'label': '企业采用率'}],
                             '据Gartner预测，到2026年，超过 80%的企业将使用生成式人工智能 API。')
     assert lines and '80%的企业将使用生成式人工智能' in lines[0]
+
+
+def test_time_series_and_shared_subject_values():
+    text = ('受益于大模型发展，人工智能领\n域融资占全行业融资比例持续上升，从 2022年的 4.5%上升至 2024\n'
+            '年上半年的 12.1%。2023年，生成式人工智能投融资规模达 252 亿美元。')
+    chart = ChartContent(title='融资占比', chart_title='AI融资占比', categories=['2022年', '2024年上半年'],
+                         values=[4.5, 12.1], unit_format='0.0"%"', insights=[{'text': '占比上升'}])
+    assert check_content_numbers(chart, text) == []
+    swapped = chart.model_copy(update={'values': [12.1, 4.5]})
+    assert {i['path'] for i in check_content_numbers(swapped, text)} == {'values.0', 'values.1'}
+    assert check_content_numbers(_claim('12.1%', '人工智能融资占比'), text) == []
+    assert check_content_numbers(_claim('12.1%', '投融资规模'), text)
+    # A list is not a shared subject.
+    assert check_content_numbers(_claim('30.0%', '回答问题'), '回答问题 80.9%，作为生活助手 30.0%。')
+
+
+def test_chart_fallback_support_reads_as_phrases():
+    page = ChartContent(title='融资', chart_title='融资占比', categories=['2022年', '2024年上半年', '2025年'],
+                        values=[4.5, 12.1, 99], unit_format='0.0"%"', insights=[{'text': '占比持续上升'}])
+    clean, _ = sanitize_content_numbers(page, [{'path': 'values.1', 'value': '12.1', 'label': ''},
+                                               {'path': 'values.2', 'value': '99', 'label': ''}])
+    assert clean.archetype == 'statement'
+    assert clean.support == '2022年 4.5%；占比持续上升'

@@ -36,7 +36,11 @@ def _label_tokens(label: str) -> list[str]:
     return tokens
 
 
-def _covers(segment: str, tokens: list[str], head: str, *, tail: bool) -> bool:
+def _covers(segment: str, tokens: list[str], head: str, *, tail: bool, years=()) -> bool:
+    if any(year not in segment for year in years):
+        return False
+    if not tokens:
+        return bool(years)  # a time-series category: "2022年" binds by its year
     found = [segment.rfind(token) for token in tokens]
     matched = [(i, token) for i, token in zip(found, tokens) if i >= 0]
     if len(matched) < min(2, len(tokens)) or len(matched) < len(tokens) / 2:
@@ -64,7 +68,8 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
     are part of the label (Llama 2) and years do not end the span.
     """
     tokens = _label_tokens(label)
-    if not tokens:
+    years = _YEAR.findall(label)
+    if not tokens and not years:
         return False
     own = {_key(m.group()) for m in _NUMBER.finditer(label)}
     runs = re.findall(r'[\u3400-\u9fff]{2,}', label)
@@ -77,15 +82,15 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
         return bool(re.fullmatch(r'\d{1,3}', n.group()) and n.start() and not text[n.start() - 1].isspace()
                     and text[n.end():n.end() + 1] in ('', '\n', '。', '，', '；'))
 
-    lo = max(0, match.start() - 40)
+    lo, prev = max(0, match.start() - 40), None
     for n in reversed(numbers):
         if lo < n.end() <= match.start() and not skip(n):
-            lo = n.end()
+            lo, prev = n.end(), n
             break
     before = re.sub(r'\s+', '', text[lo:match.start()]).lower()
     opens_line = not re.search(r'[\u3400-\u9fffA-Za-z]', text[text.rfind('\n', 0, match.start()) + 1:match.start()])
     labelled_before = bool(re.search(r'[\u3400-\u9fffa-z]', before))
-    if labelled_before and _covers(before, tokens, head, tail=True):
+    if labelled_before and _covers(before, tokens, head, tail=True, years=years):
         return True
     # Chinese prose often puts the value first ("78% 的企业应用了…", "552吨二氧化碳").
     # The value owns the following words up to the end of its clause; text that
@@ -100,9 +105,17 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
         if match.end() <= n.start() < hi and not skip(n):
             hi, closed = n.start(), False
             break
-    if not (closed or (opens_line and not labelled_before)):
-        return False
-    return _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False)
+    if closed or (opens_line and not labelled_before):
+        if _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False, years=years):
+            return True
+    # One subject, several values: "融资占比从2022年的4.5%上升至2024年上半年的12.1%".
+    # Only a 至/到 continuation shares the earlier subject; a list does not.
+    if prev is not None and re.search(r'[至到]', text[prev.end():match.start()]) \
+            and not re.search(r'[A-Za-z]', text[prev.end():match.start()]):
+        start = max(text.rfind(mark, 0, prev.start()) for mark in '。；')  # PDF lines wrap mid-sentence
+        clause = re.sub(r'\s+', '', text[max(start + 1, prev.start() - 60):prev.start()]).lower()
+        return _covers(clause, tokens, head, tail=False, years=())
+    return False
 
 
 _DECREASE = re.compile(r'减少|下降|降低|缩短|减轻|降幅|下滑|减重|减')
@@ -201,6 +214,23 @@ def check_content_numbers(content, evidence) -> list[dict]:
     return issues
 
 
+def _readable_fragments(data: dict) -> list[str]:
+    """Surviving body copy as phrases a reader can follow, not raw field values."""
+    def pair(label, value, unit=''):
+        return f"{label} {value}{unit}".strip()
+    unit='%' if '%' in (data.get('unit_format') or '') else ''
+    result=[]
+    result += [pair(m['label'],m['value']) for m in data.get('metrics',[])]
+    result += [pair(c,f"{v:g}",unit) for c,v in zip(data.get('categories',[]),data.get('values',[]))]
+    result += [i['text'] for i in data.get('insights',[])]
+    result += [f"{i['heading']}：{i['body']}" for i in data.get('items',[])]
+    result += [f"{i['label']}：{i['body']}" for i in data.get('steps',[])]
+    result += [pair(m['date'],m['label']) for m in data.get('milestones',[])]
+    for side in ('left','right'):
+        result += (data.get(side) or {}).get('points',[])
+    return [text for text in dict.fromkeys(result) if text]
+
+
 def sanitize_content_numbers(content, issues: list[dict]):
     """Remove bad claims, preserve valid neighbours, and return valid content."""
     data=content.model_dump(mode='json')
@@ -232,10 +262,7 @@ def sanitize_content_numbers(content, issues: list[dict]):
     except ValidationError:
         # When the archetype minimum cardinality fails, carry surviving copy in
         # a qualitative statement; all surviving visible text remains checked.
-        fragments=[]
-        for path,text,_ in _fields(data):
-            if path not in {'title','kicker','lead','takeaway'}:
-                fragments.append(text)
+        fragments=_readable_fragments(data)
         base={k:data[k] for k in ('title','kicker','lead','takeaway','source','speaker_notes')}
         kept=[]
         for fragment in fragments:

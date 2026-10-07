@@ -256,6 +256,12 @@ def trim_overlong_lists(payload):
     """
     if not isinstance(payload, dict):
         return payload, []
+    if isinstance(payload.get('items'), list):
+        # A card ref is a short label; the page source keeps the full URL.
+        payload = {**payload, 'items': [
+            {**item, 'ref': re.sub(r'https?://([^/\s]+)\S*', r'\1', item['ref'])}
+            if isinstance(item, dict) and isinstance(item.get('ref'), str) else item
+            for item in payload['items']]}
     limit = _LIST_LIMITS.get(payload.get('archetype'))
     if not limit:
         return payload, []

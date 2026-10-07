@@ -160,3 +160,11 @@ def test_structural_titles_keep_years_but_drop_statistics():
     assert qualitative_structural_text('人工智能发展报告（2024年）', 'deck_title', 1, removed) == '人工智能发展报告（2024年）'
     assert qualitative_structural_text('用户规模达5.15亿', 'subtitle', 1, removed) == '用户规模达'
     assert [r['value'] for r in removed] == ['5.15亿']
+
+
+def test_card_refs_show_the_domain_not_the_full_url():
+    from ppt_agent.v2.typeset_pipeline import trim_overlong_lists
+    payload, _ = trim_overlong_lists({'archetype': 'points', 'items': [
+        {'heading': 'a', 'body': 'b', 'ref': 'https://www.ckgsb.com/faculty/detail/78/21190.html 第1页'},
+        {'heading': 'c', 'body': 'd', 'ref': 'report.pdf 第3页'}]})
+    assert [i['ref'] for i in payload['items']] == ['www.ckgsb.com 第1页', 'report.pdf 第3页']
