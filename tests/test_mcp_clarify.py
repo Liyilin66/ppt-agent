@@ -199,3 +199,32 @@ def test_only_the_latest_sixty_turns_are_kept(runtime):
         turns = json.loads(runtime[0].store.get_mcp_brief_session(state['session_id']).turns_json)
         assert len(turns) == 60 and turns[0] == '第 3 轮' and turns[-1] == '第 62 轮'
     run(runtime, scenario)
+
+
+def test_failed_job_is_not_reused_and_the_new_job_is_recorded(runtime, report, monkeypatch):
+    actual = deck_jobs.build_v2_deck
+    attempts = []
+
+    def fail_first(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError('offline provider failure')
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(deck_jobs, 'build_v2_deck', fail_first)
+
+    async def scenario(call, wait):
+        state = await call('prepare_deck', user_message='按附件做 6 页', updates=DETAILED,
+                           source_paths=[str(report)])
+        session = state['session_id']
+        first = await call('create_deck', session_id=session)
+        await wait()
+        assert (await call('get_deck_status', job_id=first['job_id']))['status'] == 'failed'
+        again = await call('prepare_deck', user_message='上次失败了', session_id=session)
+        assert again['status'] == 'ready'
+        retried = await call('create_deck', session_id=session)
+        assert retried['existing'] is False and retried['job_id'] != first['job_id']
+        assert runtime[0].store.get_mcp_brief_session(session).job_id == retried['job_id']
+        await wait()
+        assert (await call('get_deck_status', job_id=retried['job_id']))['status'] == 'succeeded'
+    run(runtime, scenario)

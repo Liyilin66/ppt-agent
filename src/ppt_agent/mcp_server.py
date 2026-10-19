@@ -208,6 +208,18 @@ def _statistics(output_dir: Path) -> tuple[dict | None, str | None]:
         return None, '运行报告尚不可读，可能正在写入或更新，请稍后重试。'
 
 
+# A job in any other state (failed, cancelled) does not count as generated.
+REUSABLE_JOB_STATUSES = frozenset({'pending', 'running', 'succeeded', 'failed_quality_gate'})
+
+
+def _reusable_job(store, session, brief_hash: str):
+    """The session's job for this exact brief, if it is still alive or delivered."""
+    if not session.job_id or session.job_brief_hash != brief_hash:
+        return None
+    job = store.get_job(session.job_id)
+    return job if job is not None and job.status in REUSABLE_JOB_STATUSES else None
+
+
 def _has_documents(sources) -> bool:
     return any(source.kind == 'document' and source.readable for source in sources)
 
@@ -282,8 +294,7 @@ def create_server() -> FastMCP:
         except Exception as exc:  # malformed input leaves the session untouched
             return {'error': '无法更新需求：' + sanitize_error_message(exc)}
         status = evaluation.status
-        if (session and session.job_id and status == 'ready'
-                and session.job_brief_hash == evaluation.brief_hash):
+        if status == 'ready' and session and _reusable_job(store, session, evaluation.brief_hash):
             status = 'generated'
         saved = dict(
             status=status, brief_json=brief.model_dump_json(),
@@ -360,9 +371,9 @@ def create_server() -> FastMCP:
                 if evaluation.brief_hash != session.brief_hash:
                     return {'error': '资料或需求在上次 prepare_deck 之后发生了变化，请重新调用 prepare_deck 确认。',
                             'session_id': session.session_id}
-                if session.job_id and session.job_brief_hash == evaluation.brief_hash:
-                    job = store.get_job(session.job_id)
-                    return {'job_id': session.job_id, 'status': job.status if job else 'unknown', 'existing': True,
+                job = _reusable_job(store, session, evaluation.brief_hash)
+                if job is not None:
+                    return {'job_id': job.job_id, 'status': job.status, 'existing': True,
                             'message': '这份需求已经生成过任务（已存在），没有重复生成；请用 get_deck_status 查询。'}
             documents, images = _source_paths(paths)
             payload = to_job_request(brief)
