@@ -121,3 +121,30 @@ def test_job_request_states_audience_and_delegated_choices():
 def test_job_request_refuses_an_unsettled_brief():
     with pytest.raises(ValueError, match="目的"):
         to_job_request(filled(topic=user("AI Agent")))
+
+
+def test_hash_covers_the_exact_source_files(tmp_path):
+    brief = filled(**DETAILED)
+    first = summarize_sources([two_section_md(tmp_path)])
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    other = other_dir / "季度经营简报.md"
+    other.write_text("# 收入\n三季度收入 1.3 亿元。\n\n# 成本\n毛利率 39%。\n", encoding="utf-8")
+    picture = tmp_path / "趋势图.png"
+    picture.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    assert brief_hash(brief, first) == brief_hash(brief, summarize_sources([two_section_md(tmp_path)]))
+    assert brief_hash(brief, first) != brief_hash(brief, summarize_sources([other]))
+    assert brief_hash(brief, first) != brief_hash(brief, first + summarize_sources([picture]))
+    assert brief_hash(brief, first) != brief_hash(brief)
+    assert evaluate(brief, first).brief_hash == brief_hash(brief, first)
+
+
+def test_image_is_a_usable_asset_not_a_document(tmp_path):
+    picture = tmp_path / "趋势图.png"
+    picture.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    sources = summarize_sources([two_section_md(tmp_path), picture])
+    image = sources[1]
+    assert (image.kind, image.readable, image.name, image.pages) == ("image", True, "趋势图.png", 0)
+    assert image.sha256 and not image.warnings
+    result = evaluate(filled(**DETAILED), sources)
+    assert result.status == "ready" and result.conflicts == []

@@ -28,6 +28,8 @@ SourcePolicy = Literal["materials_only", "materials_and_web", "web_only", "none"
 REQUIRED_FIELDS = ("purpose", "audience", "topic", "slide_count", "source_policy")
 # Only facts a document can state; who the deck is for and why stay the user's call.
 SOURCE_FIELDS = frozenset({"topic", "content_focus"})
+DOCUMENT_SUFFIXES = frozenset({".pdf", ".docx", ".md", ".txt"})
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 MIN_SLIDES, MAX_SLIDES = 4, 100  # the v2 pipeline behind the MCP tools
 SLIDES_PER_SOURCE_PAGE = 3
 CHARS_PER_SOURCE_PAGE = 1500  # so one long Markdown section is not read as one page
@@ -88,7 +90,9 @@ class UpdateResult(StrictModel):
 class SourceSummary(StrictModel):
     name: str
     path: str
+    kind: Literal["document", "image"] = "document"  # images are page assets, not text evidence
     readable: bool
+    sha256: str | None = None
     pages: int = 0
     page_kind: str | None = None  # "PDF" = physical pages; "logical" = heading sections
     characters: int = 0
@@ -152,16 +156,39 @@ def apply_updates(brief: ClarifyBrief, updates: Mapping[str, Mapping[str, Any]])
     return UpdateResult(brief=ClarifyBrief(values=values, origins=origins), skipped=skipped)
 
 
+def _file_sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def summarize_sources(paths: Iterable[str | Path]) -> list[SourceSummary]:
-    """Pages, chapter titles and parse warnings per file; unreadable files say so."""
+    """Pages, chapter titles and parse warnings per file; unreadable files say so.
+
+    Images are listed as picture assets: usable on slides, never counted as
+    pages of evidence and never parsed as documents.
+    """
     from ppt_agent.v2.evidence import EvidenceStore
 
     paths = [Path(path) for path in paths]
-    store = EvidenceStore.from_paths(paths)
+    documents = [path for path in paths if path.suffix.lower() in DOCUMENT_SUFFIXES]
+    store = EvidenceStore.from_paths(documents)
     by_path = {doc["path"]: doc for doc in store.documents}
     summaries = []
     for path in paths:
         resolved = str(path.resolve())
+        suffix = path.suffix.lower()
+        if suffix in IMAGE_SUFFIXES:
+            digest = _file_sha256(path) if path.is_file() else None
+            summaries.append(SourceSummary(
+                name=path.name, path=resolved, kind="image", readable=digest is not None, sha256=digest,
+                warnings=[] if digest else ["未能读取该图片"]))
+            continue
+        if suffix not in DOCUMENT_SUFFIXES:
+            summaries.append(SourceSummary(name=path.name, path=resolved, readable=False,
+                                           warnings=[f"不支持的文件类型：{path.suffix or '无扩展名'}"]))
+            continue
         doc = by_path.pop(resolved, None)  # a second copy of the same file was excluded
         warnings = [w for w in store.warnings if w.endswith(path.name) or f" {path.name}:" in w]
         if doc is None:
@@ -172,22 +199,28 @@ def summarize_sources(paths: Iterable[str | Path]) -> list[SourceSummary]:
         if characters == 0:
             warnings.append("没有提取到文字（可能是扫描件或图片 PDF），不能当作已读")
         summaries.append(SourceSummary(
-            name=doc["name"], path=resolved, readable=characters > 0, pages=len(doc["pages"]),
-            page_kind=doc["page_kind"], characters=characters,
+            name=doc["name"], path=resolved, readable=characters > 0, sha256=doc["sha256"],
+            pages=len(doc["pages"]), page_kind=doc["page_kind"], characters=characters,
             chapters=[c["title"] for c in store.chapters if c["doc_id"] == doc["doc_id"]], warnings=warnings))
     return summaries
 
 
-def brief_hash(brief: ClarifyBrief) -> str:
-    """Fingerprint of what would be generated; a confirmation must match it."""
-    payload = json.dumps(brief.values.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+def brief_hash(brief: ClarifyBrief, sources: Iterable[SourceSummary] = ()) -> str:
+    """Fingerprint of what would be generated: the brief and the exact files.
+
+    A confirmation must match it, so swapping a report or picture after the
+    user agreed invalidates the agreement.
+    """
+    files = sorted(source.sha256 for source in sources if source.readable and source.sha256)
+    payload = json.dumps({"brief": brief.values.model_dump(mode="json"), "files": files},
+                         ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _conflicts(values: BriefValues, sources: list[SourceSummary]) -> list[Conflict]:
     conflicts = [Conflict(field="sources", message=f"「{s.name}」未能读取：{'；'.join(s.warnings)}")
                  for s in sources if not s.readable]
-    readable = [s for s in sources if s.readable]
+    readable = [s for s in sources if s.readable and s.kind == "document"]
     if values.slide_count is not None and not MIN_SLIDES <= values.slide_count <= MAX_SLIDES:
         conflicts.append(Conflict(field="slide_count",
                                   message=f"生成需要 {MIN_SLIDES}–{MAX_SLIDES} 页，当前是 {values.slide_count} 页"))
@@ -209,7 +242,8 @@ def evaluate(brief: ClarifyBrief, source_summary: list[SourceSummary] | None = N
     """Ready only when every required field is settled and nothing contradicts."""
     values = brief.values
     missing = [name for name in REQUIRED_FIELDS if brief.origin(name) == "missing" or _is_empty(getattr(values, name))]
-    conflicts = _conflicts(values, list(source_summary or []))
+    sources = list(source_summary or [])
+    conflicts = _conflicts(values, sources)
     defaults = []
     if brief.origin("language") == "default":
         defaults.append(DefaultUsed(field="language", value=values.language, note="未指定语言，默认中文"))
@@ -224,7 +258,7 @@ def evaluate(brief: ClarifyBrief, source_summary: list[SourceSummary] | None = N
     return BriefEvaluation(
         status="clarifying" if missing or conflicts else "ready", missing=missing,
         conflicts=conflicts, defaults_used=defaults, next_question=next_question,
-        brief_hash=brief_hash(brief))
+        brief_hash=brief_hash(brief, sources))
 
 
 def _requirements_text(brief: ClarifyBrief) -> str:
