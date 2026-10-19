@@ -12,18 +12,31 @@ import sys
 from uuid import uuid4
 from threading import Condition, Thread
 from time import monotonic
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
 
 from ppt_agent import __version__, deck_jobs
+from ppt_agent.mcp_brief import (
+    ClarifyBrief, apply_updates, brief_summary, evaluate, fields_view, summarize_sources, to_job_request,
+)
 from ppt_agent.runtime import load_dotenv_file, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 DOCUMENT_SUFFIXES = {'.pdf', '.docx', '.md', '.txt'}
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp'}
 MAX_SOURCES = 20  # Same limit as CreateLongDeckJobRequest.attachment_ids.
+MAX_TURNS = 60  # user turns kept per clarification session
+
+PLANNING_RULES = """生成 PPT 前先用 prepare_deck 整理需求：
+1. 先把用户原话和附件路径交给 prepare_deck，读完返回的资料摘要（source_summary），再决定要不要提问。
+2. 每轮只问一个问题，围绕 next_question；尽量给 2 到 4 个选项，同时允许自由回答。等用户回答后，再把答案作为 updates 传回 prepare_deck。
+3. 只把用户明确说过的内容记为 user。不要替用户编造受众、目的或数字。资料里写明的主题和重点内容可以记为 source。
+4. 用户说"你来定"或"不知道"时，给出一个具体推荐值，记为 delegated，这一项不再追问。
+5. 已经回答过的不要重复问；defaults_used 里的项不当作必答题。
+6. 状态变为 ready 后：如果澄清过程中改变了范围，或补充了重要假设，先用两三句话展示 summary，等用户确认；如果用户一开始就给了详细需求并要求生成，直接调用 create_deck(session_id=...)。
+7. 用户中途改口，只更新受影响的字段，然后重新调用 prepare_deck。"""
 
 
 @dataclass
@@ -195,6 +208,17 @@ def _statistics(output_dir: Path) -> tuple[dict | None, str | None]:
         return None, '运行报告尚不可读，可能正在写入或更新，请稍后重试。'
 
 
+def _has_documents(sources) -> bool:
+    return any(source.kind == 'document' and source.readable for source in sources)
+
+
+def _derived_policy(has_documents: bool, search: bool) -> str:
+    """Direct calls state no policy; infer it from files and the search switch."""
+    if has_documents:
+        return 'materials_and_web' if search else 'materials_only'
+    return 'web_only' if search else 'none'
+
+
 def create_server() -> FastMCP:
     """Use the web app's environment, data directory and SQLite job store."""
     load_dotenv_file()
@@ -215,34 +239,135 @@ def create_server() -> FastMCP:
             with context.condition:
                 context.closed = True
 
-    server = FastMCP('ppt-agent', lifespan=lifespan)
+    server = FastMCP('ppt-agent', instructions=PLANNING_RULES, lifespan=lifespan)
+
+    @server.prompt()
+    def plan_deck() -> str:
+        """How to settle the user's requirements with prepare_deck before create_deck."""
+        return PLANNING_RULES
+
+    @server.tool()
+    async def prepare_deck(
+        user_message: Annotated[str, Field(min_length=1)],
+        ctx: Context,
+        session_id: str | None = None,
+        updates: dict[str, dict[str, Any]] | None = None,
+        source_paths: list[str] | None = None,
+    ) -> dict:
+        """Record one turn of requirement clarification and say what to ask next.
+
+        Pass the user's words every turn. updates maps a field to
+        {"value": ..., "origin": "user" | "source" | "delegated"}; source_paths
+        (absolute local paths) replaces the session's files. Generates nothing.
+        """
+        context: MCPContext = ctx.request_context.lifespan_context
+        store = context.store
+        try:
+            session = store.get_mcp_brief_session(session_id) if session_id else None
+            if session_id and session is None:
+                return {'error': '需求会话不存在：' + session_id}
+            brief = ClarifyBrief.model_validate_json(session.brief_json) if session else ClarifyBrief()
+            paths = json.loads(session.source_paths_json) if session else []
+            turns = json.loads(session.turns_json) if session else []
+            if source_paths is not None:
+                _source_paths(source_paths)
+                paths = [str(Path(value).resolve()) for value in source_paths]
+            # Re-read every turn: a file edited between turns must not keep its old summary.
+            sources = summarize_sources(paths)
+            result = apply_updates(brief, updates or {})
+            brief = result.brief
+            if brief.origin('source_policy') == 'missing' and _has_documents(sources):
+                brief = apply_updates(brief, {'source_policy': {'value': 'materials_only', 'origin': 'user'}}).brief
+            evaluation = evaluate(brief, sources)
+        except Exception as exc:  # malformed input leaves the session untouched
+            return {'error': '无法更新需求：' + sanitize_error_message(exc)}
+        status = evaluation.status
+        if (session and session.job_id and status == 'ready'
+                and session.job_brief_hash == evaluation.brief_hash):
+            status = 'generated'
+        saved = dict(
+            status=status, brief_json=brief.model_dump_json(),
+            source_paths_json=json.dumps(paths, ensure_ascii=False),
+            source_summary_json=json.dumps([s.model_dump(mode='json') for s in sources], ensure_ascii=False),
+            turns_json=json.dumps((turns + [user_message])[-MAX_TURNS:], ensure_ascii=False),
+            brief_hash=evaluation.brief_hash,
+        )
+        session = (store.update_mcp_brief_session(session.session_id, **saved) if session
+                   else store.create_mcp_brief_session(**saved))
+        return {
+            'session_id': session.session_id, 'status': status,
+            'summary': brief_summary(brief, sources), 'fields': fields_view(brief),
+            'missing': evaluation.missing,
+            'conflicts': [c.model_dump() for c in evaluation.conflicts],
+            'defaults_used': [d.model_dump() for d in evaluation.defaults_used],
+            'next_question': evaluation.next_question.model_dump() if evaluation.next_question else None,
+            'skipped': [s.model_dump() for s in result.skipped],
+            'source_summary': [s.model_dump(mode='json') for s in sources],
+            'brief_hash': evaluation.brief_hash, 'job_id': session.job_id,
+        }
 
     @server.tool()
     async def create_deck(
-        topic: Annotated[str, Field(min_length=1)],
-        requirements: Annotated[str, Field(min_length=1)],
         ctx: Context,
-        pages: Annotated[int, Field(ge=4, le=100)] = 20,
-        audience: str = '未指定',
+        session_id: str | None = None,
+        topic: str | None = None,
+        requirements: str | None = None,
+        purpose: str | None = None,
+        audience: str | None = None,
+        pages: int | None = None,
         source_paths: list[str] | None = None,
         search: bool = False,
         style: Literal['consulting', 'launch', 'training', 'corporate'] | None = None,
     ) -> dict:
-        """Start an editable PPT task and return its ID without waiting for generation.
+        """Start generating a settled brief; returns a job ID without waiting.
 
-        source_paths accepts up to 20 absolute local document/image paths.
-        Only one generation may run at a time. Poll get_deck_status for the PPTX.
+        Prefer session_id from a prepare_deck session whose status is ready; the
+        other arguments are then ignored. A direct call must state topic,
+        purpose, audience and pages, or it is refused. Only one generation runs
+        at a time. Poll get_deck_status for the PPTX.
         """
         context: MCPContext = ctx.request_context.lifespan_context
+        store = context.store
         try:
-            documents, images = _source_paths(source_paths or [])
-            if search and not os.environ.get('TAVILY_API_KEY', '').strip():
+            session = None
+            if session_id:
+                session = store.get_mcp_brief_session(session_id)
+                if session is None:
+                    return {'error': '需求会话不存在：' + session_id}
+                brief = ClarifyBrief.model_validate_json(session.brief_json)
+                paths = json.loads(session.source_paths_json)
+            else:
+                paths = list(source_paths or [])
+                documents, _ = _source_paths(paths)
+                given = {'topic': topic, 'purpose': purpose, 'slide_count': pages,
+                         'user_requirements': requirements, 'style_profile': style,
+                         'audience': None if audience == '未指定' else audience,
+                         'source_policy': _derived_policy(bool(documents), search)}
+                brief = apply_updates(ClarifyBrief(), {
+                    name: {'value': value, 'origin': 'user'} for name, value in given.items() if value is not None
+                }).brief
+            sources = summarize_sources(paths)
+            evaluation = evaluate(brief, sources)
+            if evaluation.status != 'ready':
+                return {
+                    'error': ('需求还没有确定，请继续用 prepare_deck 澄清。' if session
+                              else '需求不完整或有冲突，请先用 prepare_deck 澄清需求。'),
+                    'missing': evaluation.missing,
+                    'conflicts': [c.model_dump() for c in evaluation.conflicts],
+                    'next_question': evaluation.next_question.model_dump() if evaluation.next_question else None,
+                }
+            if session:
+                if evaluation.brief_hash != session.brief_hash:
+                    return {'error': '资料或需求在上次 prepare_deck 之后发生了变化，请重新调用 prepare_deck 确认。',
+                            'session_id': session.session_id}
+                if session.job_id and session.job_brief_hash == evaluation.brief_hash:
+                    job = store.get_job(session.job_id)
+                    return {'job_id': session.job_id, 'status': job.status if job else 'unknown', 'existing': True,
+                            'message': '这份需求已经生成过任务（已存在），没有重复生成；请用 get_deck_status 查询。'}
+            documents, images = _source_paths(paths)
+            payload = to_job_request(brief)
+            if payload.enable_search and not os.environ.get('TAVILY_API_KEY', '').strip():
                 raise ValueError('联网搜索未配置：请设置 TAVILY_API_KEY。')
-            payload = deck_jobs.CreateLongDeckJobRequest(
-                topic=topic, audience=audience, user_requirements=requirements,
-                slide_count=pages, deck_type='visual_design_v2', layout_engine='typeset',
-                style_profile=style, enable_search=search,
-            )
             with context.condition:
                 if context.closed:
                     return {'error': 'MCP 服务已关闭。'}
@@ -256,7 +381,10 @@ def create_server() -> FastMCP:
                     context.store, context.data_dir / 'jobs', client, payload,
                     submit=context.submit_generation, document_paths=documents, image_paths=images,
                 )
-            return {'job_id': job.job_id, 'status': job.status,
+            if session:
+                store.update_mcp_brief_session(session.session_id, status='generated', job_id=job.job_id,
+                                               job_brief_hash=evaluation.brief_hash)
+            return {'job_id': job.job_id, 'status': job.status, 'existing': False,
                     'message': '生成通常需要几分钟，请用 get_deck_status 查询进度和 PPTX 路径。'}
         except Exception as exc:
             return {'error': '无法创建任务：' + sanitize_error_message(exc)}

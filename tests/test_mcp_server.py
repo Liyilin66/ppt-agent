@@ -25,7 +25,7 @@ def test_status_over_sdk_memory_connection_loads_dotenv_and_shared_store(tmp_pat
     async def check():
         async with create_connected_server_and_client_session(create_server()) as client:
             tools = await client.list_tools()
-            assert {tool.name for tool in tools.tools} == {'create_deck', 'get_deck_status', 'revise_deck'}
+            assert {tool.name for tool in tools.tools} == {'prepare_deck', 'create_deck', 'get_deck_status', 'revise_deck'}
             result = await client.call_tool('get_deck_status', {'job_id': job.job_id})
             assert result.isError is False
             value = result.structuredContent or json.loads(result.content[0].text)
@@ -65,7 +65,7 @@ def test_stdio_cli_emits_only_protocol_and_logs_to_stderr(tmp_path):
         assert receive()['id'] == 1
         send({'jsonrpc':'2.0','method':'notifications/initialized'})
         send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}})
-        assert {t['name'] for t in receive()['result']['tools']} == {'create_deck', 'get_deck_status', 'revise_deck'}
+        assert {t['name'] for t in receive()['result']['tools']} == {'prepare_deck', 'create_deck', 'get_deck_status', 'revise_deck'}
         send({'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'get_deck_status','arguments':{'job_id':job.job_id}}})
         result = receive()['result']
         assert result.get('isError', False) is False

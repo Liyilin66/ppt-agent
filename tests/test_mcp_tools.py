@@ -35,6 +35,10 @@ def runtime(tmp_path, monkeypatch):
     return contexts
 
 
+# Direct create_deck calls must now state purpose, audience and pages.
+SETTLED = {'purpose': '离线测试生成流程', 'audience': '测试人员', 'pages': 4}
+
+
 async def _wait(runtime):
     await asyncio.to_thread(runtime[0].wait_for_idle, 10)
 
@@ -47,8 +51,8 @@ def test_mcp_complete_create_status_revision_and_web_history(tmp_path, runtime):
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
             assert {t.name for t in (await client.list_tools()).tools} == {
-                'create_deck', 'get_deck_status', 'revise_deck'}
-            arguments = {'topic': '企业工具培训', 'requirements': '一页一观点，清晰易懂',
+                'prepare_deck', 'create_deck', 'get_deck_status', 'revise_deck'}
+            arguments = {'topic': '企业工具培训', 'requirements': '一页一观点，清晰易懂', **SETTLED,
                          'pages': 4, 'source_paths': [str(source)], 'style': 'training'}
             created = _value(await client.call_tool('create_deck', arguments))
             examples.append({'tool': 'create_deck', 'input': arguments, 'output': created})
@@ -104,7 +108,7 @@ def test_mcp_invalid_paths_parameters_and_unknown_job_leave_store_empty(tmp_path
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
             for case in cases:
-                result = await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', **case})
+                result = await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', **SETTLED, **case})
                 if not result.isError:
                     assert _value(result).get('error'), (case, result)
             missing = _value(await client.call_tool('get_deck_status', {'job_id': 'missing'}))
@@ -124,7 +128,7 @@ def test_mcp_missing_model_configuration_creates_no_job(tmp_path, runtime, monke
 
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
-            value = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试'}))
+            value = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', **SETTLED}))
             assert value['error']
             assert 'KEY' in value['error'] or '模型' in value['error']
             assert runtime[0].store.get_latest_job() is None
@@ -145,9 +149,9 @@ def test_mcp_busy_generation_and_early_revision_are_rejected(tmp_path, runtime, 
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
             try:
-                first = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', 'pages': 4}))
+                first = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', **SETTLED}))
                 assert await asyncio.to_thread(entered.wait, 10)
-                second = _value(await client.call_tool('create_deck', {'topic': '再次创建', 'requirements': '测试'}))
+                second = _value(await client.call_tool('create_deck', {'topic': '再次创建', 'requirements': '测试', **SETTLED}))
                 assert second['error']
                 assert second['job_id'] == first['job_id']
                 early = _value(await client.call_tool('revise_deck', {'job_id': first['job_id'], 'instruction': '第3页改成对比'}))
@@ -184,7 +188,7 @@ def test_mcp_same_job_cannot_have_two_running_revisions(tmp_path, runtime, monke
 
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
-            created = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', 'pages': 4}))
+            created = _value(await client.call_tool('create_deck', {'topic': '测试', 'requirements': '测试', **SETTLED}))
             await _wait(runtime)
             arguments = {'job_id': created['job_id'], 'instruction': '第3页改成对比', 'page_numbers': [3]}
             try:
@@ -222,7 +226,7 @@ def test_mcp_local_sources_are_staged_for_web_resume(tmp_path, runtime, monkeypa
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
             created = _value(await client.call_tool('create_deck', {
-                'topic': '资料持久化', 'requirements': '保留原始材料', 'pages': 4,
+                'topic': '资料持久化', 'requirements': '保留原始材料', **SETTLED,
                 'source_paths': [str(document), str(image)],
             }))
             await _wait(runtime)
@@ -312,8 +316,8 @@ def test_mcp_jpeg_source_is_accepted_and_forwarded_as_image(tmp_path, runtime, m
     async def check():
         async with create_connected_server_and_client_session(mcp_server.create_server()) as client:
             result = _value(await client.call_tool('create_deck', {
-                'topic': '图片培训', 'requirements': '清晰说明图片信息',
-                'pages': 4, 'source_paths': [str(source)],
+                'topic': '图片培训', 'requirements': '清晰说明图片信息', **SETTLED,
+                'source_paths': [str(source)],
             }))
             assert 'error' not in result, result
             await _wait(runtime)

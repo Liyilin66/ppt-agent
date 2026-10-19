@@ -121,6 +121,24 @@ class DeckPlanRecord(StrictModel):
     updated_at: str
 
 
+McpBriefStatus = Literal["clarifying", "ready", "generated"]
+
+
+class McpBriefSessionRecord(StrictModel):
+    session_id: str = Field(..., min_length=1)
+    status: McpBriefStatus
+    brief_json: str = Field(..., min_length=1)
+    source_paths_json: str = "[]"
+    source_summary_json: str = "[]"
+    turns_json: str = "[]"
+    brief_hash: str = ""
+    job_id: str | None = None
+    # Hash of the brief the job was generated from; brief_hash moves on later turns.
+    job_brief_hash: str | None = None
+    created_at: str
+    updated_at: str
+
+
 class JobStore:
     """Small SQLite-backed store with one connection per operation."""
 
@@ -234,6 +252,24 @@ class JobStore:
                 )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_deck_revisions_job_id ON deck_revisions(job_id)"
+                )
+                # Requirement clarification for MCP callers; independent of jobs.
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS mcp_brief_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        brief_json TEXT NOT NULL,
+                        source_paths_json TEXT NOT NULL DEFAULT '[]',
+                        source_summary_json TEXT NOT NULL DEFAULT '[]',
+                        turns_json TEXT NOT NULL DEFAULT '[]',
+                        brief_hash TEXT NOT NULL DEFAULT '',
+                        job_id TEXT,
+                        job_brief_hash TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
                 )
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id)")
                 connection.execute(
@@ -726,6 +762,82 @@ class JobStore:
         if plan is None:
             raise RuntimeError(f"Deck plan '{plan_id}' does not exist.")
         return plan
+
+    _MCP_BRIEF_COLUMNS = (
+        "session_id, status, brief_json, source_paths_json, source_summary_json, turns_json, "
+        "brief_hash, job_id, job_brief_hash, created_at, updated_at"
+    )
+
+    def create_mcp_brief_session(
+        self,
+        *,
+        status: McpBriefStatus,
+        brief_json: str,
+        source_paths_json: str = "[]",
+        source_summary_json: str = "[]",
+        turns_json: str = "[]",
+        brief_hash: str = "",
+    ) -> McpBriefSessionRecord:
+        session_id = uuid.uuid4().hex
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                f"""
+                INSERT INTO mcp_brief_sessions ({self._MCP_BRIEF_COLUMNS})
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                """,
+                (session_id, status, brief_json, source_paths_json, source_summary_json,
+                 turns_json, brief_hash, now, now),
+            )
+        session = self.get_mcp_brief_session(session_id)
+        if session is None:
+            raise RuntimeError(f"MCP brief session '{session_id}' could not be loaded after insert.")
+        return session
+
+    def get_mcp_brief_session(self, session_id: str) -> McpBriefSessionRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                f"SELECT {self._MCP_BRIEF_COLUMNS} FROM mcp_brief_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return McpBriefSessionRecord(**{key: row[key] for key in row.keys()})
+
+    def update_mcp_brief_session(
+        self,
+        session_id: str,
+        *,
+        status: McpBriefStatus | None = None,
+        brief_json: str | None = None,
+        source_paths_json: str | None = None,
+        source_summary_json: str | None = None,
+        turns_json: str | None = None,
+        brief_hash: str | None = None,
+        job_id: str | None = None,
+        job_brief_hash: str | None = None,
+    ) -> McpBriefSessionRecord:
+        changes = {
+            "status": status, "brief_json": brief_json, "source_paths_json": source_paths_json,
+            "source_summary_json": source_summary_json, "turns_json": turns_json,
+            "brief_hash": brief_hash, "job_id": job_id, "job_brief_hash": job_brief_hash,
+        }
+        assignments = ["updated_at = ?"]
+        values: list[object] = [self._now()]
+        for column, value in changes.items():
+            if value is not None:
+                assignments.append(f"{column} = ?")
+                values.append(value)
+        values.append(session_id)
+        with self._connect() as connection:
+            connection.execute(
+                f"UPDATE mcp_brief_sessions SET {', '.join(assignments)} WHERE session_id = ?",
+                values,
+            )
+        session = self.get_mcp_brief_session(session_id)
+        if session is None:
+            raise RuntimeError(f"MCP brief session '{session_id}' does not exist.")
+        return session
 
     def create_deck_revision(self, *, job_id: str, message: str) -> DeckRevisionRecord:
         revision_id = uuid.uuid4().hex

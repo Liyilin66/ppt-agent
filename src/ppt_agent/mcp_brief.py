@@ -32,6 +32,7 @@ DOCUMENT_SUFFIXES = frozenset({".pdf", ".docx", ".md", ".txt"})
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 MIN_SLIDES, MAX_SLIDES = 4, 100  # the v2 pipeline behind the MCP tools
 SLIDES_PER_SOURCE_PAGE = 3
+STRUCTURAL_SLIDES = 3  # cover, agenda and closing need no material
 CHARS_PER_SOURCE_PAGE = 1500  # so one long Markdown section is not read as one page
 
 FIELD_LABELS = {
@@ -230,11 +231,12 @@ def _conflicts(values: BriefValues, sources: list[SourceSummary]) -> list[Confli
                                   message=f"选择了「{POLICY_LABELS[policy]}」，但没有可读取的资料"))
     if policy == "materials_only" and readable and values.slide_count:
         pages = sum(max(s.pages, ceil(s.characters / CHARS_PER_SOURCE_PAGE)) for s in readable)
-        if values.slide_count > pages * SLIDES_PER_SOURCE_PAGE:
+        supported = pages * SLIDES_PER_SOURCE_PAGE + STRUCTURAL_SLIDES
+        if values.slide_count > supported:
             conflicts.append(Conflict(
                 field="slide_count",
                 message=(f"资料约 {pages} 页，只用资料撑不起 {values.slide_count} 页；"
-                         f"可以减到 {pages * SLIDES_PER_SOURCE_PAGE} 页以内、补充资料，或开启联网补充")))
+                         f"可以减到 {supported} 页以内、补充资料，或开启联网补充")))
     return conflicts
 
 
@@ -299,3 +301,39 @@ def to_job_request(brief: ClarifyBrief, *, attachment_ids: Iterable[str] = ()) -
         style_profile=values.style_profile, user_requirements=_requirements_text(brief),
         enable_search=values.source_policy in ("materials_and_web", "web_only"),
         attachment_ids=list(attachment_ids))
+
+
+def fields_view(brief: ClarifyBrief) -> dict[str, dict[str, Any]]:
+    """Every field with its value and where it came from."""
+    return {name: {"value": getattr(brief.values, name), "origin": brief.origin(name)} for name in FIELDS}
+
+
+_ORIGIN_NOTES = {"source": "资料", "delegated": "Agent 代定", "default": "默认"}
+
+
+def brief_summary(brief: ClarifyBrief, sources: Iterable[SourceSummary] = ()) -> str:
+    """Short Chinese summary to show the user before generating."""
+    values = brief.values
+
+    def show(name: str, text: Any) -> str | None:
+        if _is_empty(text):
+            return None
+        note = _ORIGIN_NOTES.get(brief.origin(name))
+        return f"{FIELD_LABELS[name]}：{text}" + (f"（{note}）" if note else "")
+
+    sources = list(sources)
+    documents = [s.name for s in sources if s.kind == "document" and s.readable]
+    images = [s.name for s in sources if s.kind == "image" and s.readable]
+    parts = [
+        show("topic", values.topic),
+        show("audience", values.audience),
+        show("purpose", values.purpose),
+        show("slide_count", f"{values.slide_count} 页" if values.slide_count else None),
+        show("source_policy", POLICY_LABELS.get(values.source_policy) if values.source_policy else None),
+        f"资料：{'、'.join(documents)}" if documents else None,
+        f"图片素材：{'、'.join(images)}" if images else None,
+        show("content_focus", "、".join(values.content_focus)),
+        show("constraints", "；".join(values.constraints)),
+        show("style_profile", values.style_profile),
+    ]
+    return "；".join(part for part in parts if part) + "。" if any(parts) else "还没有确定任何需求。"
