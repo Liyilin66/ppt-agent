@@ -400,6 +400,75 @@ POST /api/long-deck-jobs/{job_id}/bootstrap-ppt-master-project
 POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 ~~~
 
+## MCP 工具
+
+本地 stdio MCP 服务（`uv --directory <仓库绝对路径> run ppt-agent mcp`）提供四个工具和一个提示词模板。接入配置见 README。服务说明（instructions）和提示词模板 `plan_deck` 内容相同，规定了调用方 Agent 的提问方式：每轮只问一个问题、围绕 `next_question`、给 2–4 个选项；只把用户明确说过的记为 `user`；用户说"你来定"时给出具体推荐值并记为 `delegated`。
+
+调用方 Agent 负责理解用户和提问；ppt-agent 负责保存需求单、判断能否开工，并拦住还没准备好的生成。澄清过程中不创建生成任务，也不调用模型。
+
+### 需求单字段
+
+| 字段 | 说明 | 必填 |
+|---|---|---|
+| `purpose` | 这份演示要达成什么 | 是（追问顺序第 1） |
+| `audience` | 给谁看 | 是（第 2） |
+| `topic` | 讲什么 | 是（第 3） |
+| `slide_count` | 页数，生成要求 4–100 | 是（第 4） |
+| `source_policy` | 资料使用方式：`materials_only` 只用提供的资料 / `materials_and_web` 资料为主、联网补充 / `web_only` 联网检索 / `none` 不用外部资料、不写具体统计数字 | 是（第 5） |
+| `content_focus`、`constraints` | 重点内容、限制条件（列表） | 否 |
+| `language`、`tone`、`visual_direction`、`style_profile`、`user_requirements` | 语言（默认中文）、语气、视觉方向、风格（`consulting` / `launch` / `training` / `corporate`，默认自动）、补充说明 | 否 |
+
+每个字段带来源标记 `origin`：`user`（用户说的）、`source`（资料里写明的，只允许 `topic` 和 `content_focus`）、`delegated`（用户让 Agent 定）、`default`（默认值）、`missing`（还没有）。资料推断的值不会覆盖用户已经给出的值。
+
+### `prepare_deck`
+
+```text
+prepare_deck(
+  user_message: str,                 # 本轮用户原话，必填；会话只保留最近 60 轮
+  session_id: str | None = None,     # 首次不传，新建会话
+  updates: dict | None = None,       # {字段: {"value": ..., "origin": "user" | "source" | "delegated"}}
+  source_paths: list[str] | None = None,  # 本机绝对路径；传入后替换会话里原有的资料列表
+) -> dict
+```
+
+每次调用都会重新读取会话里的资料文件，所以资料在两轮之间被改动也能发现。传了文档、但 `source_policy` 还没有值时，自动设为 `materials_only`，来源记为 `user`。更新格式错误时返回 `{"error": ...}`，会话保持不变。
+
+返回字段：
+
+| 字段 | 说明 |
+|---|---|
+| `session_id`、`status` | 会话编号；状态为 `clarifying`（还要问）、`ready`（可以生成）或 `generated`（这份需求已有可用的生成任务） |
+| `summary` | 一段中文需求摘要，开工前展示给用户 |
+| `fields` | 每个字段的 `value` 和 `origin` |
+| `missing` | 按追问顺序排列的缺失必填项 |
+| `conflicts` | 冲突，如资料读不了、只用资料却撑不起所要页数、页数超出 4–100 |
+| `defaults_used` | 用了哪些默认值（不作为必答题） |
+| `next_question` | 下一个最该问的字段、类型（`missing` / `conflict`）和原因；`ready` 时为空 |
+| `skipped` | 被跳过的更新及原因（例如资料推断不覆盖用户的回答） |
+| `source_summary` | 每个文件的页数、章节标题、sha256 和解析警告；图片单列为图片素材，不计入资料页数 |
+| `brief_hash`、`job_id` | 需求单哈希（包含资料文件的 sha256）；已生成时的任务编号 |
+
+资料厚度：只用资料时，可支撑的页数上限为"资料页数 × 3 + 3"（3 页留给封面、目录和结尾）；Markdown、DOCX 按标题切成的小节计页，字数多时按每 1,500 字 1 页折算。
+
+### `create_deck`
+
+```text
+create_deck(session_id=None, topic=None, requirements=None, purpose=None, audience=None,
+            pages=None, source_paths=None, search=False, style=None) -> dict
+```
+
+拦截规则：
+
+- **带 `session_id`**：其余参数被忽略。重新读取资料并评估需求单，状态不是 `ready` 就拒绝，并返回 `missing`、`conflicts` 和 `next_question`。资料或需求在上次 `prepare_deck` 之后变过（哈希不一致），也拒绝，要求重新调用 `prepare_deck`。同一份需求已有处于 pending、running、succeeded 或 failed_quality_gate 状态的任务时，直接返回该任务（`existing: true`），不重复生成；之前的任务失败或被取消，就重新提交，并把新的 `job_id` 写回会话。
+- **不带 `session_id`（直接调用）**：用参数构造需求单，显式传入的字段来源都记为 `user`；`audience` 为"未指定"视为没给。资料使用方式按参数推出：有文档且联网是 `materials_and_web`，有文档不联网是 `materials_only`，没有文档但联网是 `web_only`，都没有是 `none`（图片不算文档）。必须给出 `topic`、`purpose`、`audience`、`pages`，且没有冲突，否则拒绝并提示先用 `prepare_deck` 澄清。
+- 同一个 MCP 进程同一时间只运行一个生成任务。
+
+成功时立即返回 `job_id`，生成在后台进行，用 `get_deck_status` 查询。
+
+### `get_deck_status` 与 `revise_deck`
+
+`get_deck_status(job_id)` 返回进度、已有的质量统计（含退化页页码）、最近一次运行的估算费用（不累计）、完成后的 PPTX 绝对路径和最近一次修订结果。`revise_deck(job_id, instruction, page_numbers=None)` 提交修改要求，立即返回 `revision_id`，结果同样用 `get_deck_status` 查看。
+
 ## 质量与安全边界
 
 - Pydantic models 使用 strict schema，未知字段不会静默进入 IR。
