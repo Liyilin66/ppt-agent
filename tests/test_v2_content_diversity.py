@@ -20,7 +20,7 @@ def test_planned_archetypes_reach_prompts_and_deck_statistics(tmp_path):
     report=json.loads(Path(r.run_report_path).read_text());stats=report['content_statistics']
     assert stats['archetype_ratios'].get('points',0)<=.4
     assert stats['diversity_violations']==[]
-    assert stats['source_empty_pages']==17 and stats['source_invalid_pages']==0
+    assert stats['source_empty_pages']==stats['content_pages'] and stats['source_invalid_pages']==0
     assigned={p['page_number']:p['assigned_archetype'] for p in report['typeset_pages']}
     for req in client.content_requests:
         payload=json.loads(req['user'].split('\nPrevious output failed validation.')[0])

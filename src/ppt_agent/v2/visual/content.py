@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ppt_agent.models import StrictModel
 
@@ -27,7 +27,7 @@ class PageCopy(StrictModel):
 
 class PointItem(StrictModel):
     heading: str = Field(..., min_length=1, max_length=18)
-    body: str = Field(..., min_length=1, max_length=80)
+    body: str = Field(..., min_length=1, max_length=100)
     # Real file citations ("caict_ai_2024.pdf 第15-16页") run past 24 characters.
     ref: str | None = Field(default=None, max_length=40)
 
@@ -39,7 +39,7 @@ class PointsContent(PageCopy):
 
 class StepItem(StrictModel):
     label: str = Field(..., min_length=1, max_length=10)
-    body: str = Field(..., min_length=1, max_length=44)
+    body: str = Field(..., min_length=1, max_length=70)
 
 
 class ProcessContent(PageCopy):
@@ -65,7 +65,7 @@ class ChartContent(PageCopy):
 class MetricItem(StrictModel):
     value: str = Field(..., min_length=1, max_length=10)
     label: str = Field(..., min_length=1, max_length=16)
-    note: str | None = Field(default=None, max_length=40)
+    note: str | None = Field(default=None, max_length=50)
 
 
 class MetricsContent(PageCopy):
@@ -83,7 +83,7 @@ class StatementContent(PageCopy):
 
 class CompareSide(StrictModel):
     heading: str = Field(..., min_length=1, max_length=16)
-    points: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(
+    points: list[Annotated[str, Field(min_length=1, max_length=50)]] = Field(
         ..., min_length=2, max_length=5
     )
 
@@ -99,7 +99,7 @@ class CompareContent(PageCopy):
 class Milestone(StrictModel):
     date: str = Field(..., min_length=1, max_length=12)
     label: str = Field(..., min_length=1, max_length=14)
-    body: str | None = Field(default=None, max_length=40)
+    body: str | None = Field(default=None, max_length=60)
 
 
 class TimelineContent(PageCopy):
@@ -107,9 +107,57 @@ class TimelineContent(PageCopy):
     milestones: list[Milestone] = Field(..., min_length=3, max_length=6)
 
 
+class TableContent(PageCopy):
+    """Facts compared across the same attributes: cases, regions, options."""
+
+    archetype: Literal["table"] = "table"
+    headers: list[Annotated[str, Field(min_length=1, max_length=12)]] = Field(..., min_length=2, max_length=5)
+    rows: list[list[Annotated[str, Field(min_length=1, max_length=40)]]] = Field(..., min_length=2, max_length=6)
+
+    @model_validator(mode="after")
+    def _rows_match_headers(self) -> "TableContent":
+        if any(len(row) != len(self.headers) for row in self.rows):
+            raise ValueError("every table row needs one cell per header")
+        return self
+
+
+class SummaryRow(StrictModel):
+    tag: str = Field(..., min_length=1, max_length=6)
+    headline: str = Field(..., min_length=1, max_length=36)
+    detail: str = Field(..., min_length=1, max_length=80)
+
+
+class SummaryContent(PageCopy):
+    """Executive summary, written after the rest of the deck exists."""
+
+    archetype: Literal["summary"] = "summary"
+    rows: list[SummaryRow] = Field(..., min_length=2, max_length=4)
+
+
+class RoadmapRow(StrictModel):
+    label: str = Field(..., min_length=1, max_length=8)
+    body: str = Field(..., min_length=1, max_length=44)
+    start: int = Field(..., ge=1)  # first phase, 1-based
+    end: int = Field(..., ge=1)  # last phase, inclusive
+
+
+class RoadmapContent(PageCopy):
+    """Recommended actions over time; its phases are advice, not source facts."""
+
+    archetype: Literal["roadmap"] = "roadmap"
+    phases: list[Annotated[str, Field(min_length=1, max_length=10)]] = Field(..., min_length=2, max_length=4)
+    rows: list[RoadmapRow] = Field(..., min_length=2, max_length=5)
+
+    @model_validator(mode="after")
+    def _bars_fit_phases(self) -> "RoadmapContent":
+        if any(not row.start <= row.end <= len(self.phases) for row in self.rows):
+            raise ValueError("roadmap rows must start and end inside phases")
+        return self
+
+
 AnyContent = (
     PointsContent | ProcessContent | ChartContent | MetricsContent | StatementContent
-    | CompareContent | TimelineContent
+    | CompareContent | TimelineContent | TableContent | SummaryContent | RoadmapContent
 )
 
 ArchetypeContent = Annotated[AnyContent, Field(discriminator="archetype")]

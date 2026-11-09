@@ -45,22 +45,7 @@ def _cover(b: _Builder, title: str, subtitle: str | None, kicker: str,
     p = b.profile
     s = p.sizes
     name = p.name
-    if name == "consulting":
-        x, w = 96.0, 860.0
-        size = _fit(title, "title", 40, w, 150, 28)
-        th = _height(title, "title", size, w)
-        sh = _height(subtitle, "subtitle", s.lead + 3, w) if subtitle else 0
-        kh = _height(kicker, "kicker", s.kicker + 2, w)
-        block = kh + 18 + th + (20 + sh if sh else 0)
-        y = (H - block) / 2 - 20
-        b.shape(x=72, y=y, w=6, h=block, fill="primary")
-        b.text(kicker, x=x, y=y, w=w, h=kh, role="kicker", size=s.kicker + 2, color="accent")
-        b.text(title, x=x, y=y + kh + 18, w=w, h=th, role="title", size=size, color="primary")
-        if subtitle:
-            b.text(subtitle, x=x, y=y + kh + 18 + th + 20, w=w, h=sh, role="subtitle",
-                   size=s.lead + 3, color="muted")
-        b.line(72, H - 96, W - 72, H - 96, color="surface_alt", width=0.75)
-    elif name == "corporate":
+    if name in ("consulting", "corporate"):
         panel = W * 0.6
         b.shape(x=0, y=0, w=panel, h=H, fill="primary")
         x, w = 88.0, panel - 88 - 64
@@ -212,20 +197,22 @@ def _toc(b: _Builder, sections: Sequence[Section]) -> None:
 def _divider(b: _Builder, index: int, title: str) -> None:
     p = b.profile
     s = p.sizes
-    filled = p.name in ("corporate", "training")
+    filled = p.name in ("consulting", "corporate", "training")
     if filled:
         b.shape(x=0, y=0, w=W, h=H, fill="primary")
     x, w = 120.0, 900.0
     number = f"{index:02d}"
     on = "on_primary" if filled else "text"
-    num_color = "primary_soft" if filled else ("accent" if p.name == "consulting" else "primary")
+    num_color = "primary_soft" if filled else "primary"
+    if p.name == "consulting":
+        num_color = "accent"
     num_h = _height(number, "stat", 96, 300)
     top = H * 0.24
     b.text(number, x=x, y=top, w=300, h=num_h, role="stat", size=96, color=num_color)
     size = _fit(title, "title", 40, w, 130, 28)
     rule_y = top + num_h + 8
     if p.name == "consulting":
-        b.shape(x=x, y=rule_y, w=64, h=4, fill="primary")
+        b.shape(x=x, y=rule_y, w=64, h=4, fill="accent")
     b.text(title, x=x, y=rule_y + 24, w=w, h=_height(title, "title", size, w), role="title",
            size=size, color=on)
 

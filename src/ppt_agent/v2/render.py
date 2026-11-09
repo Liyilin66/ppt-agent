@@ -370,12 +370,16 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
     table = graphic_frame.table
     table.first_row = False
     table.horz_banding = False
+    if item.column_widths:
+        for column, width in zip(table.columns, item.column_widths):
+            column.width = _emu(width)
 
     minimal = item.style == "minimal"
     body_pt = item.font_pt or 10.5
     header_pt = item.font_pt or 11
 
-    def style_cell(cell, text: str, *, header: bool, banded: bool, last: bool) -> None:
+    def style_cell(cell, text: str, *, header: bool, banded: bool, last: bool,
+                   first_column: bool = False) -> None:
         if minimal:
             cell.fill.background()
             _set_cell_rules(
@@ -404,9 +408,9 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
         run = paragraph.add_run()
         run.text = text
         run.font.size = Pt(header_pt if header else body_pt)
-        run.font.bold = header
+        run.font.bold = header or (minimal and first_column)
         if minimal:
-            color = theme.palette.primary if header else theme.palette.text
+            color = theme.palette.primary if header or first_column else theme.palette.text
         else:
             color = theme.palette.on_primary if header else theme.palette.text
         run.font.color.rgb = _rgb(color)
@@ -422,6 +426,7 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
                 header=False,
                 banded=row_index % 2 == 1,
                 last=row_index == len(item.rows) - 1,
+                first_column=column == 0,
             )
 
 

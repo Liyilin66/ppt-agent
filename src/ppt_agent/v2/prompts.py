@@ -59,7 +59,9 @@ Rules:
 - Sections tell one continuous story: hook -> context -> core chapters -> proof -> action.
 - Use the slide language from the brief for all titles and points.
 - content_pages counts ONLY normal content slides (cover/TOC/dividers/closing are added separately).
-- 4-12 sections. Weight content_pages by importance; they will be rescaled to the exact budget.
+- 4-12 sections, but exactly 3 when there are about 16 content slides or fewer: each section
+  then gets its own divider page, so more would crowd out content. Weight content_pages by
+  importance; they will be rescaled to the exact budget.
 - talking_points: 3-5 per section, each a key phrase of at most 24 characters, concrete and
   non-overlapping. goal: one sentence of at most 40 characters. Keep the outline compact:
   page-level detail is planned later, section by section.
@@ -83,7 +85,8 @@ Reply with ONLY a JSON object: {"pages": [
 ]}
 Rules:
 - Exactly the requested number of pages, in narrative order.
-- Titles are assertions, not labels ("复购率决定增长天花板", not "数据分析").
+- Titles are assertions, not labels ("复购率决定增长天花板", not "数据分析"), and carry the
+  page's key number whenever the source digest gives one.
 - No two pages in the deck may repeat the same title or the same point.
 - points: 2-5 per page, each <= 60 characters, in the slide language.
 - layout_hint variety matters: across the section, mix at least 3 different hints.

@@ -18,6 +18,7 @@ The model never emits coordinates, so the failure modes of free layout —
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from ppt_agent.v2.ir import CANVAS_WIDTH, DeckDesign, Gradient, PageDesign
 from ppt_agent.v2.visual.compositions import BY_KEY, Composition, candidates
@@ -35,7 +36,12 @@ from ppt_agent.v2.visual.content import (  # noqa: F401 - re-exported API
     PointsContent,
     ProcessContent,
     StatementContent,
+    RoadmapContent,
+    RoadmapRow,
     StepItem,
+    SummaryContent,
+    SummaryRow,
+    TableContent,
     TimelineContent,
 )
 from ppt_agent.v2.visual.layout import (  # noqa: F401 - re-exported helpers
@@ -58,6 +64,9 @@ _ITEM_FIELD = {
     "chart": ("insights", 1),
     "metrics": ("metrics", 2),
     "timeline": ("milestones", 3),
+    "table": ("rows", 2),
+    "summary": ("rows", 2),
+    "roadmap": ("rows", 2),
 }
 
 
@@ -200,11 +209,20 @@ def typeset_page(
             f"{comp.key}: content does not fit even at minimum sizes "
             f"({block:.0f} > {zone.h:.0f}); shorten it or split the page"
         )
-    group = block + (band_gap + band if content.takeaway else 0.0)
-    top = full.y + max(0.0, full.h - group) * bias
-    comp.fn(b, content, zone, chosen, draw=True, top=top)
-    if content.takeaway:
-        _takeaway(b, content.takeaway, full, y=top + block + band_gap)
+    if profile.pin_takeaway and comp.header == "standard":
+        # Grow the content toward the band, but not so far that cards turn hollow.
+        zone = replace(zone, target=min(zone.h, block * 1.5))
+        block = comp.fn(probe, content, zone, chosen, draw=False, top=zone.y)
+        top = zone.y + max(0.0, zone.h - block) * bias
+        comp.fn(b, content, zone, chosen, draw=True, top=top)
+        if content.takeaway:
+            _takeaway(b, content.takeaway, full)
+    else:
+        group = block + (band_gap + band if content.takeaway else 0.0)
+        top = full.y + max(0.0, full.h - group) * bias
+        comp.fn(b, content, zone, chosen, draw=True, top=top)
+        if content.takeaway:
+            _takeaway(b, content.takeaway, full, y=top + block + band_gap)
     b.notes.insert(0, comp.key)
     if chosen != base:
         b.notes.append(f"body size {base.body:g} -> {chosen.body:g} pt")

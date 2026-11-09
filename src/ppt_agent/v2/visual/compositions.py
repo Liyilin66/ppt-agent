@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from ppt_agent.v2.ir import ChartItem, ChartSeries, Frame
+from ppt_agent.v2.ir import ChartItem, ChartSeries, Frame, TableItem
 from ppt_agent.v2.metrics import text_width_units
 from ppt_agent.v2.visual.content import (
     AnyContent,
@@ -27,7 +27,10 @@ from ppt_agent.v2.visual.content import (
     PointItem,
     PointsContent,
     ProcessContent,
+    RoadmapContent,
     StatementContent,
+    SummaryContent,
+    TableContent,
 )
 from ppt_agent.v2.visual.layout import (
     MIN_BODY_PT,
@@ -94,6 +97,8 @@ def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: floa
     inner_w = w - 2 * pad
     ix, iy = x + pad, y + pad
     head_size = heading_size or sz.heading
+    natural = _point_cell_height(b, item, inner_w, sz, heading_size=heading_size)
+    iy += max(0.0, block - 2 * pad - natural) * 0.3  # stretched card: no hollow lower half
     marker_h = _marker_height(p, sz)
     if marker_h:
         _draw_marker(b, index, ix, iy, inner_w, sz)
@@ -149,7 +154,8 @@ def points_columns(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, 
     gap = b.profile.item_gap
     col_w = (zone.w - gap * (n - 1)) / n
     pad = _pad(b)
-    block = max(_point_cell_height(b, item, col_w - 2 * pad, sz) for item in items) + 2 * pad
+    block = max(max(_point_cell_height(b, item, col_w - 2 * pad, sz) for item in items) + 2 * pad,
+                zone.target)
     if draw:
         for index, item in enumerate(items):
             _draw_point_cell(b, item, index, zone.x + index * (col_w + gap), top, col_w, block,
@@ -167,6 +173,7 @@ def points_grid(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, top
     rows = [items[0:2], items[2:4]]
     heights = [max(_point_cell_height(b, it, col_w - 2 * pad, sz) for it in row) + 2 * pad
                for row in rows]
+    heights = [h + max(0.0, zone.target - sum(heights) - gap) / 2 for h in heights]
     block = sum(heights) + gap
     if draw:
         y = top
@@ -191,7 +198,7 @@ def points_feature(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, 
     left_h = _point_cell_height(b, items[0], left_w - 2 * pad, sz, heading_size=lead_size) + 2 * pad
     right_hs = [_point_cell_height(b, it, right_w - 2 * pad, sz) + 2 * pad for it in items[1:]]
     small_gap = p.item_gap
-    block = max(left_h, sum(right_hs) + small_gap * (len(right_hs) - 1))
+    block = max(left_h, sum(right_hs) + small_gap * (len(right_hs) - 1), zone.target)
     if draw:
         if p.card_style == "none":
             b.shape(x=zone.x, y=top, w=left_w, h=block, fill="primary_soft")
@@ -367,18 +374,26 @@ def process_chevron(b, content: ProcessContent, zone: _Zone, sz: _Sizes, *, draw
     band_h = _height("标签", "h3", sz.heading, col_w) + 30
     text_w = col_w - overlap - 28
     body_h = max(_height(s.body, "body", sz.body, text_w) for s in steps)
-    block = band_h + 22 + body_h
+    carded = b.profile.card_style != "none"
+    pad = 16.0 if carded else 0.0
+    body_h = max(_height(s.body, "body", sz.body, text_w - 2 * pad) for s in steps) if carded else body_h
+    block = max(band_h + 22 + body_h + 2 * pad, zone.target)
     if draw:
         for index, step in enumerate(steps):
             x = zone.x + index * (col_w - overlap)
+            if carded:
+                b.shape(x=x + (10 if index else 0), y=top + band_h + 10,
+                        w=col_w - overlap - (10 if index else 0) - 6, h=block - band_h - 10,
+                        fill="surface")
             fill = "primary" if index == n - 1 else ("secondary" if index % 2 else "primary")
             b.shape(x=x, y=top, w=col_w, h=band_h, shape="chevron" if index else "rectangle",
                     fill=fill)
             b.text(step.label, x=x + (40 if index else 18), y=top, w=col_w - 64, h=band_h,
                    role="h3", size=sz.heading, color="on_primary", valign="middle")
-            b.text(step.body, x=x + (16 if index else 0), y=top + band_h + 22,
-                   w=_widow_safe_width(step.body, sz.body, text_w),
-                   h=_height(step.body, "body", sz.body, text_w), role="body", size=sz.body,
+            spare = max(0.0, block - band_h - 22 - body_h - 2 * pad) * 0.3
+            b.text(step.body, x=x + (16 if index else 0) + pad, y=top + band_h + 22 + pad + spare,
+                   w=_widow_safe_width(step.body, sz.body, text_w - 2 * pad),
+                   h=_height(step.body, "body", sz.body, text_w - 2 * pad), role="body", size=sz.body,
                    color="text")
     return block
 
@@ -442,10 +457,10 @@ def _chart_item(b: _Builder, content: ChartContent, x: float, y: float, w: float
 
 def _chart_min_h(b: _Builder, content: ChartContent) -> float:
     if content.chart != "bar":
-        return 220.0
+        return 221.0
     # ~2x the label height per bar keeps bars readable without starving the page.
     per = b.profile.chart_font * 1.333 * 2.0
-    return max(200.0, len(content.categories) * per)
+    return max(201.0, len(content.categories) * per)
 
 
 def _insight_height(insight, w: float, sz: _Sizes, stat: float) -> float:
@@ -615,7 +630,8 @@ def metrics_cards(b, content: MetricsContent, zone: _Zone, sz: _Sizes, *, draw, 
             h += 10 + _height(m.note, "body_small", note_size, inner)
         return h
 
-    block = max(cell_h(m) for m in items) + 2 * pad
+    natural = max(cell_h(m) for m in items) + 2 * pad
+    block = max(natural, zone.target)
     if draw:
         for index, m in enumerate(items):
             x = zone.x + index * (w + gap)
@@ -624,7 +640,7 @@ def metrics_cards(b, content: MetricsContent, zone: _Zone, sz: _Sizes, *, draw, 
                     fill="primary" if index == 0 else "surface",
                     stroke="surface_alt" if p.card_style == "outlined" and index else None)
             on = "on_primary" if index == 0 else "text"
-            y = top + pad
+            y = top + pad + (block - natural) * 0.35
             vh = _height(m.value, "stat", stat, inner)
             b.text(m.value, x=x + pad, y=y, w=inner, h=vh, role="stat", size=stat,
                    color="on_primary" if index == 0 else "primary")
@@ -773,7 +789,8 @@ def compare_split(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw, 
     head_h = _height("标题", "h3", sz.heading + 2, inner) + 24
     sides = (content.left, content.right)
     body_hs = [_height(_bullets(side.points), "body", sz.body, inner - 18) for side in sides]
-    block = head_h + 20 + max(body_hs) + pad
+    natural = head_h + 20 + max(body_hs) + pad
+    block = max(natural, zone.target)
     if draw:
         for index, side in enumerate(sides):
             x = zone.x + index * (col_w + gap)
@@ -788,7 +805,8 @@ def compare_split(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw, 
             b.text(side.heading, x=x + pad, y=top, w=inner, h=head_h, role="h3",
                    size=sz.heading + 2, color="on_primary" if favoured else "text",
                    valign="middle")
-            b.text(_bullets(side.points), x=x + pad, y=top + head_h + 20, w=inner - 18,
+            b.text(_bullets(side.points), x=x + pad, y=top + head_h + 20 + (block - natural) * 0.3,
+                   w=inner - 18,
                    h=body_hs[index], role="body", size=sz.body, bullet="dot",
                    color="muted" if p.dark else "text")
     return block
@@ -806,7 +824,8 @@ def compare_versus(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw,
     sides = (content.left, content.right)
     head_hs = [_height(side.heading, "title", sz.heading + 6, inner) for side in sides]
     body_hs = [_height(_bullets(side.points), "body", sz.body, inner - 18) for side in sides]
-    block = max(h + 18 + bh for h, bh in zip(head_hs, body_hs)) + 2 * pad
+    natural = max(h + 18 + bh for h, bh in zip(head_hs, body_hs)) + 2 * pad
+    block = max(natural, zone.target)
     if draw:
         for index, side in enumerate(sides):
             x = zone.x + index * (col_w + gap)
@@ -816,9 +835,10 @@ def compare_versus(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw,
                     fill="primary" if favoured else "surface",
                     stroke="surface_alt" if (p.card_style == "outlined" and not favoured) else None)
             on = "on_primary" if favoured else "text"
-            b.text(side.heading, x=x + pad, y=top + pad, w=inner, h=head_hs[index], role="title",
+            shift = (block - natural) * 0.3
+            b.text(side.heading, x=x + pad, y=top + pad + shift, w=inner, h=head_hs[index], role="title",
                    size=sz.heading + 6, color=on)
-            b.text(_bullets(side.points), x=x + pad, y=top + pad + head_hs[index] + 18,
+            b.text(_bullets(side.points), x=x + pad, y=top + pad + shift + head_hs[index] + 18,
                    w=inner - 18, h=body_hs[index], role="body", size=sz.body, bullet="dot",
                    color="primary_soft" if favoured else ("muted" if p.dark else "text"))
         cx = zone.x + col_w + (gap - badge) / 2
@@ -884,7 +904,8 @@ def timeline_cards(b, content: TimelineContent, zone: _Zone, sz: _Sizes, *, draw
     chip_size = max(MIN_BODY_PT, min(sz.small, p.sizes.small + 1))
     chip_h = _height("2025", "h3", chip_size, inner) + 12
     _, label_hs, body_hs = _milestone_heights(b, content, inner, sz, 20)
-    card_h = max(lh + (8 + bh if bh else 0) for lh, bh in zip(label_hs, body_hs)) + 2 * pad
+    natural = max(lh + (8 + bh if bh else 0) for lh, bh in zip(label_hs, body_hs)) + 2 * pad
+    card_h = max(natural, zone.target - chip_h)
     block = chip_h / 2 + card_h + chip_h / 2
     if draw:
         b.line(zone.x, top + chip_h / 2, zone.x + zone.w, top + chip_h / 2,
@@ -899,12 +920,195 @@ def timeline_cards(b, content: TimelineContent, zone: _Zone, sz: _Sizes, *, draw
                     fill="accent" if index == n - 1 else "primary")
             b.text(m.date, x=x + pad, y=top, w=chip_w, h=chip_h, role="h3", size=chip_size,
                    color="on_primary", align="center", valign="middle")
-            y = top + chip_h + pad
+            y = top + chip_h + pad + (card_h - natural) * 0.3
             b.text(m.label, x=x + pad, y=y, w=inner, h=label_hs[index], role="h3",
                    size=sz.heading, color="text")
             if m.body:
                 b.text(m.body, x=x + pad, y=y + label_hs[index] + 8, w=inner, h=body_hs[index],
                        role="body", size=sz.body, color="muted" if p.dark else "text")
+    return block
+
+
+# --------------------------------------------------------------------------
+# metrics: one number owns the page
+# --------------------------------------------------------------------------
+
+
+def metrics_hero(b, content: MetricsContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """The key number large on a colour block; the others explain it on the right."""
+
+    hero, rest = content.metrics[0], content.metrics[1:]
+    left_w = zone.w * 0.42
+    gap = 36.0
+    right_w = zone.w - left_w - gap
+    pad = 30.0
+    inner = left_w - 2 * pad
+    hero_size = _one_line(hero.value, sz.stat * 1.7, inner)
+    vh = _height(hero.value, "stat", hero_size, inner)
+    lh = _height(hero.label, "h3", sz.heading + 2, inner)
+    nh = _height(hero.note, "body", sz.body, inner) if hero.note else 0.0
+    left = vh + 10 + lh + (12 + nh if nh else 0) + 2 * pad
+    value_w = right_w * 0.36
+    text_w = right_w - value_w - 12
+    stat = min(_one_line(m.value, sz.stat * 0.72, value_w) for m in rest)
+
+    def row_h(m) -> float:
+        h = _height(m.label, "h3", sz.heading, text_w)
+        if m.note:
+            h += 6 + _height(m.note, "body", sz.small, text_w)
+        return max(h, _height(m.value, "stat", stat, value_w)) + 32
+
+    rows = [row_h(m) for m in rest]
+    natural = max(left, sum(rows))
+    block = max(natural, zone.target)
+    if draw:
+        b.shape(x=zone.x, y=top, w=left_w, h=block, fill="primary")
+        y = top + (block - (left - 2 * pad)) / 2
+        b.text(hero.value, x=zone.x + pad, y=y, w=inner, h=vh, role="stat", size=hero_size,
+               color="on_primary")
+        y += vh + 10
+        b.text(hero.label, x=zone.x + pad, y=y, w=inner, h=lh, role="h3", size=sz.heading + 2,
+               color="on_primary")
+        if hero.note:
+            b.text(hero.note, x=zone.x + pad, y=y + lh + 12, w=inner, h=nh, role="body", size=sz.body,
+                   color="primary_soft")
+        x = zone.x + left_w + gap
+        share = (block - sum(rows)) / len(rows)
+        y = top
+        for index, (m, h) in enumerate(zip(rest, rows)):
+            h += share
+            if index:
+                b.line(x, y, x + right_w, y, color="surface_alt", width=0.75)
+            vhr = _height(m.value, "stat", stat, value_w)
+            b.text(m.value, x=x, y=y + (h - vhr) / 2, w=value_w, h=vhr, role="stat", size=stat,
+                   color="accent" if index == 0 else "primary")
+            lhr = _height(m.label, "h3", sz.heading, text_w)
+            nhr = _height(m.note, "body", sz.small, text_w) if m.note else 0.0
+            ty = y + (h - lhr - (6 + nhr if nhr else 0)) / 2
+            b.text(m.label, x=x + value_w + 12, y=ty, w=text_w, h=lhr, role="h3", size=sz.heading,
+                   color="text")
+            if m.note:
+                b.text(m.note, x=x + value_w + 12, y=ty + lhr + 6, w=text_w, h=nhr, role="body",
+                       size=sz.small, color="muted")
+            y += h
+    return block
+
+
+# --------------------------------------------------------------------------
+# table
+# --------------------------------------------------------------------------
+
+
+def _table_widths(content: TableContent, width: float, size: float) -> list[float]:
+    """Columns share the width by their longest cell, within sensible bounds."""
+
+    columns = list(zip(content.headers, *content.rows))
+    longest = [max(_text_width(cell, size) for cell in column) for column in columns]
+    floor = width * 0.12
+    raw = [max(floor, min(value, width * 0.55)) for value in longest]
+    return [value * width / sum(raw) for value in raw]
+
+
+def table_plain(b, content: TableContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    size = max(MIN_BODY_PT, sz.body)
+    widths = _table_widths(content, zone.w, size)
+    margin = 16.0  # cell margins set by the renderer
+
+    def row_h(row) -> float:
+        return max(_height(cell, "body", size, w - margin) for cell, w in zip(row, widths)) + 14
+
+    heights = [row_h(content.headers), *(row_h(row) for row in content.rows)]
+    # The renderer divides the frame evenly, so every row takes the tallest height.
+    natural = max(heights) * len(heights)
+    block = max(natural, zone.target)
+    if draw:
+        b.elements.append(TableItem(
+            id=b._id("table"), frame=Frame(x=zone.x, y=top, w=zone.w, h=block),
+            headers=content.headers, rows=content.rows, style="minimal", font_pt=size,
+            column_widths=widths))
+    return block
+
+
+# --------------------------------------------------------------------------
+# summary and roadmap: the deck's opening and closing arguments
+# --------------------------------------------------------------------------
+
+
+def summary_blocks(b, content: SummaryContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    tag_w = 112.0
+    gap = 14.0
+    text_x = tag_w + 24
+    text_w = zone.w - text_x
+
+    def row_h(row) -> float:
+        return (_height(row.headline, "h3", sz.heading, text_w) + 6
+                + _height(row.detail, "body", sz.body, text_w) + 28)
+
+    rows = [row_h(row) for row in content.rows]
+    natural = sum(rows) + gap * (len(rows) - 1)
+    block = max(natural, zone.target)
+    if draw:
+        share = (block - natural) / len(rows)
+        y = top
+        for index, (row, h) in enumerate(zip(content.rows, rows)):
+            h += share
+            last = index == len(rows) - 1
+            b.shape(x=zone.x, y=y, w=tag_w, h=h, fill="accent" if last else "primary")
+            b.text(row.tag, x=zone.x, y=y, w=tag_w, h=h, role="h3", size=sz.heading,
+                   color="on_primary", align="center", valign="middle")
+            hh = _height(row.headline, "h3", sz.heading, text_w)
+            dh = _height(row.detail, "body", sz.body, text_w)
+            ty = y + (h - hh - 6 - dh) / 2
+            b.text(row.headline, x=zone.x + text_x, y=ty, w=text_w, h=hh, role="h3", size=sz.heading,
+                   color="primary")
+            b.text(row.detail, x=zone.x + text_x, y=ty + hh + 6, w=text_w, h=dh, role="body",
+                   size=sz.body, color="text")
+            y += h + gap
+    return block
+
+
+def roadmap_gantt(b, content: RoadmapContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Actions down the left, phases across the right, a bar per action."""
+
+    label_w = zone.w * 0.13
+    body_w = zone.w * 0.34
+    chart_x = zone.x + label_w + body_w + 24
+    chart_w = zone.x + zone.w - chart_x
+    n = len(content.phases)
+    col = chart_w / n
+    head = _height("阶段", "h3", sz.small, col) + 12
+    size = max(MIN_BODY_PT, sz.small)
+
+    def row_h(row) -> float:
+        return max(_height(row.label, "h3", sz.heading, label_w - 8),
+                   _height(row.body, "body", size, body_w - 12)) + 24
+
+    rows = [row_h(row) for row in content.rows]
+    natural = head + sum(rows)
+    block = max(natural, zone.target)
+    if draw:
+        for index, phase in enumerate(content.phases):
+            b.text(phase, x=chart_x + index * col, y=top, w=col, h=head, role="h3", size=size,
+                   color="primary", align="center", valign="middle")
+        b.line(zone.x, top + head, zone.x + zone.w, top + head, color="primary", width=1.5)
+        share = (block - natural) / len(rows)
+        y = top + head
+        for index, (row, h) in enumerate(zip(content.rows, rows)):
+            h += share
+            if index:
+                b.line(zone.x, y, zone.x + zone.w, y, color="surface_alt", width=0.75)
+            b.text(row.label, x=zone.x, y=y, w=label_w - 8, h=h, role="h3", size=sz.heading,
+                   color="primary", valign="middle")
+            b.text(row.body, x=zone.x + label_w, y=y, w=body_w - 12, h=h, role="body", size=size,
+                   color="text", valign="middle")
+            bar_h = min(26.0, h * 0.5)
+            b.shape(x=chart_x + (row.start - 1) * col + 4, y=y + (h - bar_h) / 2,
+                    w=(row.end - row.start + 1) * col - 8, h=bar_h,
+                    fill="accent" if index == len(rows) - 1 else "primary")
+            y += h
+        for index in range(1, n):
+            b.line(chart_x + index * col, top + head, chart_x + index * col, top + block,
+                   color="surface_alt", width=0.5)
     return block
 
 
@@ -945,6 +1149,11 @@ COMPOSITIONS: list[Composition] = [
                 description="左侧一个大数字 + 右侧图表"),
     Composition("chart", "stacked", chart_stacked, lambda c: len(c.insights) >= 2,
                 description="通栏图表 + 下方一排结论"),
+    Composition("metrics", "hero", metrics_hero, _n("metrics", 2, 4),
+                description="超大数字色块 + 右侧支撑指标"),
+    Composition("table", "plain", table_plain, _always, description="原生表格"),
+    Composition("summary", "blocks", summary_blocks, _always, description="执行摘要"),
+    Composition("roadmap", "gantt", roadmap_gantt, _always, description="行动路线"),
     Composition("metrics", "cards", metrics_cards, _always, description="指标卡片（首张反色）"),
     Composition("metrics", "columns", metrics_columns, _always, description="细线大数字"),
     Composition("compare", "split", compare_split, _always, description="双栏对比（右侧为推荐方）"),

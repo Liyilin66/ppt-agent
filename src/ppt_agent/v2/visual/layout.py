@@ -224,6 +224,7 @@ class _Zone:
     y: float
     w: float
     bottom: float
+    target: float = 0.0  # height a stretchable composition should grow into
 
     @property
     def h(self) -> float:
@@ -268,8 +269,10 @@ def _header(b: _Builder, copy: PageCopy) -> float:
                color="muted")
         y += lead_h
     if p.title_decor == "rule_below":
-        y += 16
+        y += 14
         b.line(x, y, x + width, y, color="surface_alt", width=0.75)
+        if p.pin_takeaway:
+            b.shape(x=x, y=y - 1.5, w=72, h=3, fill="primary")
     return y + p.content_gap
 
 

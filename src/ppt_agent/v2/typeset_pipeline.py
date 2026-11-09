@@ -415,8 +415,16 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'Percentage and percentage-point increases are different units and must be named accurately. '
         'insights and metrics must be ordered by importance, '
         'with the first item carrying the core conclusion. Each page argues one point. '
-        'points defaults to 3 items, at most 4; keep item body preferably within 40 characters. '
-        'Prefer metrics or chart for supported quantitative evidence, and statement for key conclusions. '
+        'title is one complete conclusion a reader could repeat, with the most important number from the '
+        'evidence when it has one (at most 40 characters), never a topic label. Omit lead unless it adds a '
+        'fact the title lacks. Build every page on specifics from the evidence: use at least two concrete '
+        'facts (figures, named companies, cases, dates) when the evidence has them, instead of general advice. '
+        'Do not repeat what other_page_titles cover. '
+        'points defaults to 3 items, at most 4; item body 30-70 characters carrying one concrete fact. '
+        'takeaway is one sentence on what this means for the audience. '
+        'chart needs 3-8 comparable values in one unit; table compares the same attributes across cases, '
+        'regions or options, with short cells; the first metric in metrics is the page headline. '
+        'Prefer metrics, chart or table for supported quantitative evidence, and statement for key conclusions. '
         'The deck mix is planned in advance: use diversity.assigned_archetype. Only if the supplied '
         'evidence cannot honestly fill it (e.g. no numbers for metrics or chart), choose another from '
         'allowed_archetypes. '
@@ -446,6 +454,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     user = json.dumps({'page': prompt_page, 'audience': brief.audience, 'purpose': brief.purpose,
                        'profile': profile.name, 'source_digest': brief.source_digest, 'current_content': current_content,
                        'key_points': [] if evidence is not None else brief.key_points, 'diversity': diversity,
+                       'other_page_titles': diversity.get('other_page_titles', []),
                        'source_references': source_references}, ensure_ascii=False)
     errors = []
     invalid_sources = 0
@@ -533,9 +542,10 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
 _NUMBER = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|倍|元|美元|欧元)|\d+\.\d+")
 _DATE = re.compile(r"(?:19|20)\d{2}\s*(?:年|[.\-/]\s*\d{1,2})")
 
-ARCHETYPE_CAPS = {"points": 0.4, "process": 0.3, "statement": 0.15}
+ARCHETYPE_CAPS = {"points": 0.4, "process": 0.3, "statement": 0.15, "compare": 0.2, "timeline": 0.2,
+                  "metrics": 0.3, "chart": 0.3, "table": 0.2}
 _GENERIC = ["points", "process", "compare", "statement"]
-_NUMERIC = ["metrics", "chart"]
+_NUMERIC = ["metrics", "chart", "table"]
 
 
 def has_numeric_evidence(text: str | None, minimum: int = 3) -> bool:
@@ -553,7 +563,8 @@ def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | No
     concurrently while the deck still obeys the mix rules.
 
     Rules, in priority order: no two consecutive pages share an archetype;
-    metrics/chart only where the page's evidence carries numbers; timeline only
+    metrics/chart/table only where the page's evidence carries numbers, and there
+    ahead of generic layouts, least used first, so data reaches the page; timeline only
     where planning asked for one and the evidence carries real dates; points <= 40%, process <= 30%, statement
     <= 15% and never a section's first page; every section gets a non-points
     page. When nothing satisfies every cap, caps are relaxed (process, then
@@ -574,12 +585,13 @@ def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | No
         first_in_section = index == 0 or slots[index - 1].section_index != section
         last_in_section = index == total - 1 or slots[index + 1].section_index != section
         section_kinds = [plan[s.page_number] for s in slots[:index] if s.section_index == section]
-        candidates = [preferred] + (_NUMERIC if has_numbers else []) + _GENERIC
+        numeric_kinds = sorted(_NUMERIC, key=lambda kind: counts.get(kind, 0)) if has_numbers else []
+        candidates = numeric_kinds + [preferred] + _GENERIC
         has_dates = (dated or {}).get(slot.page_number, False)
         if hint == "timeline" and has_dates:
-            candidates.insert(1, "timeline")
+            candidates.insert(0, "timeline")
         if preferred == "timeline" and not has_dates:
-            candidates[0] = "process"  # stages without dates read as a process
+            candidates[candidates.index("timeline")] = "process"  # stages without dates read as a process
         ordered = list(dict.fromkeys(candidates))
 
         def allowed(kind: str, relax: frozenset = frozenset()) -> bool:
@@ -599,7 +611,8 @@ def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | No
             return True
 
         choice = None
-        for relax in (frozenset(), frozenset({"process"}), frozenset({"process", "points"})):
+        soft = frozenset({"compare", "timeline", *_NUMERIC})
+        for relax in (frozenset(), soft, soft | {"process"}, soft | {"process", "points"}):
             choice = next((kind for kind in ordered if allowed(kind, relax)), None)
             if choice:
                 break
@@ -616,6 +629,82 @@ def _page_references(record, references, page_counts):
     if evidence.get('references'):
         return evidence['references'], evidence.get('page_counts') or page_counts, evidence.get('allowed_pages')
     return references, page_counts, None
+
+
+_FRAME_SYSTEM = (
+    'You write the opening and closing of a finished management deck. Return one JSON object: '
+    '{"summary": {"rows": [{"tag": str, "headline": str, "detail": str}], "takeaway": str}, '
+    '"roadmap": {"title": str, "phases": [str], "rows": [{"label": str, "body": str, "start": int, "end": int}], '
+    '"takeaway": str}}. '
+    'summary: 3-4 rows telling the whole argument: situation, opportunity, risk, then recommendation last. '
+    'tag at most 6 characters; headline at most 36, a conclusion with its key number; detail at most 80, '
+    'citing two concrete facts. takeaway at most 70: the decision the audience must make. '
+    'roadmap: a title of at most 40 characters stating the plan; 3 phases such as time ranges, at most 10 characters; '
+    '3-5 rows of recommended actions, label at most 8 and body at most 44 characters; start and end are '
+    '1-based phase positions; takeaway at most 70: what must be decided now. '
+    'Every figure must appear in the supplied pages: add no new statistics. Use the slide language.'
+)
+
+
+def _frame_fallback(skeleton, results):
+    """An opening built from the pages themselves when the model call fails."""
+    from ppt_agent.v2.visual.content import SummaryContent, SummaryRow
+    rows, seen = [], set()
+    for slot in sorted(skeleton.content_slots(), key=lambda item: item.page_number):
+        if slot.section_index in seen or len(rows) == 4:
+            continue
+        seen.add(slot.section_index)
+        content = results[slot.page_number][0]
+        rows.append(SummaryRow(tag=f'第{len(rows) + 1}部分', headline=content.title[:36],
+                               detail=(content.takeaway or content.lead or content.title)[:80]))
+    return SummaryContent(title='执行摘要', rows=rows) if len(rows) >= 2 else None
+
+
+async def generate_deck_frame(client, checkpoints, skeleton, brief, results, document_names):
+    """Executive summary and roadmap, written once every page exists.
+
+    Pages are generated apart and cannot see the whole argument; this call can.
+    Its figures are checked against the finished pages, so it adds no new claims.
+    """
+    from ppt_agent.v2.evidence_check import check_content_numbers, sanitize_content_numbers
+    from ppt_agent.v2.visual.content import RoadmapContent, SummaryContent
+    cached = checkpoints.load('typeset/deck_frame.json')
+    if cached is not None:
+        return {'summary': SummaryContent.model_validate(cached['summary']) if cached.get('summary') else None,
+                'roadmap': RoadmapContent.model_validate(cached['roadmap']) if cached.get('roadmap') else None}
+    pages = []
+    for number in sorted(results):
+        data = results[number][0].model_dump(mode='json', exclude_none=True)
+        for key in ('source', 'speaker_notes', 'archetype', 'kicker', 'unit_format', 'chart'):
+            data.pop(key, None)
+        pages.append(json.dumps(data, ensure_ascii=False)[:600])
+    user = json.dumps({'deck_title': skeleton.deck_title, 'audience': brief.audience, 'purpose': brief.purpose,
+                       'pages': pages}, ensure_ascii=False)
+    evidence = '\n'.join(pages)
+    source = '资料来源：' + '；'.join(document_names.values()) if document_names else None
+    note = '行动建议为基于报告内容的推断，需结合公司实际调整'
+    frame = {'summary': None, 'roadmap': None}
+    for _ in range(2):
+        try:
+            payload = await client.complete_json(task='deck_frame', system=_FRAME_SYSTEM, user=user,
+                                                 context={'deck_title': skeleton.deck_title})
+            summary = SummaryContent(title='执行摘要', source=source, **payload['summary'])
+            roadmap = RoadmapContent(source=note, **payload['roadmap'])
+            for key, content in (('summary', summary), ('roadmap', roadmap)):
+                issues = check_content_numbers(content, evidence)
+                frame[key] = sanitize_content_numbers(content, issues)[0] if issues else content
+            break
+        except BudgetExceededError:
+            break
+        except (ValidationError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            user += '\nPrevious output failed validation: ' + str(exc)[:600]
+    if frame['summary'] is None or frame['summary'].archetype != 'summary':
+        frame['summary'] = _frame_fallback(skeleton, results)
+    if frame['roadmap'] is not None and frame['roadmap'].archetype != 'roadmap':
+        frame['roadmap'] = None
+    checkpoints.save('typeset/deck_frame.json', {
+        key: value.model_dump(mode='json') if value is not None else None for key, value in frame.items()})
+    return frame
 
 
 def _skeleton_sections(skeleton) -> list[tuple[str, int]]:
@@ -686,9 +775,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                      # Only data-bound assignments may fall back: a page planned as
                      # metrics/chart/timeline may lack the numbers or dates; a generic
                      # assignment (process, compare, ...) must be followed.
-                     'allowed_archetypes': (list(dict.fromkeys([assigned, 'points', 'statement']))
-                                            if assigned in ('metrics', 'chart', 'timeline') else [assigned]),
+                     'allowed_archetypes': ({'chart': ['chart', 'metrics', 'table', 'points'],
+                                             'metrics': ['metrics', 'table', 'points', 'statement'],
+                                             'table': ['table', 'points', 'statement'],
+                                             'timeline': ['timeline', 'points', 'statement'],
+                                             }.get(assigned, [assigned])),
                      'deck_plan': [plan[s.page_number] for s in content_slots],
+                     'other_page_titles': [s.brief.title for s in content_slots
+                                           if s.brief and s is not slot],
                      'original_layout_hint': slot.brief.layout_hint if slot.brief else 'auto'}
         packet = packets[slot.page_number]
         async with semaphore:
@@ -716,7 +810,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         if format_notes:
             record = {**record, 'format_normalizations': record.get('format_normalizations', []) + format_notes}
         if packet is not None:
-            citation = packet_citation(packet)
+            # The numeric check above was scoped to the model's own citation, so those
+            # pages are the tighter truth; fall back to everything delivered.
+            citation = None if content.source and source_is_valid(
+                content.source, packet.references, packet.page_counts, packet.allowed_pages
+            ) else packet_citation(packet)
             if citation:
                 record = {**record, 'model_source': record.get('model_source', content.source),
                           'citation_basis': 'all evidence ranges delivered for this page; not per-claim proof'}
@@ -732,6 +830,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         return slot.page_number, (content, record)
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
+    frame = None
+    if profile.name == 'consulting' and len(content_slots) >= 4:
+        frame = await generate_deck_frame(client, checkpoints, skeleton, brief, results, document_names)
     content_seconds = time.perf_counter() - started
     sections = _skeleton_sections(skeleton)
     website_titles = {doc['name']: doc.get('title', '') for doc in evidence_store.documents
@@ -773,6 +874,13 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             outcome = PageOutcome(page_number=slot.page_number, status=status,
                 model_attempts=record['attempts'], warning_issues=len(qa.issues),
                 note='; '.join(notes))
+        elif frame is not None and frame.get({'toc': 'summary', 'closing': 'roadmap'}.get(slot.kind)):
+            # The deck's opening and closing arguments take the TOC and thank-you slots.
+            framed = frame[{'toc': 'summary', 'closing': 'roadmap'}[slot.kind]]
+            page, notes = typeset_page(framed, profile, page_number=slot.page_number,
+                                       deck_title=skeleton.deck_title)
+            qa = PageQAResult(page_number=slot.page_number, issues=[])
+            outcome = PageOutcome(page_number=slot.page_number, status='anchor', note='; '.join(notes))
         else:
             # Cover, TOC, dividers and closing come from the profile's own
             # structural designs, built only from skeleton facts.

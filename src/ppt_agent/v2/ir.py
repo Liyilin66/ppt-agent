@@ -173,6 +173,7 @@ class TableItem(BaseElement):
     # "filled": colored header + banded rows (legacy); "minimal": rules only.
     style: Literal["filled", "minimal"] = "filled"
     font_pt: float | None = Field(default=None, gt=4, le=40)
+    column_widths: list[float] | None = None  # canvas units, one per header
 
     @model_validator(mode="after")
     def validate_row_widths(self) -> Self:

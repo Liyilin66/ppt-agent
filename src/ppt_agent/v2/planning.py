@@ -131,6 +131,9 @@ def _structure_budget(
 ) -> tuple[int, bool]:
     """Reserve fixed pages and use dividers only within the 25% allowance.
 
+    A three-section deck may go to 30%: its few dividers give the rhythm that a
+    short management deck otherwise lacks.
+
     The fixed pages take precedence for short decks, where they alone can
     exceed the allowance. TOCs keep their existing eight-section capacity.
     """
@@ -138,7 +141,7 @@ def _structure_budget(
     toc_pages = math.ceil(section_count / 8)
     include_dividers = (
         include_section_dividers is not False
-        and (2 + toc_pages + section_count) * 4 <= total_pages
+        and (2 + toc_pages + section_count) * (10 if section_count <= 3 else 12) <= total_pages * 3
     )
     return toc_pages, include_dividers
 

@@ -61,6 +61,17 @@ class MockLLMClient:
             return self._section_pages(context)
         if task == "page_content":
             return self._page_content(context)
+        if task == "deck_frame":
+            return {
+                "summary": {"rows": [
+                    {"tag": "现状", "headline": "问题已经明确", "detail": "资料分散，核对耗时。"},
+                    {"tag": "建议", "headline": "先试点再推广", "detail": "用试点结果决定后续投入。"}],
+                    "takeaway": "需要决定：首批试点范围"},
+                "roadmap": {"title": "分三步推进", "phases": ["第一阶段", "第二阶段", "第三阶段"], "rows": [
+                    {"label": "试点", "body": "选定场景并验证", "start": 1, "end": 1},
+                    {"label": "推广", "body": "复制到更多团队", "start": 2, "end": 3}],
+                    "takeaway": "需要决定：试点负责人"},
+            }
         if task == "page_design":
             return self._page_design(context)
         if task == "anchor_design":

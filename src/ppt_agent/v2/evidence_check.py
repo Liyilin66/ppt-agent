@@ -13,7 +13,8 @@ from pydantic import TypeAdapter, ValidationError
 from .visual.content import ArchetypeContent, StatementContent
 
 _NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|万亿|亿|万|千|百|pp)?', re.I)
-_SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart'}
+# Roadmap phases and bar positions are the deck's advice, not claims about a source.
+_SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart', 'phases', 'start', 'end'}
 _ADAPTER = TypeAdapter(ArchetypeContent)
 
 
@@ -240,6 +241,11 @@ def _readable_fragments(data: dict) -> list[str]:
     result += [f"{i['heading']}：{i['body']}" for i in data.get('items',[])]
     result += [f"{i['label']}：{i['body']}" for i in data.get('steps',[])]
     result += [pair(m['date'],m['label']) for m in data.get('milestones',[])]
+    for row in data.get('rows',[]):
+        if isinstance(row,list):
+            result.append(' '.join(row))
+        else:
+            result.append(row.get('headline') or f"{row['label']}：{row['body']}")
     for side in ('left','right'):
         result += (data.get(side) or {}).get('points',[])
     return [text for text in dict.fromkeys(result) if text]
@@ -255,7 +261,7 @@ def sanitize_content_numbers(content, issues: list[dict]):
         # A numeric chart value and its category form one inseparable item.
         if path[0]=='values':
             remove.add(('values',int(path[1])))
-        elif path[0] in {'metrics','items','steps','milestones','insights'} and len(path)>2 and path[-1]!='note':
+        elif path[0] in {'metrics','items','steps','milestones','insights','rows'} and len(path)>2 and path[-1]!='note':
             remove.add((path[0],int(path[1])))
         else:
             target=data

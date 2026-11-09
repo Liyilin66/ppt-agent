@@ -63,6 +63,8 @@ class StyleProfile(StrictModel):
     kicker_as_pill: bool = False
     chart_font: float = 12.0
     table_style: Literal["filled", "minimal"] = "minimal"
+    # Conclusion band at the bottom, content stretched to meet it: no empty lower third.
+    pin_takeaway: bool = False
     # Preferred compositions per archetype, best first. The engine falls back
     # to the next one to avoid repeating the previous page's arrangement.
     compositions: dict[str, list[str]] = {}
@@ -102,43 +104,48 @@ PROFILES: dict[ProfileName, StyleProfile] = {
         name="consulting",
         label="咨询汇报",
         description=(
-            "结论式标题、克制留白、单一主色加一个强调色；不用卡片和图标，"
-            "用细线、编号和图表组织信息；每页底部注明来源。"
+            "结论式标题、深色封面和章节页、大数字和色块撑起页面；单一主色加一个强调色，"
+            "用图表、表格和编号组织信息；每页底部注明来源。"
         ),
         palette=ThemePalette(
             background="#FFFFFF",
-            surface="#FFFFFF",
+            surface="#F3F5F8",
             surface_alt="#D9DEE5",
             primary="#12355B",
             primary_soft="#E6ECF3",
             secondary="#5B7FA6",
-            accent="#D9822B",
+            accent="#C8641E",
             text="#1A1F26",
             muted="#5F6B78",
             on_primary="#FFFFFF",
         ),
         fonts=_fonts("Microsoft YaHei"),
         sizes=TypeSizes(
-            kicker=11, title=24, lead=15, heading=17, body=14, small=13,
-            caption=10, stat=34, marker=13,
+            kicker=11, title=26, lead=15, heading=18, body=15, small=14,
+            caption=10, stat=44, marker=14,
         ),
-        vertical_bias=0.22,
-        title_top=46,
-        content_gap=30,
-        item_gap=32,
-        card_style="none",
+        vertical_bias=0.3,
+        title_top=40,
+        content_gap=24,
+        item_gap=20,
+        card_style="soft",
+        card_pad=22,
         marker="rule_number",
         title_decor="rule_below",
-        fill_target=0.74,
-        chart_font=12,
+        fill_target=0.9,
+        pin_takeaway=True,
+        chart_font=13,
         compositions={
-            "points": ["columns", "list2", "rows", "grid", "panel", "feature"],
-            "process": ["chevron", "horizontal", "vertical"],
-            "chart": ["stacked", "side", "hero"],
-            "metrics": ["columns", "cards"],
-            "statement": ["left", "center"],
+            "points": ["columns", "grid", "feature", "rows", "panel", "list2"],
+            "process": ["chevron", "vertical"],
+            "chart": ["hero", "side", "stacked"],
+            "metrics": ["hero", "cards"],
+            "statement": ["band", "left"],
             "compare": ["split", "versus"],
-            "timeline": ["axis", "cards"],
+            "timeline": ["cards", "axis"],
+            "table": ["plain"],
+            "summary": ["blocks"],
+            "roadmap": ["gantt"],
         },
     ),
     "launch": StyleProfile(

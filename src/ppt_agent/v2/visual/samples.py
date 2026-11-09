@@ -13,7 +13,12 @@ from ppt_agent.v2.visual.archetypes import (
     PointItem,
     PointsContent,
     ProcessContent,
+    RoadmapContent,
+    RoadmapRow,
     StepItem,
+    SummaryContent,
+    SummaryRow,
+    TableContent,
 )
 
 # T1 — training: 《生成式人工智能服务管理暂行办法》第四条、第十八条
@@ -222,3 +227,45 @@ CNNIC_DECK = [
 ]
 
 CNNIC_DECK_TITLE = "中国生成式 AI 应用发展：管理层简报"
+
+# Deck-level pages and the table archetype, from the same report (printed pages 7-50).
+CNNIC_DECK += [
+    TableContent(
+        kicker="国际环境",
+        title="四个经济体都已把 AI 投入写进预算",
+        headers=["经济体", "举措", "规模"],
+        rows=[
+            ["欧盟", "“投资人工智能”倡议", "拟调动 2000 亿欧元"],
+            ["英国", "人工智能机遇行动计划", "10 年公共算力提高 20 倍"],
+            ["印度", "AI 专项拨款", "1037.1 亿卢比（约 12.5 亿美元）"],
+            ["韩国", "AI 追加预算", "1.1 万亿韩元"],
+        ],
+        takeaway="各国投入都集中在算力和基础设施",
+        source=f"{_SRC}第 45–50 页",
+    ),
+    SummaryContent(
+        title="执行摘要",
+        rows=[
+            SummaryRow(tag="现状", headline="362 起投融资合计 403.9 亿元，资本集中流向 AI",
+                       detail="2025 年前四个月，机器人领域事件数占比 38.7%。"),
+            SummaryRow(tag="环境", headline="主要经济体都在加码，竞争转向算力",
+                       detail="欧盟拟调动 2000 亿欧元，韩国追加 1.1 万亿韩元预算。"),
+            SummaryRow(tag="建议", headline="先选可量化的场景试点，同步建设治理能力",
+                       detail="以试点结果决定后续投入规模。"),
+        ],
+        takeaway="需要决定：首批试点场景与预算",
+        source=f"{_SRC}第 40–50 页",
+    ),
+    RoadmapContent(
+        title="分三步把试点推进到规模化",
+        phases=["0–3 个月", "3–6 个月", "6–12 个月"],
+        rows=[
+            RoadmapRow(label="选场景", body="选出数据充足、收益可量化的试点", start=1, end=1),
+            RoadmapRow(label="建底座", body="统一模型选型和能力平台", start=1, end=2),
+            RoadmapRow(label="扩应用", body="把试点扩展到端到端流程", start=2, end=3),
+            RoadmapRow(label="管风险", body="治理组织和评估机制贯穿全程", start=1, end=3),
+        ],
+        takeaway="需要决定：首批试点场景与预算",
+        source="行动建议为基于报告内容的推断",
+    ),
+]
