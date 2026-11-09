@@ -404,6 +404,8 @@ POST /api/long-deck-jobs/{job_id}/run-ppt-master-local-export
 
 本地 stdio MCP 服务（`uv --directory <仓库绝对路径> run ppt-agent mcp`）提供四个工具和一个提示词模板。接入配置见 README。服务说明（instructions）和提示词模板 `plan_deck` 内容相同，规定了调用方 Agent 的提问方式：每轮只问一个问题、围绕 `next_question`、给 2–4 个选项；只把用户明确说过的记为 `user`；用户说"你来定"时给出具体推荐值并记为 `delegated`。
 
+咨询风格的成稿结构为：封面、执行摘要（占用目录页位置）、章节页与内容页、行动路线（占用结尾页位置）；其他风格保留目录和结尾页。执行摘要和行动路线生成失败时，摘要由各章首页标题拼出，结尾退回普通结尾页。
+
 调用方 Agent 负责理解用户和提问；ppt-agent 负责保存需求单、判断能否开工，并拦住还没准备好的生成。澄清过程中不创建生成任务，也不调用模型。
 
 ### 需求单字段
