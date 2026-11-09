@@ -198,3 +198,43 @@ def test_chart_reduced_to_a_statement_does_not_inherit_a_broken_title(tmp_path):
                                               ContentBrief(topic='t', deck_title='t'), CONSULTING))
     assert content.archetype == 'statement'
     assert content.statement == '融资验证热度' == content.title
+
+
+def test_statement_page_goes_dark_without_repeating_itself():
+    from ppt_agent.v2.visual.content import StatementContent
+    page, notes = typeset_page(StatementContent(title='窗口已开启', statement='窗口已开启'), CONSULTING,
+                               page_number=5, deck_title='t')
+    assert notes[0] == 'statement:dark'
+    assert page.elements[0].fill == 'primary' and page.elements[0].frame.w == 1280
+    assert [e.text for e in page.elements if isinstance(e, TextItem)].count('窗口已开启') == 1
+
+
+def test_chart_highlights_the_bar_its_headline_names():
+    from ppt_agent.v2.ir import ChartItem
+    from ppt_agent.v2.visual.content import ChartContent, Insight
+    content = ChartContent(title='融资', chart_title='占比', categories=['甲', '乙', '丙'], values=[90, 12.1, 40],
+                           insights=[Insight(value='12.1%', text='乙最受关注')])
+    page, _ = typeset_page(content, CONSULTING, page_number=5, deck_title='t', composition='chart:side')
+    assert next(e for e in page.elements if isinstance(e, ChartItem)).highlight == 1
+
+
+def test_lead_stays_only_when_it_adds_a_figure():
+    plain = PointsContent(title='六成企业已试点', lead='企业正在加速试点', items=[
+        PointItem(heading='甲', body='内容'), PointItem(heading='乙', body='内容')])
+    page, _ = typeset_page(plain, CONSULTING, page_number=3, deck_title='t')
+    assert not any(isinstance(e, TextItem) and e.text == '企业正在加速试点' for e in page.elements)
+    numbered = plain.model_copy(update={'lead': '同比增长 21.5%'})
+    page, _ = typeset_page(numbered, CONSULTING, page_number=3, deck_title='t')
+    assert any(isinstance(e, TextItem) and e.text == '同比增长 21.5%' for e in page.elements)
+
+
+def test_table_cells_centre_their_text_where_powerpoint_reads_it(tmp_path):
+    from pptx import Presentation
+    from pptx.enum.text import MSO_ANCHOR
+    from ppt_agent.v2.ir import DeckDesign
+    from ppt_agent.v2.render import render_deck
+    content = TableContent(title='案例', headers=['企业', '成效'], rows=[['TCL', '准确率超 90%'], ['京东', '现货率超 95%']])
+    page, _ = typeset_page(content, CONSULTING, page_number=1, deck_title='t')
+    path = render_deck(DeckDesign(deck_title='t', theme=CONSULTING.theme(), pages=[page]), tmp_path / 'a.pptx')
+    table = next(s for s in Presentation(path).slides[0].shapes if s.has_table).table
+    assert table.cell(1, 1).vertical_anchor == MSO_ANCHOR.MIDDLE

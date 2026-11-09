@@ -154,6 +154,7 @@ class ChartItem(BaseElement):
     show_value_axis: bool = True
     show_gridlines: bool = True
     number_format: str | None = Field(default=None, max_length=40)
+    highlight: int | None = Field(default=None, ge=0)  # the category the page is about
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:
@@ -174,6 +175,7 @@ class TableItem(BaseElement):
     style: Literal["filled", "minimal"] = "filled"
     font_pt: float | None = Field(default=None, gt=4, le=40)
     column_widths: list[float] | None = None  # canvas units, one per header
+    strong_header: bool = False  # minimal style with a filled header row
 
     @model_validator(mode="after")
     def validate_row_widths(self) -> Self:

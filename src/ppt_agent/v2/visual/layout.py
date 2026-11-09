@@ -278,7 +278,7 @@ def _header(b: _Builder, copy: PageCopy) -> float:
 
 def _footer(
     b: _Builder, copy: PageCopy, *, page_number: int, deck_title: str,
-    x: float | None = None, width: float | None = None,
+    x: float | None = None, width: float | None = None, color: str = "muted",
 ) -> float:
     """Draw source line and page furniture; return the y content must stay above."""
 
@@ -289,7 +289,7 @@ def _footer(
     y = CANVAS_HEIGHT - 30 - FOOTER_H
     number = f"{page_number:02d}"
     b.text(number, x=x + width - 60, y=y, w=60, h=FOOTER_H, role="caption", size=s.caption,
-           color="muted", align="right", valign="middle")
+           color=color, align="right", valign="middle")
     left_parts = []
     if copy.source:
         left_parts.append(copy.source)
@@ -297,7 +297,7 @@ def _footer(
         left_parts.append(deck_title)
     if left_parts:
         b.text("　".join(left_parts), x=x, y=y, w=width - 80, h=FOOTER_H, role="caption",
-               size=s.caption, color="muted", valign="middle")
+               size=s.caption, color=color, valign="middle")
     return y - 18
 
 

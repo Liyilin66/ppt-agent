@@ -140,7 +140,7 @@ PROFILES: dict[ProfileName, StyleProfile] = {
             "process": ["chevron", "vertical"],
             "chart": ["hero", "side", "stacked"],
             "metrics": ["hero", "cards"],
-            "statement": ["band", "left"],
+            "statement": ["dark", "left"],
             "compare": ["split", "versus"],
             "timeline": ["cards", "axis"],
             "table": ["plain"],

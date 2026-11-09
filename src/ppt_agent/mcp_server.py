@@ -30,7 +30,7 @@ MAX_SOURCES = 20  # Same limit as CreateLongDeckJobRequest.attachment_ids.
 MAX_TURNS = 60  # user turns kept per clarification session
 
 PLANNING_RULES = """生成 PPT 前先用 prepare_deck 整理需求：
-1. 先把用户原话和附件路径交给 prepare_deck，读完返回的资料摘要（source_summary），再决定要不要提问。
+1. 先把用户原话和附件路径交给 prepare_deck，第一轮就把原话里已经说清的字段（如主题、受众、页数）作为 updates 传入；读完返回的资料摘要（source_summary），再决定要不要提问。
 2. 每轮只问一个问题，围绕 next_question；尽量给 2 到 4 个选项，同时允许自由回答。等用户回答后，再把答案作为 updates 传回 prepare_deck。
 3. 只把用户明确说过的内容记为 user。不要替用户编造受众、目的或数字。资料里写明的主题和重点内容可以记为 source。
 4. 用户说"你来定"或"不知道"时，给出一个具体推荐值，记为 delegated，这一项不再追问。
@@ -271,6 +271,9 @@ def create_server() -> FastMCP:
         Pass the user's words every turn. updates maps a field to
         {"value": ..., "origin": "user" | "source" | "delegated"}; source_paths
         (absolute local paths) replaces the session's files. Generates nothing.
+        source_policy accepts: materials_only (only the supplied files),
+        materials_and_web (files plus web search), web_only (web search only),
+        none (no outside material; no specific statistics).
         """
         context: MCPContext = ctx.request_context.lifespan_context
         store = context.store

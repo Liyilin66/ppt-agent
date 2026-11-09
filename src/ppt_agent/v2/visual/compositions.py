@@ -12,6 +12,7 @@ system (inside the canvas, no overlapping text, reading text >= 12 pt).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -160,7 +161,7 @@ def points_columns(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, 
             # One shift for the row: a stretched card must not go hollow, and
             # markers across the row stay on one line.
             _draw_point_cell(b, item, index, zone.x + index * (col_w + gap), top, col_w, block,
-                             sz, pad=pad, shift=(block - natural) * 0.3)
+                             sz, pad=pad, shift=(block - natural) * 0.45)
     return block
 
 
@@ -391,7 +392,7 @@ def process_chevron(b, content: ProcessContent, zone: _Zone, sz: _Sizes, *, draw
                     fill=fill)
             b.text(step.label, x=x + (40 if index else 18), y=top, w=col_w - 64, h=band_h,
                    role="h3", size=sz.heading, color="on_primary", valign="middle")
-            spare = max(0.0, block - band_h - 22 - body_h - 2 * pad) * 0.3
+            spare = max(0.0, block - band_h - 22 - body_h - 2 * pad) * 0.45
             b.text(step.body, x=x + (16 if index else 0) + pad, y=top + band_h + 22 + pad + spare,
                    w=_widow_safe_width(step.body, sz.body, text_w - 2 * pad),
                    h=_height(step.body, "body", sz.body, text_w - 2 * pad), role="body", size=sz.body,
@@ -443,6 +444,18 @@ def process_vertical(b, content: ProcessContent, zone: _Zone, sz: _Sizes, *, dra
 # --------------------------------------------------------------------------
 
 
+def _key_bar(content: ChartContent) -> int:
+    """The bar the page's headline insight names, else the largest."""
+
+    headline = content.insights[0].value or ""
+    match = re.search(r"\d+(?:\.\d+)?", headline.replace(",", ""))
+    if match:
+        for index, value in enumerate(content.values):
+            if abs(value - float(match[0])) < 1e-6:
+                return index
+    return max(range(len(content.values)), key=content.values.__getitem__)
+
+
 def _chart_item(b: _Builder, content: ChartContent, x: float, y: float, w: float, h: float):
     p = b.profile
     b.elements.append(
@@ -452,6 +465,7 @@ def _chart_item(b: _Builder, content: ChartContent, x: float, y: float, w: float
             series=[ChartSeries(name=content.chart_title, values=content.values)],
             show_legend=False, show_data_labels=True, font_pt=p.chart_font,
             show_value_axis=False, show_gridlines=False, number_format=content.unit_format,
+            highlight=_key_bar(content) if p.pin_takeaway else None,
         )
     )
 
@@ -641,7 +655,7 @@ def metrics_cards(b, content: MetricsContent, zone: _Zone, sz: _Sizes, *, draw, 
                     fill="primary" if index == 0 else "surface",
                     stroke="surface_alt" if p.card_style == "outlined" and index else None)
             on = "on_primary" if index == 0 else "text"
-            y = top + pad + (block - natural) * 0.35
+            y = top + pad + (block - natural) * 0.45
             vh = _height(m.value, "stat", stat, inner)
             b.text(m.value, x=x + pad, y=y, w=inner, h=vh, role="stat", size=stat,
                    color="on_primary" if index == 0 else "primary")
@@ -748,6 +762,31 @@ def statement_center(b, content: StatementContent, zone: _Zone, sz: _Sizes, *, d
     return block
 
 
+def statement_dark(b, content: StatementContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """The whole slide is the sentence; the engine paints the page behind it."""
+
+    w = zone.w * 0.86
+    big, support = _statement_sizes(b, sz)
+    label = content.title if content.title != content.statement else None
+    label_h = _height(label, "kicker", b.profile.sizes.kicker + 3, w) + 20 if label else 0.0
+    st_h = _height(content.statement, "title", big, w)
+    sup_h = _height(content.support, "subtitle", support, w) if content.support else 0.0
+    block = 30 + label_h + st_h + (24 + sup_h if sup_h else 0)
+    if draw:
+        b.shape(x=zone.x, y=top, w=64, h=5, fill="accent")
+        y = top + 30
+        if label:
+            b.text(label, x=zone.x, y=y, w=w, h=label_h - 20, role="kicker",
+                   size=b.profile.sizes.kicker + 3, color="primary_soft")
+            y += label_h
+        b.text(content.statement, x=zone.x, y=y, w=_widow_safe_width(content.statement, big, w),
+               h=st_h, role="title", size=big, color="on_primary")
+        if content.support:
+            b.text(content.support, x=zone.x, y=y + st_h + 24, w=w, h=sup_h, role="subtitle",
+                   size=support, color="primary_soft")
+    return block
+
+
 def statement_band(b, content: StatementContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
     """A full-bleed brand band carries the sentence across the slide."""
 
@@ -806,7 +845,7 @@ def compare_split(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw, 
             b.text(side.heading, x=x + pad, y=top, w=inner, h=head_h, role="h3",
                    size=sz.heading + 2, color="on_primary" if favoured else "text",
                    valign="middle")
-            b.text(_bullets(side.points), x=x + pad, y=top + head_h + 20 + (block - natural) * 0.3,
+            b.text(_bullets(side.points), x=x + pad, y=top + head_h + 20 + (block - natural) * 0.45,
                    w=inner - 18,
                    h=body_hs[index], role="body", size=sz.body, bullet="dot",
                    color="muted" if p.dark else "text")
@@ -836,7 +875,7 @@ def compare_versus(b, content: CompareContent, zone: _Zone, sz: _Sizes, *, draw,
                     fill="primary" if favoured else "surface",
                     stroke="surface_alt" if (p.card_style == "outlined" and not favoured) else None)
             on = "on_primary" if favoured else "text"
-            shift = (block - natural) * 0.3
+            shift = (block - natural) * 0.45
             b.text(side.heading, x=x + pad, y=top + pad + shift, w=inner, h=head_hs[index], role="title",
                    size=sz.heading + 6, color=on)
             b.text(_bullets(side.points), x=x + pad, y=top + pad + shift + head_hs[index] + 18,
@@ -921,7 +960,7 @@ def timeline_cards(b, content: TimelineContent, zone: _Zone, sz: _Sizes, *, draw
                     fill="accent" if index == n - 1 else "primary")
             b.text(m.date, x=x + pad, y=top, w=chip_w, h=chip_h, role="h3", size=chip_size,
                    color="on_primary", align="center", valign="middle")
-            y = top + chip_h + pad + (card_h - natural) * 0.3
+            y = top + chip_h + pad + (card_h - natural) * 0.45
             b.text(m.label, x=x + pad, y=y, w=inner, h=label_hs[index], role="h3",
                    size=sz.heading, color="text")
             if m.body:
@@ -1013,7 +1052,7 @@ def _table_widths(content: TableContent, width: float, size: float) -> list[floa
 def table_plain(b, content: TableContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
     size = max(MIN_BODY_PT, sz.body)
     widths = _table_widths(content, zone.w, size)
-    margin = 16.0  # cell margins set by the renderer
+    margin = 28.0  # cell margins set by the renderer
 
     def row_h(row) -> float:
         return max(_height(cell, "body", size, w - margin) for cell, w in zip(row, widths)) + 14
@@ -1027,7 +1066,7 @@ def table_plain(b, content: TableContent, zone: _Zone, sz: _Sizes, *, draw, top)
         b.elements.append(TableItem(
             id=b._id("table"), frame=Frame(x=zone.x, y=top, w=zone.w, h=block),
             headers=content.headers, rows=content.rows, style="minimal", font_pt=size,
-            column_widths=widths))
+            column_widths=widths, strong_header=b.profile.pin_takeaway))
     return block
 
 
@@ -1166,6 +1205,8 @@ COMPOSITIONS: list[Composition] = [
                 description="左对齐大字 + 强调竖线"),
     Composition("statement", "center", statement_center, _always, header="none",
                 description="居中大字"),
+    Composition("statement", "dark", statement_dark, _always, header="none",
+                description="整页深色大字"),
     Composition("statement", "band", statement_band, _always, header="none",
                 description="通栏品牌色带"),
 ]

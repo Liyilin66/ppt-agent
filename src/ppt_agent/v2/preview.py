@@ -134,15 +134,18 @@ def _svg_chart(item: ChartItem, theme: ThemeSpec) -> str:
     bars = []
     count = len(item.categories)
     slot_width = item.frame.w / count
+    highlighted = item.highlight is not None
     for index, category in enumerate(item.categories):
         value = item.series[0].values[index]
+        color = (theme.palette.accent if index == item.highlight else theme.palette.secondary) \
+            if highlighted else colors[index % 3]
         bar_height = (item.frame.h - 40) * value / max_value
         bar_width = slot_width * 0.55
         x = item.frame.x + index * slot_width + (slot_width - bar_width) / 2
         y = item.frame.y + (item.frame.h - 24) - bar_height
         bars.append(
             f'<div style="position:absolute;left:{x}px;top:{y}px;width:{bar_width}px;'
-            f"height:{bar_height}px;background:{colors[index % 3]};"
+            f"height:{bar_height}px;background:{color};"
             f'border-radius:4px 4px 0 0;"></div>'
             f'<div style="position:absolute;left:{item.frame.x + index * slot_width}px;'
             f"top:{item.frame.y + item.frame.h - 22}px;width:{slot_width}px;"
@@ -163,8 +166,11 @@ def _svg_table(item: TableItem, theme: ThemeSpec) -> str:
 
     def cell(tag: str, text: str, *, header: bool, first: bool, index: int, last: bool) -> str:
         if minimal:
-            background = "transparent"
-            color = palette.primary if header or first else palette.text
+            filled = header and item.strong_header
+            background = palette.primary if filled else "transparent"
+            figure = item.strong_header and not header and not first and any(c.isdigit() for c in text)
+            color = palette.on_primary if filled else palette.accent if figure else (
+                palette.primary if header or first else palette.text)
             rule = "" if last else (
                 f"border-bottom:{2 if header else 1}px solid "
                 f"{palette.primary if header else palette.surface_alt};")
@@ -173,7 +179,7 @@ def _svg_table(item: TableItem, theme: ThemeSpec) -> str:
             color = palette.on_primary if header else palette.text
             rule = ""
         weight = "700" if header or (minimal and first) else "400"
-        return (f'<{tag} style="background:{background};color:{color};{rule}padding:4px 12px 4px 0;'
+        return (f'<{tag} style="background:{background};color:{color};{rule}padding:4px 12px;'
                 f'font-size:{size}px;font-weight:{weight};text-align:left;height:{row_h}px;'
                 f'box-sizing:border-box;">{html.escape(text)}</{tag}>')
 

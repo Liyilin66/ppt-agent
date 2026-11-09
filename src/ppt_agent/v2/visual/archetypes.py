@@ -17,10 +17,11 @@ The model never emits coordinates, so the failure modes of free layout —
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 
-from ppt_agent.v2.ir import CANVAS_WIDTH, DeckDesign, Gradient, PageDesign
+from ppt_agent.v2.ir import CANVAS_HEIGHT, CANVAS_WIDTH, DeckDesign, Gradient, PageDesign
 from ppt_agent.v2.visual.compositions import BY_KEY, Composition, candidates
 from ppt_agent.v2.visual.content import (  # noqa: F401 - re-exported API
     AnyContent,
@@ -92,6 +93,12 @@ def choose_composition(
     return ordered[0]
 
 
+def _adds_a_figure(lead: str, title: str) -> bool:
+    """A lead stays only if it carries a number the title does not."""
+
+    return any(number not in title for number in re.findall(r"\d+(?:\.\d+)?", lead))
+
+
 def _drop_until_fits(content, comp: Composition, probe, zone, sizes):
     """Remove trailing items until the block fits, never past what ``comp`` accepts."""
 
@@ -121,6 +128,8 @@ def typeset_page(
 ) -> tuple[PageDesign, list[str]]:
     """Typeset one content page. Returns the page and notes (composition, size changes)."""
 
+    if profile.pin_takeaway and getattr(content, "lead", None) and not _adds_a_figure(content.lead, content.title):
+        content = content.model_copy(update={"lead": None})  # a lead must earn its line
     comp = BY_KEY[composition] if composition else choose_composition(content, profile, history)
     if not comp.valid(content):
         raise ValueError(f"Composition {comp.key} cannot lay out this content")
@@ -134,7 +143,10 @@ def typeset_page(
         zone = _Zone(x=x, y=content_top, w=CANVAS_WIDTH - x - margin, bottom=content_bottom)
         bias = 0.35
     elif comp.header == "none":
-        content_bottom = _footer(b, content, page_number=page_number, deck_title=deck_title)
+        if comp.name == "dark":
+            b.shape(x=0, y=0, w=CANVAS_WIDTH, h=CANVAS_HEIGHT, fill="primary")
+        content_bottom = _footer(b, content, page_number=page_number, deck_title=deck_title,
+                                 color="primary_soft" if comp.name == "dark" else "muted")
         zone = _Zone(x=margin, y=profile.title_top, w=CANVAS_WIDTH - 2 * margin,
                      bottom=content_bottom)
         bias = 0.42
@@ -158,7 +170,7 @@ def typeset_page(
 
     chosen = base
     if comp.fn(probe, content, zone, base, draw=False, top=zone.y) <= zone.h:
-        for step in (1, 2, 3, 4):
+        for step in (1, 2, 3, 4, 5, 6) if profile.pin_takeaway else (1, 2, 3, 4):
             candidate = base.bumped(step, floor)
             if comp.fn(probe, content, zone, candidate, draw=False,
                        top=zone.y) > zone.h * profile.fill_target:
@@ -211,7 +223,7 @@ def typeset_page(
         )
     if profile.pin_takeaway and comp.header == "standard":
         # Grow the content toward the band, but not so far that cards turn hollow.
-        zone = replace(zone, target=min(zone.h, block * 1.5))
+        zone = replace(zone, target=min(zone.h, block * 1.35))
         block = comp.fn(probe, content, zone, chosen, draw=False, top=zone.y)
         top = zone.y + max(0.0, zone.h - block) * bias
         comp.fn(b, content, zone, chosen, draw=True, top=top)

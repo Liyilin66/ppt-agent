@@ -312,6 +312,12 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
             series.format.fill.fore_color.rgb = _rgb(
                 series_colors[series_index % len(series_colors)]
             )
+        if item.highlight is not None and item.highlight < len(item.categories):
+            series = plot.series[0]
+            series.format.fill.fore_color.rgb = _rgb(theme.palette.secondary)
+            point = series.points[item.highlight]
+            point.format.fill.solid()
+            point.format.fill.fore_color.rgb = _rgb(theme.palette.accent)
     plot.has_data_labels = item.show_data_labels
     if item.show_data_labels:
         if item.number_format:
@@ -380,8 +386,13 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
 
     def style_cell(cell, text: str, *, header: bool, banded: bool, last: bool,
                    first_column: bool = False) -> None:
+        filled_header = header and item.strong_header
+        if filled_header:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _rgb(theme.palette.primary)
         if minimal:
-            cell.fill.background()
+            if not filled_header:
+                cell.fill.background()
             _set_cell_rules(
                 cell,
                 bottom=theme.palette.primary if header else (
@@ -397,19 +408,24 @@ def _render_table(slide, item: TableItem, theme: ThemeSpec) -> None:
                 cell.fill.fore_color.rgb = _rgb(
                     theme.palette.surface_alt if banded else theme.palette.surface
                 )
-        cell.margin_left = _emu(0 if minimal else 8)
+        cell.margin_left = _emu(12 if filled_header or item.strong_header else 0 if minimal else 8)
         cell.margin_right = _emu(12 if minimal else 8)
         cell.margin_top = _emu(4)
         cell.margin_bottom = _emu(4)
         text_frame = cell.text_frame
         text_frame.word_wrap = True
-        text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE  # a cell reads its anchor from tcPr, not bodyPr
         paragraph = text_frame.paragraphs[0]
         run = paragraph.add_run()
         run.text = text
         run.font.size = Pt(header_pt if header else body_pt)
-        run.font.bold = header or (minimal and first_column)
-        if minimal:
+        figure = minimal and item.strong_header and not header and any(ch.isdigit() for ch in text)
+        run.font.bold = header or (minimal and first_column) or figure
+        if filled_header:
+            color = theme.palette.on_primary
+        elif figure and not first_column:
+            color = theme.palette.accent
+        elif minimal:
             color = theme.palette.primary if header or first_column else theme.palette.text
         else:
             color = theme.palette.on_primary if header else theme.palette.text
