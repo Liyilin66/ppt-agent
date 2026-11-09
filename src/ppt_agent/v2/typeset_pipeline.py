@@ -398,7 +398,7 @@ def fallback_content(slot):
     if len(points) == 1:
         points.append('请核对原始资料后补充本页内容。')
     return PointsContent(title=page.title[:40], kicker=(slot.section_title or '')[:24] or None,
-        items=[{'heading': '核心要点' if index == 0 else '补充说明', 'body': point[:80]}
+        items=[{'heading': re.split(r'[，。；：、,;:]', point)[0][:18] or f'要点{index + 1}', 'body': point[:100]}
                for index, point in enumerate(points)],
         speaker_notes=page.speaker_notes or None)
 

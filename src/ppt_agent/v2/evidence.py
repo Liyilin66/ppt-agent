@@ -317,13 +317,13 @@ class EvidenceStore:
 
     def select(self, query: str, section_query: str | None = None, mode: str = 'auto', max_chars: int = 6500,
                used: Counter | None = None) -> EvidencePacket:
-        """Excerpts for one page. ``used`` counts chunks given to earlier pages, so
-        among relevant chunks the less used come first and pages do not all argue
-        from the same few facts."""
+        """Excerpts for one page. ``used`` counts chunks given to earlier pages; one
+        already used twice yields to the next relevant chunk, so pages do not all
+        argue from the same few facts while relevance still decides the rest."""
         def fresh_first(ranked_chunks: list[dict]) -> list[dict]:
             if not used:
                 return ranked_chunks[:4]
-            return sorted(ranked_chunks, key=lambda chunk: used[chunk['chunk_id']])[:4]
+            return sorted(ranked_chunks, key=lambda chunk: used[chunk['chunk_id']] >= 2)[:4]
 
         if mode not in {'auto', 'chapter', 'retrieval', 'bm25'}:
             raise ValueError(f'Unknown evidence mode: {mode}')

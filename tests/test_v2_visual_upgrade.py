@@ -138,6 +138,12 @@ def test_a_mis_cited_figure_gets_its_real_page_instead_of_being_deleted():
     assert repair_citation(invented, packet) == (invented, [])
 
 
+def test_fallback_points_get_headings_from_their_own_text():
+    from ppt_agent.v2.typeset_pipeline import fallback_content
+    slot = PageSlot(page_number=3, kind='content', brief=PageBrief(title='营销试点', points=['商品特性辅助生成内容，提升效率', '发布前须人工审核']))
+    assert [item.heading for item in fallback_content(slot).items] == ['商品特性辅助生成内容', '发布前须人工审核']
+
+
 def test_pages_prefer_chunks_earlier_pages_did_not_use():
     from collections import Counter
     from ppt_agent.v2.evidence import EvidenceStore
@@ -146,7 +152,9 @@ def test_pages_prefer_chunks_earlier_pages_did_not_use():
     used = Counter()
     first = store.select('质检准确率', used=used).chunk_ids
     second = store.select('质检准确率', used=used).chunk_ids
-    assert set(first) != set(second)
+    third = store.select('质检准确率', used=used).chunk_ids
+    assert set(first) == set(second), 'relevance decides until a chunk is used twice'
+    assert set(third) != set(first)
     assert store.select('质检准确率').chunk_ids[:1] == first[:1], 'without tracking the ranking is unchanged'
 
 
