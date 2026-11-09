@@ -1126,7 +1126,7 @@ def _table_widths(content: TableContent, width: float, size: float) -> list[floa
 
     columns = list(zip(content.headers, *content.rows))
     longest = [max(_text_width(cell, size) for cell in column) for column in columns]
-    floor = width * 0.12
+    floor = width * 0.2
     raw = [max(floor, min(value, width * 0.55)) for value in longest]
     return [value * width / sum(raw) for value in raw]
 
