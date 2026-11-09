@@ -214,6 +214,10 @@ def check_content_numbers(content, evidence) -> list[dict]:
         # "6233" labelled "产业规模（亿美元）": the unit sits in the label.
         unit=re.search(r'[（(]\s*(万亿|亿|万|[%％])',label)
         for match in _NUMBER.finditer(value):
+            # "5维筛选", "3个阶段": the page counting its own points, not a statistic.
+            # Removing it would also leave a broken title.
+            if not label and re.fullmatch(r'\d{1,2}',match.group().strip()) and int(match.group())<=12:
+                continue
             candidates=indexed.get(_key(match.group()),[])
             if not candidates and unit and not _key(match.group())[1]:
                 candidates=indexed.get(_key(match.group()+unit[1]),[])

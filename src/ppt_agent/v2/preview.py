@@ -153,24 +153,41 @@ def _svg_chart(item: ChartItem, theme: ThemeSpec) -> str:
 
 
 def _svg_table(item: TableItem, theme: ThemeSpec) -> str:
-    rows_html = []
-    header_cells = "".join(
-        f'<th style="background:{theme.palette.primary};color:{theme.palette.on_primary};'
-        f'padding:6px 10px;font-size:13px;text-align:left;">{html.escape(cell)}</th>'
-        for cell in item.headers
-    )
-    rows_html.append(f"<tr>{header_cells}</tr>")
+    """Mirror the renderer: even row heights, its font, widths and minimal rules."""
+    minimal = item.style == "minimal"
+    size = (item.font_pt or 11) * 96 / 72
+    row_h = item.frame.h / (len(item.rows) + 1)
+    widths = item.column_widths or [item.frame.w / len(item.headers)] * len(item.headers)
+    colgroup = "".join(f'<col style="width:{width}px">' for width in widths)
+    palette = theme.palette
+
+    def cell(tag: str, text: str, *, header: bool, first: bool, index: int, last: bool) -> str:
+        if minimal:
+            background = "transparent"
+            color = palette.primary if header or first else palette.text
+            rule = "" if last else (
+                f"border-bottom:{2 if header else 1}px solid "
+                f"{palette.primary if header else palette.surface_alt};")
+        else:
+            background = palette.primary if header else (palette.surface_alt if index % 2 else palette.surface)
+            color = palette.on_primary if header else palette.text
+            rule = ""
+        weight = "700" if header or (minimal and first) else "400"
+        return (f'<{tag} style="background:{background};color:{color};{rule}padding:4px 12px 4px 0;'
+                f'font-size:{size}px;font-weight:{weight};text-align:left;height:{row_h}px;'
+                f'box-sizing:border-box;">{html.escape(text)}</{tag}>')
+
+    rows_html = ["<tr>" + "".join(cell("th", text, header=True, first=False, index=0, last=False)
+                                  for text in item.headers) + "</tr>"]
     for row_index, row in enumerate(item.rows):
-        band = theme.palette.surface_alt if row_index % 2 else theme.palette.surface
-        cells = "".join(
-            f'<td style="background:{band};color:{theme.palette.text};padding:6px 10px;'
-            f'font-size:12.5px;">{html.escape(cell)}</td>'
-            for cell in row
-        )
-        rows_html.append(f"<tr>{cells}</tr>")
+        rows_html.append("<tr>" + "".join(
+            cell("td", text, header=False, first=column == 0, index=row_index,
+                 last=row_index == len(item.rows) - 1)
+            for column, text in enumerate(row)) + "</tr>")
     return (
         f'<table style="position:absolute;left:{item.frame.x}px;top:{item.frame.y}px;'
-        f"width:{item.frame.w}px;border-collapse:collapse;\">{''.join(rows_html)}</table>"
+        f'width:{item.frame.w}px;table-layout:fixed;border-collapse:collapse;">'
+        f"<colgroup>{colgroup}</colgroup>{''.join(rows_html)}</table>"
     )
 
 

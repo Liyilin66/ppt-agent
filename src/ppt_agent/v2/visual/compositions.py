@@ -89,7 +89,7 @@ def _point_cell_height(b: _Builder, item: PointItem, w: float, sz: _Sizes,
 
 def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: float, w: float,
                      block: float, sz: _Sizes, *, pad: float,
-                     heading_size: float | None = None) -> None:
+                     heading_size: float | None = None, shift: float = 0.0) -> None:
     """Draw a vertical point cell inside a (possibly carded) box of height block."""
 
     p = b.profile
@@ -97,8 +97,7 @@ def _draw_point_cell(b: _Builder, item: PointItem, index: int, x: float, y: floa
     inner_w = w - 2 * pad
     ix, iy = x + pad, y + pad
     head_size = heading_size or sz.heading
-    natural = _point_cell_height(b, item, inner_w, sz, heading_size=heading_size)
-    iy += max(0.0, block - 2 * pad - natural) * 0.3  # stretched card: no hollow lower half
+    iy += shift
     marker_h = _marker_height(p, sz)
     if marker_h:
         _draw_marker(b, index, ix, iy, inner_w, sz)
@@ -154,12 +153,14 @@ def points_columns(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, 
     gap = b.profile.item_gap
     col_w = (zone.w - gap * (n - 1)) / n
     pad = _pad(b)
-    block = max(max(_point_cell_height(b, item, col_w - 2 * pad, sz) for item in items) + 2 * pad,
-                zone.target)
+    natural = max(_point_cell_height(b, item, col_w - 2 * pad, sz) for item in items) + 2 * pad
+    block = max(natural, zone.target)
     if draw:
         for index, item in enumerate(items):
+            # One shift for the row: a stretched card must not go hollow, and
+            # markers across the row stay on one line.
             _draw_point_cell(b, item, index, zone.x + index * (col_w + gap), top, col_w, block,
-                             sz, pad=pad)
+                             sz, pad=pad, shift=(block - natural) * 0.3)
     return block
 
 
@@ -1020,7 +1021,8 @@ def table_plain(b, content: TableContent, zone: _Zone, sz: _Sizes, *, draw, top)
     heights = [row_h(content.headers), *(row_h(row) for row in content.rows)]
     # The renderer divides the frame evenly, so every row takes the tallest height.
     natural = max(heights) * len(heights)
-    block = max(natural, zone.target)
+    # Tables read well with air: let rows open up to fill the page, within reason.
+    block = max(natural, min(zone.h, len(heights) * 84.0)) if zone.target else natural
     if draw:
         b.elements.append(TableItem(
             id=b._id("table"), frame=Frame(x=zone.x, y=top, w=zone.w, h=block),

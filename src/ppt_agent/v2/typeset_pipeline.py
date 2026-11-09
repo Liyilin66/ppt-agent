@@ -423,7 +423,8 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'points defaults to 3 items, at most 4; item body 30-70 characters carrying one concrete fact. '
         'takeaway is one sentence on what this means for the audience. '
         'chart needs 3-8 comparable values in one unit; table compares the same attributes across cases, '
-        'regions or options, with short cells; the first metric in metrics is the page headline. '
+        'regions or options, with short cells; the first metric in metrics is the page headline, and the number in the title must be that same '
+        'metric (likewise the first insight of a chart); metric values are always figures. '
         'Prefer metrics, chart or table for supported quantitative evidence, and statement for key conclusions. '
         'The deck mix is planned in advance: use diversity.assigned_archetype. Only if the supplied '
         'evidence cannot honestly fill it (e.g. no numbers for metrics or chart), choose another from '
@@ -485,6 +486,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 raise ValueError('source must be a supplied filename, page or URL; no source material means source=null')
             if evidence is not None and content_qa(parsed, slot.page_number).issues and not parsed.source:
                 raise ValueError('numeric content must cite the supplied filename and physical page in source')
+            if parsed.archetype == 'metrics' and any(
+                    not re.search(r'[\d百千万亿倍半]', metric.value) for metric in parsed.metrics):
+                raise ValueError('metrics values must be figures; use points for qualitative content')
             if parsed.archetype == 'points' and len(parsed.items) > 4:
                 raise ValueError('points must have at most 4 items, normally 3')
             if diversity.get('allowed_archetypes') and parsed.archetype not in diversity['allowed_archetypes']:

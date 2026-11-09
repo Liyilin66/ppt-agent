@@ -225,3 +225,8 @@ def test_optional_sentence_with_a_bad_number_is_dropped_whole():
         {'value': '47.1%', 'label': '比例', 'note': '较上年提升99%'}, {'value': '定性', 'label': '说明'}])
     clean, _ = sanitize_content_numbers(page, check_content_numbers(page, '比例 47.1%'))
     assert clean.takeaway is None and clean.metrics[0].note is None and clean.metrics[0].value == '47.1%'
+
+
+def test_small_counts_in_copy_are_not_statistics():
+    page = StatementContent(title='5维筛选把投入转向可落地场景', statement='先过3个关口，再看99%')
+    assert [i['value'] for i in check_content_numbers(page, '')] == ['99%']

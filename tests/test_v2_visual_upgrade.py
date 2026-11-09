@@ -8,7 +8,7 @@ from ppt_agent.v2.ir import ShapeItem, TableItem, TextItem
 from ppt_agent.v2.mock import MockLLMClient
 from ppt_agent.v2.orchestrator import BuildRequest, build_deck
 from ppt_agent.v2.planning import PageBrief, PageSlot
-from ppt_agent.v2.typeset_pipeline import plan_archetypes
+from ppt_agent.v2.typeset_pipeline import generate_content, plan_archetypes
 from ppt_agent.v2.visual.archetypes import typeset_page
 from ppt_agent.v2.visual.content import PointItem, PointsContent, RoadmapContent, TableContent
 from ppt_agent.v2.visual.profiles import PROFILES
@@ -94,3 +94,33 @@ def test_numeric_pages_get_data_layouts_before_generic_ones():
     assert sum(kind in ('metrics', 'chart', 'table') for kind in kinds) >= 7
     assert all(a != b for a, b in zip(kinds, kinds[1:]))
     assert kinds.count('table') <= 2
+
+
+def test_markers_stay_level_when_card_bodies_differ():
+    content = PointsContent(title='三个结论', takeaway='先做试点', items=[
+        PointItem(heading='甲', body='很短'), PointItem(heading='乙', body='这一条内容明显更长一些，会折成好几行来显示，比其他卡片高。'),
+        PointItem(heading='丙', body='中等长度的内容')])
+    page, _ = typeset_page(content, CONSULTING, page_number=3, deck_title='t', composition='points:columns')
+    markers = [e.frame.y for e in page.elements
+               if isinstance(e, TextItem) and e.text in ('01', '02', '03') and e.frame.y < 600]
+    assert len(set(markers)) == 1
+
+
+def test_qualitative_metric_values_are_sent_back(tmp_path):
+    import asyncio
+    from ppt_agent.v2.orchestrator import _Checkpoints
+    from ppt_agent.v2.planning import ContentBrief
+
+    class Words(MockLLMClient):
+        calls = 0
+        async def complete_json(self, **kw):
+            Words.calls += 1
+            if Words.calls == 1:
+                return {'archetype': 'metrics', 'title': '框架', 'metrics': [
+                    {'value': '五维', 'label': '框架'}, {'value': '清晰', 'label': '边界'}]}
+            return {'archetype': 'points', 'title': '框架', 'items': [
+                {'heading': '价值', 'body': '先看价值'}, {'heading': '数据', 'body': '再看数据'}]}
+    slot = PageSlot(page_number=3, kind='content', brief=PageBrief(title='框架'))
+    content, record = asyncio.run(generate_content(Words(), _Checkpoints(tmp_path, resume=False), slot,
+                                                   ContentBrief(topic='t', deck_title='t'), CONSULTING))
+    assert content.archetype == 'points' and record['attempts'] == 2
