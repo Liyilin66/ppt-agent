@@ -898,6 +898,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                       if doc.get('page_kind') == 'web'} if evidence_store is not None else {}
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     frame_history = []
+    summary_placed = False
     seen_titles = set()
     final_contents = []
     structural_removed = []
@@ -935,7 +936,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             outcome = PageOutcome(page_number=slot.page_number, status=status,
                 model_attempts=record['attempts'], warning_issues=len(qa.issues),
                 note='; '.join(notes))
-        elif frame is not None and frame.get({'toc': 'summary', 'closing': 'roadmap'}.get(slot.kind)):
+        elif frame is not None and frame.get({'toc': 'summary', 'closing': 'roadmap'}.get(slot.kind)) and not (
+                slot.kind == 'toc' and summary_placed):
+            summary_placed = summary_placed or slot.kind == 'toc'  # a long deck has more than one TOC slot
             # The deck's opening and closing arguments take the TOC and thank-you slots.
             framed = frame[{'toc': 'summary', 'closing': 'roadmap'}[slot.kind]]
             page, notes = typeset_page(framed, profile, page_number=slot.page_number,

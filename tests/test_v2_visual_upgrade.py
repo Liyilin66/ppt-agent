@@ -308,3 +308,16 @@ def test_long_runs_get_a_statement_page_to_breathe():
     kinds = list(plan_archetypes(slots, {n: True for n in range(1, 41)}).values())
     gaps = ''.join('s' if k == 'statement' else '.' for k in kinds)
     assert '.' * 9 not in gaps
+
+
+def test_long_deck_shows_its_summary_once(tmp_path):
+    result = build_deck(BuildRequest(prompt='长汇报', page_count=100, output_dir=str(tmp_path),
+                                     style_profile='consulting'), MockLLMClient(), progress=lambda _: None)
+    pages = json.loads(Path(result.deck_design_path).read_text())['pages']
+    assert sum(any(e.get('text') == '执行摘要' for e in page['elements']) for page in pages) == 1
+    assert len(pages) == 100
+
+
+def test_terra_budget_estimate_uses_its_real_rates():
+    from ppt_agent.v2.providers import lookup_default_pricing
+    assert lookup_default_pricing('gpt-5.6-terra') == (2.0, 12.0)

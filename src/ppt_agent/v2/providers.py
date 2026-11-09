@@ -82,6 +82,7 @@ class ProviderConfig(StrictModel):
 # $0.00 when a provider does not expose pricing. They are not billing rates;
 # users should pass explicit prices when accuracy matters.
 DEFAULT_MODEL_PRICES_USD_PER_MTOK: tuple[tuple[str, float, float], ...] = (
+    ("gpt-5.6-terra", 2.0, 12.0),
     ("claude-fable", 10.0, 50.0),
     ("claude-mythos", 10.0, 50.0),
     ("claude-opus", 5.0, 25.0),
