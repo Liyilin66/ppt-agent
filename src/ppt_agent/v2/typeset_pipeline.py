@@ -566,7 +566,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 parsed = parsed.model_copy(update={'title': planned})
             else:
                 parsed = parsed.model_copy(update={'title': (slot.section_title or '要点')[:40]})
-        if parsed.archetype == 'statement' and any(item['path'] == 'statement' for item in removed):
+        if parsed.archetype == 'statement' and any(item['path'] in ('statement', 'title') for item in removed):
             # The sentence the page exists for cannot lose a figure and still read.
             parsed = parsed.model_copy(update={'statement': parsed.title[:44]})
     if check_content_numbers(parsed, cited_evidence(parsed.source, evidence)):

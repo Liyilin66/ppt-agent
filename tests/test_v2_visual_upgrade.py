@@ -182,3 +182,19 @@ def test_statement_that_loses_a_figure_is_replaced_not_left_broken(tmp_path):
     content, _ = asyncio.run(generate_content(Unsupported(), _Checkpoints(tmp_path, resume=False), slot,
                                               ContentBrief(topic='t', deck_title='t'), CONSULTING))
     assert content.statement == '融资验证热度'
+
+
+def test_chart_reduced_to_a_statement_does_not_inherit_a_broken_title(tmp_path):
+    import asyncio
+    from ppt_agent.v2.orchestrator import _Checkpoints
+    from ppt_agent.v2.planning import ContentBrief
+
+    class Unsupported(MockLLMClient):
+        async def complete_json(self, **kw):
+            return {'archetype': 'chart', 'title': '2024年上半年316亿美元融资验证热度', 'chart_title': '融资',
+                    'categories': ['甲', '乙', '丙'], 'values': [316, 252, 135], 'insights': [{'text': '融资上升'}]}
+    slot = PageSlot(page_number=3, kind='content', section_title='投入窗口已开启', brief=PageBrief(title='融资验证热度'))
+    content, _ = asyncio.run(generate_content(Unsupported(), _Checkpoints(tmp_path, resume=False), slot,
+                                              ContentBrief(topic='t', deck_title='t'), CONSULTING))
+    assert content.archetype == 'statement'
+    assert content.statement == '融资验证热度' == content.title
