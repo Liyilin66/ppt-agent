@@ -566,6 +566,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 parsed = parsed.model_copy(update={'title': planned})
             else:
                 parsed = parsed.model_copy(update={'title': (slot.section_title or '要点')[:40]})
+        if parsed.archetype == 'statement' and any(item['path'] == 'statement' for item in removed):
+            # The sentence the page exists for cannot lose a figure and still read.
+            parsed = parsed.model_copy(update={'statement': parsed.title[:44]})
     if check_content_numbers(parsed, cited_evidence(parsed.source, evidence)):
         raise ValueError('Numeric cleanup did not eliminate unsupported numbers; refusing export')
     if not parsed.kicker and slot.section_title:

@@ -168,3 +168,17 @@ def test_two_value_chart_is_sent_back_for_a_different_layout(tmp_path):
     content, record = asyncio.run(generate_content(TwoBars(), _Checkpoints(tmp_path, resume=False), slot,
                                                    ContentBrief(topic='t', deck_title='t'), CONSULTING))
     assert content.archetype == 'points' and record['attempts'] == 2
+
+
+def test_statement_that_loses_a_figure_is_replaced_not_left_broken(tmp_path):
+    import asyncio
+    from ppt_agent.v2.orchestrator import _Checkpoints
+    from ppt_agent.v2.planning import ContentBrief
+
+    class Unsupported(MockLLMClient):
+        async def complete_json(self, **kw):
+            return {'archetype': 'statement', 'title': '融资验证热度', 'statement': '2024年上半年316亿美元融资验证热度'}
+    slot = PageSlot(page_number=3, kind='content', brief=PageBrief(title='融资验证热度'))
+    content, _ = asyncio.run(generate_content(Unsupported(), _Checkpoints(tmp_path, resume=False), slot,
+                                              ContentBrief(topic='t', deck_title='t'), CONSULTING))
+    assert content.statement == '融资验证热度'
