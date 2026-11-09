@@ -315,7 +315,16 @@ class EvidenceStore:
             result.append(prefix + lead_line + ''.join('\n' + line for line in lines))
         return '\n'.join(result)[:max_chars]
 
-    def select(self, query: str, section_query: str | None = None, mode: str = 'auto', max_chars: int = 6500) -> EvidencePacket:
+    def select(self, query: str, section_query: str | None = None, mode: str = 'auto', max_chars: int = 6500,
+               used: Counter | None = None) -> EvidencePacket:
+        """Excerpts for one page. ``used`` counts chunks given to earlier pages, so
+        among relevant chunks the less used come first and pages do not all argue
+        from the same few facts."""
+        def fresh_first(ranked_chunks: list[dict]) -> list[dict]:
+            if not used:
+                return ranked_chunks[:4]
+            return sorted(ranked_chunks, key=lambda chunk: used[chunk['chunk_id']])[:4]
+
         if mode not in {'auto', 'chapter', 'retrieval', 'bm25'}:
             raise ValueError(f'Unknown evidence mode: {mode}')
         strategy, candidates = 'bm25', []
@@ -345,10 +354,10 @@ class EvidenceStore:
                                                'text': '\n'.join(part['text'] for part in parts)})
                     strategy = 'chapter'
         if not candidates:
-            candidates = [self.chunks[i] for i, _ in self.retriever.search(query, 4)]
+            candidates = fresh_first([self.chunks[i] for i, _ in self.retriever.search(query, 8)])
         else:
-            ranked = BM25Retriever([c['text'] for c in candidates]).search(query, 4)
-            candidates = [candidates[i] for i, _ in ranked] if ranked else candidates[:4]
+            ranked = BM25Retriever([c['text'] for c in candidates]).search(query, 8)
+            candidates = fresh_first([candidates[i] for i, _ in ranked]) if ranked else candidates[:4]
             web = [self.chunks[i] for i, _ in self.retriever.search(query, 8)
                    if self._docs[self.chunks[i]['doc_id']]['page_kind'] == 'web'][:1]
             candidates = candidates[:4 - len(web)] + web
@@ -370,6 +379,8 @@ class EvidenceStore:
                 added = True
             if added:
                 packet.chunk_ids.append(chunk['chunk_id'])
+                if used is not None:
+                    used[chunk['chunk_id']] += 1
         packet.text = '\n\n'.join(blocks)
         packet.allowed_pages = {name: sorted(set(pages)) for name, pages in packet.allowed_pages.items()}
         packet.references = list(packet.allowed_pages)

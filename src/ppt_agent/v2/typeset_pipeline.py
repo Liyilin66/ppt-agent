@@ -129,6 +129,36 @@ def trim_source(source, references, page_counts=None, allowed_pages=None):
     return '；'.join(kept), dropped
 
 
+def repair_citation(content, packet):
+    """Cite the supplied pages that actually hold a number the model mis-cited.
+
+    A figure present in this page's excerpts but on a page the model did not name
+    is a citation slip, not an invention: correct the page instead of deleting it.
+    """
+    from ppt_agent.v2.evidence_check import _NUMBER, _key, check_content_numbers
+    if packet is None or not packet.text:
+        return content, []
+    issues = check_content_numbers(content, cited_evidence(content.source, packet))
+    missing = {_key(issue['value'].lstrip('-+')) for issue in issues
+               if issue['reason'] == 'number_missing' and re.match(r'[-+]?\d', issue['value'])}
+    if not missing:
+        return content, []
+    headers = list(re.finditer(r'^\[(.+?) \| (PDF|logical|web) p(\d+)\]\n', packet.text, re.M))
+    added = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(packet.text)
+        found = {_key(match.group()) for match in _NUMBER.finditer(packet.text[header.end():end])}
+        if not missing & found:
+            continue
+        clause = header[1] if header[2] == 'web' else f'{header[1]} 第{header[3]}页'
+        if clause not in added and clause not in (content.source or ''):
+            added.append(clause)
+    if not added:
+        return content, []
+    source = '；'.join(filter(None, [content.source, *added]))
+    return content.model_copy(update={'source': source}), added
+
+
 def cited_evidence(source, packet):
     """Restrict numeric checks to excerpts actually named by the citation."""
     from ppt_agent.v2.evidence import EvidencePacket
@@ -495,7 +525,12 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 raise ValueError('archetype violates deck diversity; choose from ' + str(diversity['allowed_archetypes']))
             if parsed.archetype == 'chart' and len(parsed.categories) != len(parsed.values):
                 raise ValueError('categories and values must have identical lengths')
+            if parsed.archetype == 'chart' and len(parsed.categories) < 3:
+                raise ValueError('chart needs at least 3 comparable values in one unit; use metrics for fewer')
             from ppt_agent.v2.evidence_check import check_content_numbers, number_contexts
+            parsed, repaired = repair_citation(parsed, evidence)
+            if repaired:
+                source_trims.append({'attempt': attempts, 'added': repaired})
             numeric_issues = check_content_numbers(parsed, cited_evidence(parsed.source, evidence))
             if numeric_issues:
                 numeric_candidate = parsed
@@ -523,6 +558,14 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     removed = []
     if final_issues:
         parsed, removed = sanitize_content_numbers(parsed, final_issues)
+        if any(item['path'] == 'title' for item in removed):
+            # Stripping a figure from a sentence breaks it; the planned title reads whole.
+            planned = page_brief.title[:40]
+            if not check_content_numbers(parsed.model_copy(update={'title': planned}),
+                                         cited_evidence(parsed.source, evidence)):
+                parsed = parsed.model_copy(update={'title': planned})
+            else:
+                parsed = parsed.model_copy(update={'title': (slot.section_title or '要点')[:40]})
     if check_content_numbers(parsed, cited_evidence(parsed.source, evidence)):
         raise ValueError('Numeric cleanup did not eliminate unsupported numbers; refusing export')
     if not parsed.kicker and slot.section_title:
@@ -751,13 +794,15 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     evidence_store = EvidenceStore.from_dict(json.loads(evidence_path.read_text())) if evidence_path.is_file() else None
     content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
 
+    chunk_use = Counter()
+
     def packet_for(slot):
         if evidence_store is None:
             return None
         section = skeleton.outline.sections[(slot.section_index or 1) - 1]
         query = " ".join([slot.brief.title, *slot.brief.points, slot.section_title or '']) if slot.brief else (slot.section_title or '')
         section_query = " ".join([section.title, section.goal, *section.talking_points])
-        return evidence_store.select(query, section_query=section_query)
+        return evidence_store.select(query, section_query=section_query, used=chunk_use)
 
     # Evidence selection is local BM25, so every packet is known before any
     # model call; the archetype mix is then fixed up front and pages can be

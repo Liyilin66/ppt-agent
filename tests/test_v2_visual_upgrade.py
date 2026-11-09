@@ -8,7 +8,8 @@ from ppt_agent.v2.ir import ShapeItem, TableItem, TextItem
 from ppt_agent.v2.mock import MockLLMClient
 from ppt_agent.v2.orchestrator import BuildRequest, build_deck
 from ppt_agent.v2.planning import PageBrief, PageSlot
-from ppt_agent.v2.typeset_pipeline import generate_content, plan_archetypes
+from ppt_agent.v2.evidence import EvidencePacket
+from ppt_agent.v2.typeset_pipeline import generate_content, plan_archetypes, repair_citation
 from ppt_agent.v2.visual.archetypes import typeset_page
 from ppt_agent.v2.visual.content import PointItem, PointsContent, RoadmapContent, TableContent
 from ppt_agent.v2.visual.profiles import PROFILES
@@ -122,5 +123,48 @@ def test_qualitative_metric_values_are_sent_back(tmp_path):
                 {'heading': '价值', 'body': '先看价值'}, {'heading': '数据', 'body': '再看数据'}]}
     slot = PageSlot(page_number=3, kind='content', brief=PageBrief(title='框架'))
     content, record = asyncio.run(generate_content(Words(), _Checkpoints(tmp_path, resume=False), slot,
+                                                   ContentBrief(topic='t', deck_title='t'), CONSULTING))
+    assert content.archetype == 'points' and record['attempts'] == 2
+
+
+def test_a_mis_cited_figure_gets_its_real_page_instead_of_being_deleted():
+    from ppt_agent.v2.visual.content import StatementContent
+    packet = EvidencePacket(text='[r.pdf | PDF p3]\n背景说明\n[r.pdf | PDF p7]\n规模达到 6233亿美元',
+                            references=['r.pdf'], allowed_pages={'r.pdf': [3, 7]})
+    page = StatementContent(title='规模', statement='规模达6233亿', source='r.pdf 第3页')
+    fixed, added = repair_citation(page, packet)
+    assert added == ['r.pdf 第7页'] and fixed.source == 'r.pdf 第3页；r.pdf 第7页'
+    invented = StatementContent(title='规模', statement='规模达9999亿', source='r.pdf 第3页')
+    assert repair_citation(invented, packet) == (invented, [])
+
+
+def test_pages_prefer_chunks_earlier_pages_did_not_use():
+    from collections import Counter
+    from ppt_agent.v2.evidence import EvidenceStore
+    pages = [{'page': n, 'text': f'质检准确率案例{n}，企业应用场景。' * 60} for n in range(1, 11)]
+    store = EvidenceStore([{'doc_id': 'd', 'name': 'r.pdf', 'path': 'r.pdf', 'sha256': '', 'page_kind': 'PDF', 'pages': pages}])
+    used = Counter()
+    first = store.select('质检准确率', used=used).chunk_ids
+    second = store.select('质检准确率', used=used).chunk_ids
+    assert set(first) != set(second)
+    assert store.select('质检准确率').chunk_ids[:1] == first[:1], 'without tracking the ranking is unchanged'
+
+
+def test_two_value_chart_is_sent_back_for_a_different_layout(tmp_path):
+    import asyncio
+    from ppt_agent.v2.orchestrator import _Checkpoints
+    from ppt_agent.v2.planning import ContentBrief
+
+    class TwoBars(MockLLMClient):
+        calls = 0
+        async def complete_json(self, **kw):
+            TwoBars.calls += 1
+            if TwoBars.calls == 1:
+                return {'archetype': 'chart', 'title': '成效', 'chart_title': '成效', 'categories': ['准确率', '周期'],
+                        'values': [90, 60], 'insights': [{'text': '提升'}]}
+            return {'archetype': 'points', 'title': '成效', 'items': [
+                {'heading': '质检', 'body': '提升'}, {'heading': '周期', 'body': '缩短'}]}
+    slot = PageSlot(page_number=3, kind='content', brief=PageBrief(title='成效'))
+    content, record = asyncio.run(generate_content(TwoBars(), _Checkpoints(tmp_path, resume=False), slot,
                                                    ContentBrief(topic='t', deck_title='t'), CONSULTING))
     assert content.archetype == 'points' and record['attempts'] == 2

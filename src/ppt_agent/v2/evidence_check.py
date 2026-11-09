@@ -117,12 +117,12 @@ def _metric_match(text: str, numbers: list, match, label: str) -> bool:
     elif closed or (opens_line and not labelled_before):
         if _covers(re.sub(r'\s+', '', text[match.end():hi]).lower(), tokens, head, tail=False, years=years):
             return True
-    # One subject, several values: "融资占比从2022年的4.5%上升至2024年上半年的12.1%".
-    # Only a 至/到 continuation shares the earlier subject; a list does not.
-    if prev is not None and re.search(r'[至到]', text[prev.end():match.start()]) \
+    # One subject, several values: "融资占比从2022年的4.5%上升至2024年上半年的12.1%",
+    # "规模达6233亿美元，同比增长21.5%". Only a continuation shares the subject; a list does not.
+    if prev is not None and re.search(r'[至到]|同比|环比|较上', text[prev.end():match.start()]) \
             and not re.search(r'[A-Za-z]', text[prev.end():match.start()]):
         start = max(text.rfind(mark, 0, prev.start()) for mark in '。；')  # PDF lines wrap mid-sentence
-        clause = re.sub(r'\s+', '', text[max(start + 1, prev.start() - 60):prev.start()]).lower()
+        clause = re.sub(r'\s+', '', text[max(start + 1, prev.start() - 60):match.start()]).lower()
         return _covers(clause, tokens, head, tail=False, years=())
     return False
 
@@ -213,6 +213,10 @@ def check_content_numbers(content, evidence) -> list[dict]:
             continue  # "01", "第2阶段": an ordinal step, not a statistic
         # "6233" labelled "产业规模（亿美元）": the unit sits in the label.
         unit=re.search(r'[（(]\s*(万亿|亿|万|[%％])',label)
+        # "7×24小时" is one expression, not a 7 and a 24.
+        product=re.search(r'\d+\s*[×xX*]\s*\d+',value)
+        if product and re.sub(r'\s','',product[0]) in re.sub(r'\s','',text):
+            value=value.replace(product[0],'')
         for match in _NUMBER.finditer(value):
             # "5维筛选", "3个阶段": the page counting its own points, not a statistic.
             # Removing it would also leave a broken title.

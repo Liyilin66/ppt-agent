@@ -230,3 +230,10 @@ def test_optional_sentence_with_a_bad_number_is_dropped_whole():
 def test_small_counts_in_copy_are_not_statistics():
     page = StatementContent(title='5维筛选把投入转向可落地场景', statement='先过3个关口，再看99%')
     assert [i['value'] for i in check_content_numbers(page, '')] == ['99%']
+
+
+def test_clause_after_a_value_keeps_its_subject_and_times_is_one_expression():
+    text = '据IDC预测，2024年全球人工智能产业规模将达到6233亿美元，同比增长21.5%。'
+    assert check_content_numbers(_claim('21.5%', '产业规模同比增长'), text) == []
+    assert check_content_numbers(_claim('21.5%', '用户规模'), text)
+    assert check_content_numbers(StatementContent(title='服务', statement='提供7×24小时客服'), '提供7×24小时的智能客服') == []
