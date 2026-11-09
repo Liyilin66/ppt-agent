@@ -230,6 +230,18 @@ CNNIC_DECK_TITLE = "中国生成式 AI 应用发展：管理层简报"
 
 # Deck-level pages and the table archetype, from the same report (printed pages 7-50).
 CNNIC_DECK += [
+    PointsContent(
+        kicker="融资环境",
+        title="资金向机器人和行业应用集中",
+        highlight=Insight(value="403.9 亿", text="2025 年前四个月 AI 相关投融资合计金额（元）"),
+        items=[
+            PointItem(heading="机器人领域最热", body="事件数占比 38.7%，在各领域中最高。"),
+            PointItem(heading="行业应用其次", body="传统行业应用占 23.5%，硬件与技术占 18.2%。"),
+            PointItem(heading="地区高度集中", body="38.2% 的投资金额集中在北京。"),
+        ],
+        takeaway="资本已经用脚投票，企业应优先看行业落地",
+        source=f"{_SRC}第 40–41 页",
+    ),
     TableContent(
         kicker="国际环境",
         title="四个经济体都已把 AI 投入写进预算",

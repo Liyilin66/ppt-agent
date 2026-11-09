@@ -246,3 +246,65 @@ def test_table_cells_centre_their_text_where_powerpoint_reads_it(tmp_path):
     path = render_deck(DeckDesign(deck_title='t', theme=CONSULTING.theme(), pages=[page]), tmp_path / 'a.pptx')
     table = next(s for s in Presentation(path).slides[0].shapes if s.has_table).table
     assert table.cell(1, 1).vertical_anchor == MSO_ANCHOR.MIDDLE
+
+
+def _hundred_page_deck():
+    from ppt_agent.v2.visual.archetypes import typeset_deck
+    from ppt_agent.v2.visual.samples import CNNIC_DECK, SAMPLES
+    pool = [c for c in SAMPLES + CNNIC_DECK if c.archetype not in ('summary', 'roadmap')]
+    contents = [pool[i % len(pool)] for i in range(87)]
+    return typeset_deck(contents, CONSULTING, deck_title='长文档')
+
+
+def test_a_hundred_pages_spread_across_layouts_and_skeletons():
+    from collections import Counter
+    from ppt_agent.v2.visual.archetypes import CARD_ROWS
+    _, notes = _hundred_page_deck()
+    keys = [n[0] for n in notes]
+    frames = [n[1] for n in notes]
+    assert max(Counter(keys).values()) / len(keys) <= 0.12
+    assert len(set(frames)) == 4
+    assert not any(a == b == c for a, b, c in zip(frames, frames[1:], frames[2:]))
+    assert not any(all(k in CARD_ROWS for k in keys[i:i + 3]) for i in range(len(keys) - 2))
+
+
+@pytest.mark.parametrize('frame', ['banner', 'lead_band', 'panel'])
+def test_every_skeleton_keeps_text_apart_and_on_the_canvas(frame):
+    import itertools
+    from ppt_agent.v2.visual.archetypes import _typeset_framed, candidates
+    from ppt_agent.v2.visual.samples import CNNIC_DECK, SAMPLES
+    from ppt_agent.v2.ir import LineItem
+    for content in SAMPLES + CNNIC_DECK:
+        content = content.model_copy(update={'takeaway': content.takeaway or '据此决定首批试点'})
+        for comp in candidates(content):
+            if comp.header != 'standard':
+                continue
+            try:
+                page, notes = _typeset_framed(content, CONSULTING, comp, 3, 't', [], frame)
+            except ValueError:
+                continue  # the engine retries on the standard skeleton
+            if any(n.startswith(('dropped', 'content exceeds')) or 'switched' in n for n in notes):
+                continue
+            texts = [e for e in page.elements if isinstance(e, TextItem)]
+            for e in page.elements:
+                if not isinstance(e, LineItem):
+                    assert e.frame.bottom <= 720.5 and e.frame.right <= 1280.5, (comp.key, e.id)
+            for a, b in itertools.combinations(texts, 2):
+                ix = min(a.frame.right, b.frame.right) - max(a.frame.x, b.frame.x)
+                iy = min(a.frame.bottom, b.frame.bottom) - max(a.frame.y, b.frame.y)
+                assert ix <= 1 or iy <= 1, (comp.key, frame, a.text, b.text)
+
+
+def test_page_too_dense_for_its_skeleton_falls_back_without_cutting():
+    from ppt_agent.v2.visual.archetypes import typeset_page as engine
+    items = [PointItem(heading=f'要点{i}', body='这一条内容相当长，需要折成好几行才能放下完整的事实和解释说明，' + '并补充细节。' * 3) for i in range(5)]
+    content = PointsContent(title='五个要点', takeaway='先做试点', items=items)
+    page, notes = engine(content, CONSULTING, page_number=3, deck_title='t', composition='points:rows', frames=['banner', 'banner', 'standard', 'standard'])
+    assert sum(isinstance(e, TextItem) and e.text.startswith('这一条') for e in page.elements) == 5
+
+
+def test_long_runs_get_a_statement_page_to_breathe():
+    slots = [PageSlot(page_number=n, kind='content', section_index=1, brief=PageBrief(title=str(n))) for n in range(1, 41)]
+    kinds = list(plan_archetypes(slots, {n: True for n in range(1, 41)}).values())
+    gaps = ''.join('s' if k == 'statement' else '.' for k in kinds)
+    assert '.' * 9 not in gaps

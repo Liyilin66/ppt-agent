@@ -367,15 +367,39 @@ def _draw_marker(b: _Builder, index: int, x: float, y: float, w: float, sz: _Siz
 PANEL_W = 408.0
 
 
-def _panel_header(b: _Builder, copy: PageCopy) -> float:
-    """Title column: a full-height colour panel on the left carries the header.
+def _banner_header(b: _Builder, copy: PageCopy) -> float:
+    """Full-width colour band carrying the title; returns where content may start."""
+
+    p = b.profile
+    s = p.sizes
+    x = p.margin_x
+    width = CANVAS_WIDTH - 2 * x
+    y = 26.0
+    kicker_h = _height(copy.kicker, "kicker", s.kicker, width) if copy.kicker else 0.0
+    title_h = _height(copy.title, "title", s.title + 2, width)
+    lead_h = _height(copy.lead, "subtitle", s.lead, width) if copy.lead else 0.0
+    band = y + (kicker_h + 8 if kicker_h else 0) + title_h + (8 + lead_h if lead_h else 0) + 22
+    b.shape(x=0, y=0, w=CANVAS_WIDTH, h=band, fill="primary")
+    if copy.kicker:
+        b.text(copy.kicker, x=x, y=y, w=width, h=kicker_h, role="kicker", size=s.kicker, color="primary_soft")
+        y += kicker_h + 8
+    b.text(copy.title, x=x, y=y, w=width, h=title_h, role="title", size=s.title + 2, color="on_primary")
+    y += title_h
+    if copy.lead:
+        b.text(copy.lead, x=x, y=y + 8, w=width, h=lead_h, role="subtitle", size=s.lead, color="primary_soft")
+    return band + p.content_gap
+
+
+def _panel_header(b: _Builder, copy: PageCopy, *, height: float = CANVAS_HEIGHT,
+                  takeaway: str | None = None) -> float:
+    """Title column: a colour panel on the left carries the header.
 
     Returns the x where the content column starts.
     """
 
     p = b.profile
     s = p.sizes
-    b.shape(x=0, y=0, w=PANEL_W, h=CANVAS_HEIGHT, fill="surface_alt" if p.dark else "primary")
+    b.shape(x=0, y=0, w=PANEL_W, h=height, fill="surface_alt" if p.dark else "primary")
     on = "text" if p.dark else "on_primary"
     soft = "secondary" if p.dark else "primary_soft"
     x = 56.0
@@ -394,4 +418,8 @@ def _panel_header(b: _Builder, copy: PageCopy) -> float:
     if copy.lead:
         h = _height(copy.lead, "subtitle", s.lead, w)
         b.text(copy.lead, x=x, y=y, w=w, h=h, role="subtitle", size=s.lead, color=soft)
+        y += h + 18
+    if takeaway:
+        h = _height(takeaway, "h3", s.lead, w)
+        b.text(takeaway, x=x, y=y, w=w, h=h, role="h3", size=s.lead, color=on)
     return PANEL_W + 64.0

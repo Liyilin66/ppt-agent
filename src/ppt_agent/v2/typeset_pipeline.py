@@ -452,6 +452,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'Do not repeat what other_page_titles cover. '
         'points defaults to 3 items, at most 4; item body 30-70 characters carrying one concrete fact. '
         'takeaway is one sentence on what this means for the audience. '
+        'When a points page has one key figure in the evidence, also set highlight to {value, text}. '
         'chart needs 3-8 comparable values in one unit; table compares the same attributes across cases, '
         'regions or options, with short cells; the first metric in metrics is the page headline, and the number in the title must be that same '
         'metric (likewise the first insight of a chart); metric values are always figures. '
@@ -660,6 +661,10 @@ def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | No
                 return False
             return True
 
+        since_statement = next((i for i, s in enumerate(reversed(slots[:index]))
+                                if plan[s.page_number] == 'statement'), index)
+        if since_statement >= 6 and not first_in_section and previous != 'statement':
+            ordered.insert(0, 'statement')  # a long run of dense pages needs somewhere to breathe
         choice = None
         soft = frozenset({"compare", "timeline", *_NUMERIC})
         for relax in (frozenset(), soft, soft | {"process"}, soft | {"process", "points"}):
@@ -727,9 +732,11 @@ async def generate_deck_frame(client, checkpoints, skeleton, brief, results, doc
         data = results[number][0].model_dump(mode='json', exclude_none=True)
         for key in ('source', 'speaker_notes', 'archetype', 'kicker', 'unit_format', 'chart'):
             data.pop(key, None)
-        pages.append(json.dumps(data, ensure_ascii=False)[:600])
+        pages.append(json.dumps(data, ensure_ascii=False))
+    # A long deck must still fit one call behind the proxy's gateway timeout.
+    limit = 600 if len(pages) <= 30 else 240
     user = json.dumps({'deck_title': skeleton.deck_title, 'audience': brief.audience, 'purpose': brief.purpose,
-                       'pages': pages}, ensure_ascii=False)
+                       'pages': [page[:limit] for page in pages]}, ensure_ascii=False)
     evidence = '\n'.join(pages)
     source = '资料来源：' + '；'.join(document_names.values()) if document_names else None
     note = '行动建议为基于报告内容的推断，需结合公司实际调整'
@@ -890,6 +897,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     website_titles = {doc['name']: doc.get('title', '') for doc in evidence_store.documents
                       if doc.get('page_kind') == 'web'} if evidence_store is not None else {}
     history, pages, qa_results, outcomes, records = [], [], [], [], []
+    frame_history = []
     seen_titles = set()
     final_contents = []
     structural_removed = []
@@ -900,7 +908,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             record = {**record, 'source_display': reader_copy.source}
             try:
                 page, notes = typeset_page(reader_copy, profile, page_number=slot.page_number,
-                                          deck_title=skeleton.deck_title, history=history)
+                                          deck_title=skeleton.deck_title, history=history, frames=frame_history)
             except ValueError as exc:
                 # A legal schema may still be too dense for a composition.
                 # Keep the failure visible and degrade this page only, offline.
@@ -911,13 +919,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 content, stripped = sanitize_content_numbers(content, invalid)
                 record.setdefault('numeric_check', {}).setdefault('removed', []).extend(stripped)
                 page, notes = typeset_page(content, profile, page_number=slot.page_number,
-                                          deck_title=skeleton.deck_title, history=history)
+                                          deck_title=skeleton.deck_title, history=history, frames=frame_history)
                 checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
                                  {'content': content.model_dump(mode='json'), 'record': record})
             final_contents.append(content)
             page = page.model_copy(update={'section': slot.section_title})
             if notes:
                 history.append(notes[0])
+                frame_history.append(notes[1].removeprefix('frame:'))
             qa = content_qa(content, slot.page_number, seen_titles)
             status = 'fallback' if record['fallback'] else 'model'
             record = {**record, 'composition': notes[0] if notes else None, 'notes': notes,

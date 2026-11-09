@@ -273,6 +273,50 @@ def points_list2(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, to
     return block
 
 
+def points_figure(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """The page's key figure on a colour block, its supporting points beside it."""
+
+    hero = content.highlight
+    left_w = zone.w * 0.34
+    gap = 36.0
+    right_w = zone.w - left_w - gap
+    pad = 28.0
+    inner = left_w - 2 * pad
+    size = _one_line(hero.value or "", sz.stat * 1.45, inner)
+    vh = _height(hero.value or "", "stat", size, inner)
+    th = _height(hero.text, "body", sz.body, inner)
+    left = vh + 12 + th + 2 * pad
+
+    def row_h(item: PointItem) -> float:
+        return (_height(item.heading, "h3", sz.heading, right_w) + 6
+                + _height(item.body, "body", sz.body, right_w) + 30)
+
+    rows = [row_h(item) for item in content.items]
+    natural = max(left, sum(rows))
+    block = max(natural, zone.target)
+    if draw:
+        b.shape(x=zone.x, y=top, w=left_w, h=block, fill="primary")
+        y = top + (block - vh - 12 - th) / 2
+        b.text(hero.value or "", x=zone.x + pad, y=y, w=inner, h=vh, role="stat", size=size, color="on_primary")
+        b.text(hero.text, x=zone.x + pad, y=y + vh + 12, w=inner, h=th, role="body", size=sz.body,
+               color="primary_soft")
+        x = zone.x + left_w + gap
+        share = (block - sum(rows)) / len(rows)
+        y = top
+        for index, (item, h) in enumerate(zip(content.items, rows)):
+            h += share
+            if index:
+                b.line(x, y, x + right_w, y, color="surface_alt", width=0.75)
+            hh = _height(item.heading, "h3", sz.heading, right_w)
+            bh = _height(item.body, "body", sz.body, right_w)
+            ty = y + (h - hh - 6 - bh) / 2
+            b.text(item.heading, x=x, y=ty, w=right_w, h=hh, role="h3", size=sz.heading, color="primary")
+            b.text(item.body, x=x, y=ty + hh + 6, w=_widow_safe_width(item.body, sz.body, right_w), h=bh,
+                   role="body", size=sz.body, color="text")
+            y += h
+    return block
+
+
 def points_rows(b, content: PointsContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
     p = b.profile
     items = content.items
@@ -594,6 +638,44 @@ def chart_hero(b, content: ChartContent, zone: _Zone, sz: _Sizes, *, draw, top) 
                    role="body", size=sz.body, color="muted" if p.dark else "text")
             y += h + 12
         _chart_panel(b, content, zone.x + left_w + gap, top, chart_w, block, sz)
+    return block
+
+
+def chart_cards(b, content: ChartContent, zone: _Zone, sz: _Sizes, *, draw, top) -> float:
+    """Chart on the left, each conclusion a filled card with an accent edge."""
+
+    p = b.profile
+    gap = 24.0
+    chart_w = zone.w * 0.6
+    side_w = zone.w - chart_w - gap
+    pad = 18.0
+    inner = side_w - 2 * pad - 6
+    stat = sz.stat * 0.62
+    hs = [_insight_height(i, inner, sz, stat) + 2 * pad for i in content.insights]
+    card_gap = 12.0
+    right = sum(hs) + card_gap * (len(hs) - 1)
+    title_h = _height(content.chart_title, "h3", sz.heading, chart_w - 2 * _pad(b))
+    left = title_h + 12 + _chart_min_h(b, content) + 2 * _pad(b)
+    block = max(left, right, zone.h * 0.9)
+    if draw:
+        _chart_panel(b, content, zone.x, top, chart_w, block, sz)
+        share = (block - right) / len(hs)
+        x = zone.x + chart_w + gap
+        y = top
+        for index, (insight, h) in enumerate(zip(content.insights, hs)):
+            h += share
+            b.shape(x=x, y=y, w=side_w, h=h, fill="primary" if index == 0 else "primary_soft")
+            b.shape(x=x, y=y, w=6, h=h, fill="accent" if index == 0 else "secondary")
+            natural = _insight_height(insight, inner, sz, stat)
+            iy = y + (h - natural) / 2
+            if insight.value:
+                vh = _height(insight.value, "stat", stat, inner)
+                b.text(insight.value, x=x + pad + 6, y=iy, w=inner, h=vh, role="stat", size=stat,
+                       color="on_primary" if index == 0 else "primary")
+                iy += vh + 6
+            b.text(insight.text, x=x + pad + 6, y=iy, w=inner, h=_height(insight.text, "body", sz.body, inner),
+                   role="body", size=sz.body, color="on_primary" if index == 0 else "text")
+            y += h + card_gap
     return block
 
 
@@ -1167,6 +1249,9 @@ def _always(_: AnyContent) -> bool:
 
 
 COMPOSITIONS: list[Composition] = [
+    Composition("points", "figure", points_figure, lambda c: bool(c.highlight and c.highlight.value)
+                and 2 <= len(c.items) <= 4, description="大数字色块 + 要点列表"),
+    Composition("chart", "cards", chart_cards, _always, description="图表 + 填色解读卡"),
     Composition("points", "columns", points_columns, _n("items", 2, 4),
                 description="等宽分栏（2–4 条）"),
     Composition("points", "list2", points_list2, _n("items", 4, 5),

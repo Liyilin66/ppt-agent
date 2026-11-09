@@ -25,6 +25,11 @@ class PageCopy(StrictModel):
     speaker_notes: str | None = None
 
 
+class Insight(StrictModel):
+    value: str | None = Field(default=None, max_length=10)
+    text: str = Field(..., min_length=1, max_length=48)
+
+
 class PointItem(StrictModel):
     heading: str = Field(..., min_length=1, max_length=18)
     body: str = Field(..., min_length=1, max_length=100)
@@ -35,6 +40,7 @@ class PointItem(StrictModel):
 class PointsContent(PageCopy):
     archetype: Literal["points"] = "points"
     items: list[PointItem] = Field(..., min_length=2, max_length=5)
+    highlight: Insight | None = None  # the page's key figure, when the evidence has one
 
 
 class StepItem(StrictModel):
@@ -45,11 +51,6 @@ class StepItem(StrictModel):
 class ProcessContent(PageCopy):
     archetype: Literal["process"] = "process"
     steps: list[StepItem] = Field(..., min_length=3, max_length=6)
-
-
-class Insight(StrictModel):
-    value: str | None = Field(default=None, max_length=10)
-    text: str = Field(..., min_length=1, max_length=48)
 
 
 class ChartContent(PageCopy):
