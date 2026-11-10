@@ -1,0 +1,29 @@
+/* 明亮现代: warm white, deep-green colour fields, lime accent, large radii. */
+.slide{
+  --bg:#fbfaf7;--ink:#12261f;--muted:#5d6c66;--line:#dcd6c6;
+  --accent:#d6f25a;--accent-ink:#12261f;--accent-text:#1d7a4c;
+  --strong:#0f3d2e;--strong-ink:#f3f1e7;--strong-muted:#b9c7bf;--strong-em:#d6f25a;
+  --soft:#efeadc;--chart-color:#0f3d2e;--radius:26px;--radius-s:14px;
+  --font-head:'Microsoft YaHei',sans-serif;--font-num:'Microsoft YaHei',sans-serif;
+  --font-body:'Microsoft YaHei',sans-serif;
+}
+.kicker{display:inline-block;align-self:flex-start;letter-spacing:1px;color:var(--accent-ink);background:var(--accent);border-radius:99px;padding:5px 14px}
+.head{display:flex;flex-direction:column}
+.note{border-left:none;background:var(--accent);color:var(--accent-ink)}
+.topline{border-top-width:6px;border-top-color:var(--strong)}
+.fill{background:var(--strong)}
+.th-strong{background:var(--strong)}
+.cover .deco{left:28px;top:28px;width:780px;height:664px;border-radius:30px;background:var(--strong)}
+.cover .deco2{left:836px;top:28px;width:416px;height:150px;border-radius:30px;background:var(--accent)}
+.cover .deco3{left:836px;top:206px;width:416px;height:486px;border-radius:30px;background:var(--soft)}
+.cover .kicker{left:80px;top:76px;background:transparent;padding:0;color:var(--accent);letter-spacing:3px}
+.cover-main{left:80px;top:190px;width:660px;color:var(--strong-ink)}
+.cover-sub{color:var(--strong-muted)}
+.cover-aside{left:876px;right:auto;top:250px;width:336px}
+.cover-figure{position:absolute;left:876px;top:62px;width:336px;display:flex;flex-direction:column;gap:6px}
+.section .deco{left:28px;top:28px;width:1224px;height:664px;border-radius:30px;background:var(--strong)}
+.section .deco2{left:92px;top:170px;width:120px;height:14px;border-radius:99px;background:var(--accent)}
+.section-main{left:92px;top:220px;color:var(--strong-ink)}
+.section-no{color:var(--accent)}
+.section-sub{color:var(--strong-muted)}
+.statement .deco{left:28px;top:28px;width:1224px;height:664px;border-radius:30px;background:var(--soft)}

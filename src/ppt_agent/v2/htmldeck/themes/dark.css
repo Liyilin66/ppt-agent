@@ -1,0 +1,28 @@
+/* 深色科技: near-black, blue/teal glow, gradient figures, translucent cards. */
+.slide{
+  --bg:#07090f;--ink:#eef1f8;--muted:#8d97ad;--line:rgba(255,255,255,.16);
+  --accent:#3ff0d0;--accent-ink:#04121a;--accent-text:#3ff0d0;
+  --strong:#1c3fd6;--strong-ink:#ffffff;--strong-muted:rgba(255,255,255,.72);--strong-em:#8ff7e6;
+  --soft:rgba(255,255,255,.06);--chart-color:#3ff0d0;--radius:18px;--radius-s:10px;
+  --font-head:'Microsoft YaHei',sans-serif;--font-num:'Microsoft YaHei',sans-serif;
+  --font-body:'Microsoft YaHei',sans-serif;
+}
+.backdrop{position:absolute;border-radius:50%}
+.backdrop.b1{left:-360px;top:160px;width:900px;height:900px;background:radial-gradient(circle,rgba(43,92,255,.42) 0%,rgba(43,92,255,0) 66%)}
+.backdrop.b2{left:760px;top:-520px;width:900px;height:900px;background:radial-gradient(circle,rgba(18,214,197,.26) 0%,rgba(18,214,197,0) 66%)}
+.panel{background:linear-gradient(135deg,#2450f0,#0fb9a6)}
+.card{border:1px solid rgba(255,255,255,.13)}
+.outline{border:1px solid rgba(255,255,255,.3)}
+.note{border:1px solid rgba(255,255,255,.13);border-left:4px solid var(--accent)}
+.stat,.key,.section-no{background:linear-gradient(90deg,#6ea8ff,#3ff0d0);-webkit-background-clip:text;background-clip:text;color:transparent}
+.panel .stat,.accent .stat,.panel .key,.accent .key{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:inherit}
+.fill{background:linear-gradient(90deg,#2b5cff,#3ff0d0)}
+.cover .deco{right:120px;top:130px;width:460px;height:460px;border-radius:50%;border:1px solid rgba(255,255,255,.18)}
+.cover .deco2{right:190px;top:200px;width:320px;height:320px;border-radius:50%;border:1px solid rgba(255,255,255,.3)}
+.cover .deco3{right:280px;top:290px;width:140px;height:140px;border-radius:50%;background:linear-gradient(135deg,#6ea8ff,#3ff0d0);box-shadow:0 0 80px rgba(63,240,208,.6)}
+.cover-aside{left:72px;right:auto;top:470px;width:360px}
+.cover-main{top:120px}
+.section .deco{right:-200px;top:-200px;width:900px;height:900px;border-radius:50%;background:radial-gradient(circle,rgba(43,92,255,.55) 0%,rgba(43,92,255,0) 66%)}
+.section .deco2{left:72px;top:190px;width:80px;height:4px;border-radius:2px;background:linear-gradient(90deg,#6ea8ff,#3ff0d0)}
+.section-main{top:220px}
+.statement .deco{left:-300px;top:-100px;width:900px;height:900px;border-radius:50%;background:radial-gradient(circle,rgba(18,214,197,.3) 0%,rgba(18,214,197,0) 66%)}

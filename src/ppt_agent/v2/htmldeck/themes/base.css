@@ -1,0 +1,85 @@
+/* Shared vocabulary. A theme sets the variables and restyles a few components;
+   the class names — and so the HTML a model writes — are the same for all themes.
+   No pseudo-elements, transforms, filters or images: the converter reads real
+   elements only. */
+.slide{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:18px;line-height:1.6}
+.page{position:absolute;left:0;top:0;width:1280px;height:720px;display:flex;flex-direction:column;padding:50px 64px 36px}
+.head{flex:none;margin-bottom:24px}
+.kicker{font-size:14px;line-height:1.3;letter-spacing:3px;font-weight:700;color:var(--accent-text);margin-bottom:10px}
+.title{font-family:var(--font-head);font-size:35px;line-height:1.32;font-weight:700;max-width:1040px}
+.lead{font-size:18px;line-height:1.6;color:var(--muted);margin-top:8px;max-width:960px}
+.body{flex:1 1 0;min-height:0;display:flex;gap:24px}
+.foot{flex:none;display:flex;justify-content:space-between;align-items:flex-end;gap:40px;margin-top:16px;font-size:13px;line-height:1.4;color:var(--muted)}
+
+/* arrangement */
+.row{display:flex;gap:24px;min-width:0;min-height:0}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0;min-height:0}
+.f1{flex:1 1 0;min-width:0}.f2{flex:2 1 0;min-width:0}.f3{flex:3 1 0;min-width:0}
+.fit{flex:none}
+.center{justify-content:center}.between{justify-content:space-between}.end{justify-content:flex-end}
+.middle{align-items:center}.baseline{align-items:baseline}.stretch{align-items:stretch}
+.gap-s{gap:10px}.gap-l{gap:36px}
+.tall-60{height:60%}.tall-75{height:75%}
+
+/* blocks */
+.panel,.card,.outline,.accent{display:flex;flex-direction:column;gap:10px;min-width:0;padding:28px 30px;border-radius:var(--radius)}
+.panel{background:var(--strong);color:var(--strong-ink)}
+.panel .muted,.panel .label{color:var(--strong-muted)}
+.panel .em{color:var(--strong-em)}
+.card{background:var(--soft)}
+.outline{border:1.5px solid var(--line)}
+.accent{background:var(--accent);color:var(--accent-ink)}
+.accent .muted,.accent .label,.accent .em{color:var(--accent-ink)}
+.topline{display:flex;flex-direction:column;gap:10px;min-width:0;border-top:4px solid var(--accent);padding-top:18px}
+.topline.dim{border-top-color:var(--line)}
+.sideline{border-left:4px solid var(--accent);padding-left:18px}
+.note{flex:none;font-size:18px;line-height:1.55;font-weight:700;padding:13px 20px;background:var(--soft);border-left:4px solid var(--accent);border-radius:var(--radius-s)}
+.rule{flex:none;height:1.5px;background:var(--line)}
+.rule.strong{height:2px;background:var(--ink)}
+
+/* text */
+.stat{font-family:var(--font-num);font-weight:700;font-size:64px;line-height:1.12;letter-spacing:-1px}
+.stat.xl{font-size:150px;line-height:1.02;letter-spacing:-4px}
+.stat.l{font-size:96px;line-height:1.06;letter-spacing:-2px}
+.stat.s{font-size:40px;line-height:1.2;letter-spacing:0}
+.h{font-family:var(--font-head);font-size:26px;line-height:1.35;font-weight:700}
+.h.l{font-size:32px}
+.p{font-size:19px;line-height:1.65}
+.small{font-size:16px;line-height:1.6}
+.label{font-size:14px;line-height:1.4;letter-spacing:1px;color:var(--muted)}
+.muted{color:var(--muted)}
+.em{color:var(--accent-text)}
+.bold{font-weight:700}
+.num{font-family:var(--font-num);font-size:20px;line-height:1.3;font-weight:700;letter-spacing:1px;color:var(--accent-text)}
+.pill{display:inline-block;align-self:flex-start;font-size:14px;line-height:1.3;font-weight:700;padding:5px 14px;border-radius:99px;background:var(--accent);color:var(--accent-ink)}
+.pill.ghost{background:transparent;color:inherit;border:1.5px solid var(--line)}
+
+/* rows of facts */
+.list{display:flex;flex-direction:column;min-width:0}
+.item{display:flex;gap:22px;align-items:center;padding:16px 0;border-bottom:1.5px solid var(--line)}
+.item:last-child{border-bottom:none}
+.key{flex:0 0 160px;font-family:var(--font-num);font-size:36px;line-height:1.2;font-weight:700}
+.key.w{flex-basis:240px}
+
+/* data */
+.bar{flex:none;height:14px;border-radius:99px;background:var(--line)}
+.fill{height:100%;border-radius:99px;background:var(--accent)}
+.chart{flex:1 1 0;min-height:200px;min-width:240px;--chart:var(--chart-color)}
+table{width:100%;flex:1 1 auto;font-size:18px;line-height:1.5}
+th{text-align:left;font-weight:700;padding:10px 14px;border-bottom:2px solid var(--ink)}
+td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+
+/* whole-page types */
+.cover,.section,.statement{padding:0}
+.cover-main{position:absolute;left:72px;top:150px;width:660px;display:flex;flex-direction:column;gap:26px}
+.cover-title{font-family:var(--font-head);font-size:66px;line-height:1.24;font-weight:700}
+.cover-sub{font-size:19px;line-height:1.7;color:var(--muted)}
+.cover .kicker{position:absolute;left:72px;top:64px;margin:0}
+.cover-aside{position:absolute;right:72px;top:150px;width:330px;display:flex;flex-direction:column;gap:14px}
+.section-main{position:absolute;left:72px;top:210px;width:900px;display:flex;flex-direction:column;gap:18px}
+.section-no{font-family:var(--font-num);font-size:120px;line-height:1;font-weight:700;color:var(--accent-text)}
+.section-title{font-family:var(--font-head);font-size:52px;line-height:1.3;font-weight:700}
+.section-sub{font-size:20px;line-height:1.6;color:var(--muted)}
+.statement-main{position:absolute;left:96px;top:0;width:1000px;height:720px;display:flex;flex-direction:column;justify-content:center;gap:28px}
+.quote{font-family:var(--font-head);font-size:50px;line-height:1.4;font-weight:700}
+.deco,.deco2,.deco3{position:absolute}

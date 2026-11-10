@@ -55,7 +55,7 @@
     return runs;
   }
   function paintedAncestor(el) {
-    for (let e = el; e && e !== root; e = e.parentElement) if (painted(getComputedStyle(e))) return e;
+    for (let e = el; e && e !== root; e = e.parentElement) { const cs = getComputedStyle(e); if (painted(cs) && !clipsText(cs)) return e; }
     return root;
   }
   function emitText(nodes, owner) {

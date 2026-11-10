@@ -62,7 +62,7 @@ def test_a_clean_page_has_no_defects():
 @pytest.mark.parametrize("body, kind", [
     ('<div class="card"><p>一段比色块高得多的文字。</p><p>第二行</p><p>第三行</p><p>第四行</p></div>'
      '<div class="tall">下面的内容</div>', "overflow"),
-    ('<div class="tall"></div><div class="tall">底部</div>', "off_canvas"),
+    ('<div class="tall"></div><div class="tall" style="display:flex;align-items:flex-end">底部</div>', "off_canvas"),
     ('<div class="tall" style="position:relative"><p style="position:absolute;left:0;top:0">第一段文字</p>'
      '<p style="position:absolute;left:10px;top:4px">第二段文字</p><p style="position:absolute;top:480px">底</p></div>', "overlap"),
     ('<div class="card tall"><span class="tiny">很小的字</span></div>', "small_text"),

@@ -1,0 +1,26 @@
+/* 杂志编辑: paper, ink, one vermilion accent, serif headings, hairlines instead of cards. */
+.slide{
+  --bg:#f4efe6;--ink:#1b1a17;--muted:#6a655a;--line:#cdc5b3;
+  --accent:#c8371f;--accent-ink:#fffaf2;--accent-text:#c8371f;
+  --strong:#1b1a17;--strong-ink:#f4efe6;--strong-muted:#b8b1a2;--strong-em:#ef7a5f;
+  --soft:#eae3d4;--chart-color:#c8371f;--radius:0px;--radius-s:0px;
+  --font-head:Georgia,'SimSun',serif;--font-num:Georgia,'SimSun',serif;
+  --font-body:'DengXian','Microsoft YaHei',sans-serif;
+}
+.title{font-size:34px;font-weight:700}
+.head{border-bottom:2px solid var(--ink);padding-bottom:20px}
+.card{background:transparent;border-top:2px solid var(--ink);padding:18px 0 0}
+.outline{border:1.5px solid var(--ink)}
+.note{background:transparent;padding:4px 0 4px 18px}
+.stat{font-weight:400}
+.key{font-weight:400}
+.pill{border-radius:0;letter-spacing:2px}
+.cover-title{font-size:72px;font-weight:700}
+.cover .deco{left:72px;top:104px;width:1136px;height:2px;background:var(--ink)}
+.cover .deco2{left:72px;top:640px;width:1136px;height:1px;background:var(--ink)}
+.cover .deco3{right:72px;top:150px;width:10px;height:440px;background:var(--accent)}
+.cover-aside{right:112px;top:160px}
+.section .deco{left:0;top:0;width:28px;height:720px;background:var(--accent)}
+.section .deco2{left:72px;top:160px;width:1136px;height:2px;background:var(--ink)}
+.section-no{font-weight:400}
+.statement .deco{left:72px;top:0;width:6px;height:720px;background:var(--accent)}

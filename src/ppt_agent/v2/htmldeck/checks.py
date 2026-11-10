@@ -87,11 +87,6 @@ def find_defects(
         defects.append(Defect("unsupported", f"用了不支持的写法：{note}。请只用主题提供的类。"))
     for clip in measured.clipped:
         defects.append(Defect("overflow", f"「{_short(clip.get('text', ''))}」所在的容器装不下内容，请减少文字或放大容器。", clip.get("text", "")))
-    if measured.scroll_height > CANVAS_HEIGHT + TOLERANCE:
-        defects.append(Defect("off_canvas", f"内容超出页面底部 {measured.scroll_height - CANVAS_HEIGHT:.0f} 像素，请减少内容或缩小间距。"))
-    if measured.scroll_width > CANVAS_WIDTH + TOLERANCE:
-        defects.append(Defect("off_canvas", f"内容超出页面右侧 {measured.scroll_width - CANVAS_WIDTH:.0f} 像素。"))
-
     texts = [item for item in measured.items if item["kind"] == "text" and _item_text(item)]
     for item in texts:
         rect, parent, label = item["text"], item["parent"], _short(_item_text(item))
@@ -124,6 +119,13 @@ def find_defects(
                 ))
 
     for item in measured.items:
+        if item["kind"] in ("chart", "table") and (
+            item["x"] < -TOLERANCE or item["y"] < -TOLERANCE
+            or item["x"] + item["w"] > CANVAS_WIDTH + TOLERANCE
+            or item["y"] + item["h"] > CANVAS_HEIGHT + TOLERANCE
+        ):
+            name = "图表" if item["kind"] == "chart" else "表格"
+            defects.append(Defect("off_canvas", f"{name}超出了页面边界，请减少内容或缩小它。"))
         if item["kind"] == "chart":
             try:
                 chart_spec(item["spec"])

@@ -38,10 +38,10 @@ document.querySelectorAll('.chart[data-chart]').forEach(function (el) {
 """
 
 
-def wrap(body_html: str, theme_css: str, font_css: str) -> str:
+def wrap(body_html: str, theme_css: str, font_css: str, backdrop_html: str = "") -> str:
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         f"<style>{font_css}</style><style>{BASE_CSS}{theme_css}</style></head>"
-        f'<body><div class="slide">{body_html}</div>'
+        f'<body><div class="slide">{backdrop_html}{body_html}</div>'
         f"<script>{CHART_SKETCH_JS}</script></body></html>"
     )
