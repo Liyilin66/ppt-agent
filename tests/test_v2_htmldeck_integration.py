@@ -65,3 +65,26 @@ def test_without_a_browser_the_layout_engine_is_used(tmp_path, monkeypatch):
     report = json.loads(Path(result.run_report_path).read_text())
     assert report["html_design"]["unavailable"] == "none here"
     assert any("no browser available" in message for message in messages)
+
+
+def test_the_theme_option_reaches_the_build_request_from_every_entry_point():
+    import argparse
+
+    from ppt_agent.deck_jobs import CreateLongDeckJobRequest
+    from ppt_agent.mcp_brief import ClarifyBrief, apply_updates, to_job_request
+    from ppt_agent.v2 import cli
+
+    parser = argparse.ArgumentParser()
+    cli._add_build_arguments(parser, offline=True)
+    args = parser.parse_args(["--prompt", "p", "--output-dir", "o", "--html-theme", "bright", "--no-html-review"])
+    built = cli._build_request(args, offline=True)
+    assert built.html_theme == "bright" and built.html_review is False
+    job = CreateLongDeckJobRequest(topic="t", audience="a", slide_count=10, user_requirements="r",
+                                   html_theme="dark")
+    assert job.html_theme == "dark"
+    brief = apply_updates(ClarifyBrief(), {
+        name: {"value": value, "origin": "user"} for name, value in {
+            "topic": "AI 落地", "purpose": "向管理层汇报", "audience": "管理层", "slide_count": 10,
+            "user_requirements": "讲清机会", "source_policy": "none", "html_theme": "editorial"}.items()
+    }).brief
+    assert to_job_request(brief).html_theme == "editorial"

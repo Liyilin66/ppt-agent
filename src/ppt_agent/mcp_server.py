@@ -332,8 +332,13 @@ def create_server() -> FastMCP:
         source_paths: list[str] | None = None,
         search: bool = False,
         style: Literal['consulting', 'launch', 'training', 'corporate'] | None = None,
+        theme: Literal['editorial', 'dark', 'bright'] | None = None,
     ) -> dict:
         """Start generating a settled brief; returns a job ID without waiting.
+
+        theme picks a visual theme and has the model design every page for it:
+        editorial (杂志编辑: paper, serif, ink and vermilion), dark (深色科技),
+        bright (明亮现代: deep green and lime). Without it the built-in layouts are used.
 
         Prefer session_id from a prepare_deck session whose status is ready; the
         other arguments are then ignored. A direct call must state topic,
@@ -350,11 +355,14 @@ def create_server() -> FastMCP:
                     return {'error': '需求会话不存在：' + session_id}
                 brief = ClarifyBrief.model_validate_json(session.brief_json)
                 paths = json.loads(session.source_paths_json)
+                if theme is not None:  # a theme named at create time wins over the session's
+                    brief = apply_updates(brief, {'html_theme': {'value': theme, 'origin': 'user'}}).brief
             else:
                 paths = list(source_paths or [])
                 documents, _ = _source_paths(paths)
                 given = {'topic': topic, 'purpose': purpose, 'slide_count': pages,
                          'user_requirements': requirements, 'style_profile': style,
+                         'html_theme': theme,
                          'audience': None if audience == '未指定' else audience,
                          'source_policy': _derived_policy(bool(documents), search)}
                 brief = apply_updates(ClarifyBrief(), {

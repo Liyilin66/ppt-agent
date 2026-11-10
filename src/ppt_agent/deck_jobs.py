@@ -110,6 +110,8 @@ class CreateLongDeckJobRequest(StrictModel):
     attachment_ids: list[str] = Field(default_factory=list, max_length=20)
     layout_engine: Literal["typeset", "free"] = "typeset"
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
+    # Model-designed pages in this visual theme; None keeps the code-driven layout.
+    html_theme: Literal["editorial", "dark", "bright"] | None = None
     enable_search: bool = False
 
 
@@ -315,6 +317,7 @@ def run_v2_long_deck_job(
                 language=payload.language,
                 layout_engine=payload.layout_engine,
                 style_profile=payload.style_profile,
+                html_theme=payload.html_theme,
                 enable_search=payload.enable_search,
                 source_paths=document_paths or [],
                 image_paths=image_paths or [],

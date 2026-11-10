@@ -42,6 +42,14 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         "--style-profile", choices=("consulting", "launch", "training", "corporate"),
         default=None, help="Override the model-selected deck style.",
     )
+    parser.add_argument(
+        "--html-theme", choices=("editorial", "dark", "bright"), default=None,
+        help="Let the model design each page in HTML with this theme (needs Chrome or Edge).",
+    )
+    parser.add_argument(
+        "--no-html-review", action="store_true",
+        help="Skip the step where the model looks at each rendered page.",
+    )
     parser.add_argument("--language", default=None, help="Force slide language (e.g. zh-CN, en).")
     parser.add_argument(
         "--source",
@@ -118,6 +126,8 @@ def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
         theme=args.theme,
         layout_engine=args.layout_engine,
         style_profile=args.style_profile,
+        html_theme=getattr(args, "html_theme", None),
+        html_review=not getattr(args, "no_html_review", False),
         output_dir=args.output_dir,
         deck_name=args.deck_name,
         resume=args.resume,

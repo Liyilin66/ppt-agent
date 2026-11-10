@@ -39,7 +39,7 @@ FIELD_LABELS = {
     "topic": "主题", "audience": "受众", "slide_count": "页数", "language": "语言",
     "purpose": "目的", "tone": "语气", "visual_direction": "视觉方向",
     "content_focus": "重点内容", "constraints": "限制条件", "user_requirements": "补充说明",
-    "style_profile": "风格", "source_policy": "资料使用方式", "sources": "资料",
+    "style_profile": "风格", "html_theme": "视觉主题", "source_policy": "资料使用方式", "sources": "资料",
 }
 POLICY_LABELS = {
     "materials_only": "只使用提供的资料，不联网",
@@ -58,6 +58,7 @@ QUESTION_REASONS = {
 
 class BriefValues(PresentationBriefDraft):
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
+    html_theme: Literal["editorial", "dark", "bright"] | None = None
     source_policy: SourcePolicy | None = None
 
 
@@ -298,7 +299,8 @@ def to_job_request(brief: ClarifyBrief, *, attachment_ids: Iterable[str] = ()) -
     return CreateLongDeckJobRequest(
         topic=values.topic, audience=values.audience, slide_count=values.slide_count,
         language=values.language, deck_type="visual_design_v2", layout_engine="typeset",
-        style_profile=values.style_profile, user_requirements=_requirements_text(brief),
+        style_profile=values.style_profile, html_theme=values.html_theme,
+        user_requirements=_requirements_text(brief),
         enable_search=values.source_policy in ("materials_and_web", "web_only"),
         attachment_ids=list(attachment_ids))
 
@@ -335,5 +337,6 @@ def brief_summary(brief: ClarifyBrief, sources: Iterable[SourceSummary] = ()) ->
         show("content_focus", "、".join(values.content_focus)),
         show("constraints", "；".join(values.constraints)),
         show("style_profile", values.style_profile),
+        show("html_theme", values.html_theme),
     ]
     return "；".join(part for part in parts if part) + "。" if any(parts) else "还没有确定任何需求。"
