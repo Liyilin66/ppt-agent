@@ -289,6 +289,9 @@ async def _revise_typeset_deck_staged(
         prompt=message, page_count=skeleton.total_pages, language=brief.language,
         output_dir=str(output_root), deck_name=deck_name, resume=True,
         concurrency=concurrency, layout_engine="typeset", style_profile=profile_name,
+        # A deck designed in HTML stays so: pages whose content changed are
+        # designed again, the rest are rebuilt from their saved HTML.
+        html_theme=config.get("html_theme"),
     )
     previous_report_path = output_root / f"{deck_name}_run_report.json"
     previous_records = {}

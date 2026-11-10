@@ -797,6 +797,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     document_names = dict(previous_config.get('source_display_names', {})) if request.resume else {}
     document_names.update(document_display_names(request.source_paths))
     checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
+                                           'html_theme': getattr(request, 'html_theme', None),
                                            'source_references': references, 'source_page_counts': page_counts,
                                            'source_display_names': document_names})
     from ppt_agent.v2.evidence import EvidenceStore

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from typing import Any, Callable
 
 from ppt_agent.v2.htmldeck import browser, sanitize, themes
@@ -41,6 +43,13 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
         notes=content.speaker_notes,
         section=section_title,
     )
+
+
+def _fingerprint(job: DesignJob) -> str:
+    """Identifies the content a saved page was designed for."""
+
+    payload = json.dumps([job.content, job.source, job.kicker, job.title], ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
 async def _replay(session, theme, font_css, job: DesignJob, html: str) -> PageResult:
@@ -90,7 +99,7 @@ async def design_deck(
             name = f"html/page_{job.page_number:03d}.json"
             cached = checkpoints.load(name) if checkpoints is not None else None
             async with gate:
-                if cached and cached.get("html") and cached.get("theme_vocabulary") == 1:
+                if cached and cached.get("html") and cached.get("content") == _fingerprint(job):
                     result = await _replay(session, theme, font_css, job, cached["html"])
                     result.attempts = 0
                     if result.ok:
@@ -99,7 +108,7 @@ async def design_deck(
                 result = await design_page(client, session, theme, font_css, job, look=look)
             results[job.page_number] = result
             if checkpoints is not None and result.ok:
-                checkpoints.save(name, {"html": result.html, "theme_vocabulary": 1,
+                checkpoints.save(name, {"html": result.html, "content": _fingerprint(job),
                                         "attempts": result.attempts, "idea": job.idea,
                                         "review_problems": result.review_problems})
             progress(f"[design] page {job.page_number} "

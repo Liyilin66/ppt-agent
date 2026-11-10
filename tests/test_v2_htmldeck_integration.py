@@ -88,3 +88,19 @@ def test_the_theme_option_reaches_the_build_request_from_every_entry_point():
             "user_requirements": "讲清机会", "source_policy": "none", "html_theme": "editorial"}.items()
     }).brief
     assert to_job_request(brief).html_theme == "editorial"
+
+
+@needs_browser
+def test_revising_a_page_redesigns_only_that_page_and_keeps_the_theme(tmp_path):
+    from ppt_agent.v2.revise import revise_deck
+
+    build_deck(request(tmp_path), Counting(), progress=lambda _: None)
+    before = DeckDesign.model_validate_json((tmp_path / "deck_design.json").read_text())
+    target = next(page.page_number for page in before.pages if page.role == "content" and page.page_number > 3)
+    client = Counting()
+    revise_deck(output_dir=str(tmp_path), deck_name="deck", message=f"把第 {target} 页改得更具体",
+                client=client, selected_pages=[target], progress=lambda _: None)
+    after = DeckDesign.model_validate_json((tmp_path / "deck_design.json").read_text())
+    assert after.theme.name == "html-bright" and len(after.pages) == len(before.pages)
+    assert all(page.background_hex for page in after.pages)
+    assert 1 <= client.text_calls <= 3  # the revised page, plus summary/roadmap if their text moved
