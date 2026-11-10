@@ -323,7 +323,7 @@ class HttpLLMClient:
     ) -> Any:
         text = await self.complete_text(
             task=task, system=system, user=user, max_output_tokens=max_output_tokens,
-            context=context, images=images,
+            context=context, images=images, json_mode=True,
         )
         return extract_json_payload(text)
 
@@ -336,8 +336,13 @@ class HttpLLMClient:
         max_output_tokens: int | None = None,
         context: Any = None,
         images: list[tuple[str, str]] | None = None,
+        json_mode: bool = False,
     ) -> str:
-        """Run one task and return the model's reply as written (HTML, prose)."""
+        """Run one task and return the model's reply as written (HTML, prose).
+
+        JSON mode is switched off here: an OpenAI-compatible endpoint rejects a
+        ``json_object`` request whose prompt never mentions JSON.
+        """
 
         del context  # structured context is for the mock client only
         self.usage.check_budget()
@@ -347,6 +352,8 @@ class HttpLLMClient:
             max_output_tokens or self.config.max_output_tokens,
             images=images,
         )
+        if not json_mode:
+            body.pop("response_format", None)
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
             if attempt:

@@ -220,3 +220,32 @@ def test_reasoning_effort_is_sent_only_when_configured(monkeypatch):
         asyncio.run(client.complete_json(task="t", system="s", user="u", context={}))
     assert "reasoning_effort" not in seen[0]
     assert seen[1]["reasoning_effort"] == "none"
+
+
+def test_text_calls_do_not_ask_for_json_mode():
+    import asyncio
+    import json as json_module
+
+    import httpx
+
+    from ppt_agent.v2.providers import OpenAICompatClient, ProviderConfig
+
+    bodies = []
+
+    def handler(request):
+        bodies.append(json_module.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": '{"ok": true}'}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = OpenAICompatClient(
+                ProviderConfig(model="m", api_key="k", base_url="http://x/v1"), client=http)
+            text = await client.complete_text(task="t", system="s", user="u")
+            payload = await client.complete_json(task="t", system="s", user="u")
+            return text, payload
+
+    text, payload = asyncio.run(run())
+    assert text == '{"ok": true}' and payload == {"ok": True}
+    assert "response_format" not in bodies[0] and bodies[1]["response_format"] == {"type": "json_object"}
