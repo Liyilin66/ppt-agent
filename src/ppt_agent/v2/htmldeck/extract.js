@@ -75,7 +75,7 @@
     const first = rects.reduce((m, q) => q.top < m.top ? q : m, rects[0]);
     const tallest = rects.filter(q => Math.abs(q.top - first.top) < q.height * 0.5).reduce((m, q) => Math.max(m, q.height), 0);
     items.push({kind: 'text', runs: runsOf(nodes), lines: tops.length, align, op: opacityOf(owner),
-                linePx: cs.lineHeight === 'normal' ? null : num(cs.lineHeight), glyphPx: tallest,
+                cls: owner.className || '', linePx: cs.lineHeight === 'normal' ? null : num(cs.lineHeight), glyphPx: tallest,
                 text: rectOf(tr), box: {x: ob.left - origin.left + pl, w: ob.width - pl - pr},
                 parent: rectOf(paintedAncestor(owner).getBoundingClientRect())});
   }
