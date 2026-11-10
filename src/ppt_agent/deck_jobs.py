@@ -111,7 +111,7 @@ class CreateLongDeckJobRequest(StrictModel):
     layout_engine: Literal["typeset", "free"] = "typeset"
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
     # Model-designed pages in this visual theme; None keeps the code-driven layout.
-    html_theme: Literal["editorial", "dark", "bright"] | None = None
+    html_theme: Literal["studio", "editorial", "dark", "bright"] | None = None
     enable_search: bool = False
 
 

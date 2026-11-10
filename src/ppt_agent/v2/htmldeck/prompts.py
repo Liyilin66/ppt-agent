@@ -73,7 +73,23 @@ REVIEW_SYSTEM = (
 
 
 def system_prompt(theme: themes.HtmlTheme) -> str:
-    return themes.guide() + SYSTEM_SUFFIX.format(label=theme.label, mood=theme.mood)
+    guide = themes.studio_guide() if theme.vocabulary == 2 else themes.guide()
+    return guide + SYSTEM_SUFFIX.format(label=theme.label, mood=theme.mood)
+
+
+def studio_idea(form: str, focus: str, ratio: str, *, core_visual: str = "", reading_path: str = "") -> str:
+    """The composition this page was assigned by the deck-wide plan, in words."""
+
+    side = "左" if focus == "left" else "右"
+    width = {"even": "主要视觉和其余内容大致各占一半", "wide": "主要视觉占大约三分之二的宽度",
+             "narrow": "主要视觉只占大约三分之一的宽度，其余留给文字"}[ratio]
+    parts = [f"{form}——{themes.STUDIO_FORMS[form]}。", f"主要视觉放在{side}侧；{width}。"]
+    if core_visual:
+        parts.append(f"读者第一眼应该看到：{core_visual}。")
+    if reading_path:
+        parts.append(f"视线顺序：{reading_path}。")
+    parts.append("示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。")
+    return "".join(parts)
 
 
 def layout_idea(archetype: str, occurrence: int) -> str:
@@ -89,6 +105,7 @@ def user_prompt(
     kicker: str | None,
     source: str | None,
     idea: str,
+    example_html: str | None = None,
     previous_html: str | None = None,
     problems: list[str] | None = None,
 ) -> str:
@@ -101,7 +118,7 @@ def user_prompt(
         + json.dumps(content, ensure_ascii=False, indent=1),
         f"建议的排布：{idea}",
         "同一套类名写出的示范页（只学写法，内容不要照抄）：\n"
-        + themes.example(EXAMPLE_FOR.get(archetype, "columns")),
+        + (example_html or themes.example(EXAMPLE_FOR.get(archetype, "columns"))),
     ]
     if previous_html and problems:
         parts.append("你上一次写的 HTML：\n" + previous_html)

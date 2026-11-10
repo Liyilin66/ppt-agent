@@ -43,7 +43,7 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         default=None, help="Override the model-selected deck style.",
     )
     parser.add_argument(
-        "--html-theme", choices=("editorial", "dark", "bright"), default=None,
+        "--html-theme", choices=("studio", "editorial", "dark", "bright"), default=None,
         help="Let the model design each page in HTML with this theme (needs Chrome or Edge).",
     )
     parser.add_argument(

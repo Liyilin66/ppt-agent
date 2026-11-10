@@ -79,7 +79,7 @@ PageStatus = Literal["anchor", "model", "repaired", "fallback"]
 class BuildRequest(StrictModel):
     layout_engine: Literal["typeset", "free"] = "typeset"
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
-    html_theme: Literal["editorial", "dark", "bright"] | None = Field(
+    html_theme: Literal["studio", "editorial", "dark", "bright"] | None = Field(
         default=None,
         description="Design pages in HTML with this theme (typeset engine only); "
         "pages that fail fall back to the code-driven layout.",

@@ -38,6 +38,7 @@ class DesignJob:
     section: str | None = None
     role: PageRole = "content"
     idea: str = ""
+    form: str | None = None  # studio theme: the visual form the deck plan assigned
 
 
 @dataclass
@@ -117,6 +118,7 @@ async def design_page(
                 user=prompts.user_prompt(
                     content=job.content, archetype=job.archetype, page_number=job.page_number,
                     kicker=job.kicker, source=job.source, idea=job.idea,
+                    example_html=themes.studio_example(job.form) if job.form else None,
                     previous_html=previous_html, problems=problems,
                 ),
                 max_output_tokens=DESIGN_TOKENS,

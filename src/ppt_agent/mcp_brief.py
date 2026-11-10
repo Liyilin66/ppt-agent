@@ -58,7 +58,7 @@ QUESTION_REASONS = {
 
 class BriefValues(PresentationBriefDraft):
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
-    html_theme: Literal["editorial", "dark", "bright"] | None = None
+    html_theme: Literal["studio", "editorial", "dark", "bright"] | None = None
     source_policy: SourcePolicy | None = None
 
 

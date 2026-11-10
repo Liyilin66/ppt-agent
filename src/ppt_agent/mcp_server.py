@@ -332,7 +332,7 @@ def create_server() -> FastMCP:
         source_paths: list[str] | None = None,
         search: bool = False,
         style: Literal['consulting', 'launch', 'training', 'corporate'] | None = None,
-        theme: Literal['editorial', 'dark', 'bright'] | None = None,
+        theme: Literal['studio', 'editorial', 'dark', 'bright'] | None = None,
     ) -> dict:
         """Start generating a settled brief; returns a job ID without waiting.
 

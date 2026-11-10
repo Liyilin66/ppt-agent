@@ -145,6 +145,11 @@ def guide() -> str:
 
 
 @lru_cache(maxsize=None)
+def studio_guide() -> str:
+    return _read("studio_guide.md")
+
+
+@lru_cache(maxsize=None)
 def studio_example(form: str) -> str:
     """The hand-written sample for one visual form of the studio theme."""
 

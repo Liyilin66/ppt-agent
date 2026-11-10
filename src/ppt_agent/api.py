@@ -182,7 +182,7 @@ class ConfirmDeckPlanRequest(StrictModel):
     enable_search: bool | None = None
     plan: EditableDeckPlan | None = None
     layout_engine: Literal["typeset", "free"] | None = None
-    html_theme: Literal["editorial", "dark", "bright"] | None = None
+    html_theme: Literal["studio", "editorial", "dark", "bright"] | None = None
 
 
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024

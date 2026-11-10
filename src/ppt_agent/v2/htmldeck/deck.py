@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
-from ppt_agent.v2.htmldeck import browser, sanitize, themes
+from ppt_agent.v2.htmldeck import browser, layout_plan, prompts, review, sanitize, signature, themes
 from ppt_agent.v2.htmldeck.checks import find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
 from ppt_agent.v2.htmldeck.fonts import office_font_css
@@ -45,10 +45,41 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
     )
 
 
+def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
+    job.form = fingerprint.form
+    job.idea = prompts.studio_idea(fingerprint.form, fingerprint.focus, fingerprint.ratio,
+                                   core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path)
+
+
+def contact_sheet(shots: dict[int, bytes], columns: int = 5, width: int = 380) -> bytes:
+    """All pages side by side, numbered, as one PNG: the deck seen from a distance."""
+
+    import io
+
+    from PIL import Image, ImageDraw
+
+    pages = [page for page in sorted(shots) if shots[page]]
+    if not pages:
+        return b""
+    height, pad = round(width * 9 / 16), 10
+    rows = (len(pages) + columns - 1) // columns
+    sheet = Image.new("RGB", (columns * (width + pad) + pad, rows * (height + pad + 18) + pad), "#2a2d33")
+    draw = ImageDraw.Draw(sheet)
+    for index, page in enumerate(pages):
+        x = pad + (index % columns) * (width + pad)
+        y = pad + (index // columns) * (height + pad + 18)
+        draw.text((x, y), f"p{page}", fill="#ffffff")
+        sheet.paste(Image.open(io.BytesIO(shots[page])).convert("RGB").resize((width, height)), (x, y + 16))
+    out = io.BytesIO()
+    sheet.save(out, format="PNG")
+    return out.getvalue()
+
+
 def _fingerprint(job: DesignJob) -> str:
     """Identifies the content a saved page was designed for."""
 
-    payload = json.dumps([job.content, job.source, job.kicker, job.title], ensure_ascii=False, sort_keys=True)
+    payload = json.dumps([job.content, job.source, job.kicker, job.title, job.form, job.idea if job.form else ""],
+                         ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -89,7 +120,25 @@ async def design_deck(
         raise browser.BrowserUnavailable("this model client cannot return plain text")
     theme = themes.get(theme_name)
     font_css, real_fonts = office_font_css()
-    assign_ideas(jobs)
+    plan: list[layout_plan.Fingerprint] = []
+    contents = {job.page_number: {**job.content, "archetype": job.archetype} for job in jobs}
+    if theme.vocabulary == 2:
+        # Compose the whole deck first: every page gets a form and a fingerprint,
+        # checked against all the pages before it.
+        saved = checkpoints.load("html/layout_plan.json") if checkpoints is not None else None
+        if saved and [item["page"] for item in saved] == sorted(contents) and all(
+                item["form"] in layout_plan.candidates(contents[item["page"]]) for item in saved):
+            plan = [layout_plan.Fingerprint(**item) for item in saved]
+        else:
+            plan = await layout_plan.plan_layouts(client, contents)
+            if checkpoints is not None:
+                checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
+        by_page = {item.page: item for item in plan}
+        for job in jobs:
+            _apply(job, by_page[job.page_number])
+        progress(f"[design] layout plan: {len({item.form for item in plan})} forms over {len(plan)} pages")
+    else:
+        assign_ideas(jobs)
     gate = asyncio.Semaphore(max(1, concurrency))
     results: dict[int, PageResult] = {}
 
@@ -122,6 +171,56 @@ async def design_deck(
 
         await asyncio.gather(*(one(job) for job in jobs), *(fixed(spec) for spec in structural))
 
+        redesigned: list[dict[str, Any]] = []
+        if theme.vocabulary == 2:
+            by_page = {job.page_number: job for job in jobs}
+
+            def outlines() -> dict[int, str]:
+                return {number: signature.silhouette(result.page) for number, result in results.items()
+                        if number in by_page and result.ok}
+
+            async def redo(job: DesignJob, why: str, *, new_form: bool) -> None:
+                current = next(item for item in plan if item.page == job.page_number)
+                if new_form:
+                    options = [form for form in layout_plan.candidates(contents[job.page_number])
+                               if form != current.form]
+                    if not options:
+                        return
+                    current = layout_plan.Fingerprint(page=job.page_number, form=options[0],
+                                                      focus="right" if current.focus == "left" else "left")
+                    plan[plan.index(next(item for item in plan if item.page == job.page_number))] = current
+                    _apply(job, current)
+                else:
+                    job.idea += "审稿意见（请据此调整）：" + why
+                before = results[job.page_number]
+                async with gate:
+                    after = await design_page(client, session, theme, font_css, job, look=False)
+                if after.ok:
+                    results[job.page_number] = after
+                    if checkpoints is not None:
+                        checkpoints.save(f"html/page_{job.page_number:03d}.json",
+                                         {"html": after.html, "content": _fingerprint(job),
+                                          "attempts": before.attempts + after.attempts, "idea": job.idea,
+                                          "review_problems": [why]})
+                redesigned.append({"page": job.page_number, "why": why, "kept": after.ok, "form": job.form})
+                progress(f"[design] page {job.page_number} redesigned ({why[:40]})")
+
+            # Pages whose outlines nearly coincide, anywhere in the deck: recompose the later one.
+            pairs = signature.lookalikes(outlines())
+            later_pages = sorted({later for _, later, _ in pairs})[: max(2, len(jobs) // 5)]
+            await asyncio.gather(*(redo(by_page[number], "和另一页的版面轮廓几乎相同", new_form=True)
+                                   for number in later_pages))
+            if look:
+                # The whole deck at a glance: which pages look alike, which one is weakest.
+                sheet = contact_sheet({number: result.screenshot_png for number, result in results.items()
+                                       if number in by_page})
+                for entry in await review.matrix(client, sheet):
+                    job = by_page.get(entry["page"])
+                    if job is not None:
+                        await redo(job, entry["problem"], new_form=False)
+            if checkpoints is not None:
+                checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
+
     designed = [job.page_number for job in jobs if results[job.page_number].ok]
     summary = {
         "theme": theme_name,
@@ -136,4 +235,13 @@ async def design_deck(
         "review_flagged_pages": sum(bool(results[job.page_number].review_problems) for job in jobs),
         "ideas": {str(job.page_number): job.idea for job in jobs},
     }
+    if theme.vocabulary == 2:
+        final = {job.page_number: signature.silhouette(results[job.page_number].page)
+                 for job in jobs if results[job.page_number].ok}
+        summary.update(
+            layout_plan=layout_plan.audit(plan),
+            redesigned=redesigned,
+            silhouettes=final,
+            lookalike_pairs=[list(pair) for pair in signature.lookalikes(final)],
+        )
     return results, summary

@@ -108,6 +108,8 @@ class MockLLMClient:
             return self._section_pages(context)
         if task == "html_review":
             return {"problems": []}
+        if task in ("layout_plan", "html_matrix_review"):
+            return {"pages": []}
         if task == "page_content":
             return self._page_content(context)
         if task == "deck_frame":
