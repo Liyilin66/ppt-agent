@@ -98,6 +98,7 @@ class SourceSummary(StrictModel):
     pages: int = 0
     page_kind: str | None = None  # "PDF" = physical pages; "logical" = heading sections
     characters: int = 0
+    figures: int = 0  # distinct figures in the text; bounds how many slides it can carry
     chapters: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -172,6 +173,7 @@ def summarize_sources(paths: Iterable[str | Path]) -> list[SourceSummary]:
     pages of evidence and never parsed as documents.
     """
     from ppt_agent.v2.evidence import EvidenceStore
+    from ppt_agent.v2.htmldeck.ledger import fact_keys
 
     paths = [Path(path) for path in paths]
     documents = [path for path in paths if path.suffix.lower() in DOCUMENT_SUFFIXES]
@@ -203,6 +205,7 @@ def summarize_sources(paths: Iterable[str | Path]) -> list[SourceSummary]:
         summaries.append(SourceSummary(
             name=doc["name"], path=resolved, readable=characters > 0, sha256=doc["sha256"],
             pages=len(doc["pages"]), page_kind=doc["page_kind"], characters=characters,
+            figures=len(set(fact_keys("\n".join(page["text"] for page in doc["pages"])))),
             chapters=[c["title"] for c in store.chapters if c["doc_id"] == doc["doc_id"]], warnings=warnings))
     return summaries
 
@@ -232,7 +235,13 @@ def _conflicts(values: BriefValues, sources: list[SourceSummary]) -> list[Confli
                                   message=f"选择了「{POLICY_LABELS[policy]}」，但没有可读取的资料"))
     if policy == "materials_only" and readable and values.slide_count:
         pages = sum(max(s.pages, ceil(s.characters / CHARS_PER_SOURCE_PAGE)) for s in readable)
-        supported = pages * SLIDES_PER_SOURCE_PAGE + STRUCTURAL_SLIDES
+        from ppt_agent.v2.htmldeck.capacity import suggested_slides
+        supported = min(
+            pages * SLIDES_PER_SOURCE_PAGE + STRUCTURAL_SLIDES,
+            # Beyond this the same facts start carrying several pages.
+            suggested_slides(sum(s.characters for s in readable), sum(s.figures for s in readable),
+                             chapters=sum(len(s.chapters) for s in readable)),
+        )
         if values.slide_count > supported:
             conflicts.append(Conflict(
                 field="slide_count",

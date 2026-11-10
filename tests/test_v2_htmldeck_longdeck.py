@@ -50,3 +50,29 @@ def test_the_ledger_reports_overuse():
     assert audit["led_more_than_once"] == {"95%": [3, 7]}
     assert audit["supported_more_than_twice"] == {"70%": [7, 8, 9, 10]}
     assert audit["most_used"] == {"fact": "70%", "pages": [7, 8, 9, 10]}
+
+
+def test_capacity_matches_the_one_report_it_was_calibrated_on():
+    from ppt_agent.v2.htmldeck.capacity import content_slides, suggested_slides
+
+    assert content_slides(39744, 93) == 50  # sound at 20 pages, repetitive at 100
+    assert suggested_slides(39744, 93, chapters=5) == 58
+    assert content_slides(30000, 5) == 20  # a qualitative source is bounded by its text
+    assert suggested_slides(900, 0) == 12  # never objects to a small deck
+
+
+def test_materials_only_brief_objects_when_asked_for_more_than_the_source_carries(tmp_path):
+    from ppt_agent.mcp_brief import ClarifyBrief, SourceSummary, apply_updates, evaluate
+
+    source = SourceSummary(name="r.pdf", path=str(tmp_path / "r.pdf"), kind="document", readable=True,
+                           sha256="0" * 64, pages=64, characters=39744, figures=93, chapters=["一"] * 5)
+
+    def status(pages):
+        brief = apply_updates(ClarifyBrief(), {name: {"value": value, "origin": "user"} for name, value in {
+            "topic": "AI", "purpose": "汇报", "audience": "管理层", "slide_count": pages,
+            "user_requirements": "讲清机会", "source_policy": "materials_only"}.items()}).brief
+        return evaluate(brief, [source])
+
+    assert status(50).status == "ready"
+    over = status(100)
+    assert over.status == "clarifying" and "58 页以内" in over.conflicts[0].message
