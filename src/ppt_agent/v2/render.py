@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lxml import etree
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
@@ -29,9 +30,12 @@ from ppt_agent.v2.ir import (
     DeckDesign,
     Frame,
     IconItem,
+    BoxItem,
     ImageItem,
     LineItem,
     PageDesign,
+    Paint,
+    RichTextItem,
     ShapeItem,
     TableItem,
     TextItem,
@@ -509,7 +513,125 @@ def _render_image(slide, item: ImageItem, theme: ThemeSpec, assets_dir: Path | N
     _set_run_fonts(run, theme, heading=False)
 
 
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_BOX_SHAPES = {
+    "rect": MSO_SHAPE.RECTANGLE,
+    "round": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "round_top": MSO_SHAPE.ROUND_2_SAME_RECTANGLE,
+    "ellipse": MSO_SHAPE.OVAL,
+}
+
+
+def _color_xml(hex_color: str, alpha: float) -> str:
+    if alpha >= 0.999:
+        return f'<a:srgbClr val="{hex_color.upper()}"/>'
+    return (
+        f'<a:srgbClr val="{hex_color.upper()}">'
+        f'<a:alpha val="{int(max(alpha, 0.0) * 100000)}"/></a:srgbClr>'
+    )
+
+
+def _paint_xml(paint: Paint | None) -> str:
+    """DrawingML fill for a literal paint; python-pptx has no alpha or radial API."""
+
+    if paint is None:
+        return f'<a:noFill xmlns:a="{_A_NS}"/>'
+    if paint.kind == "solid":
+        return f'<a:solidFill xmlns:a="{_A_NS}">{_color_xml(paint.hex, paint.alpha)}</a:solidFill>'
+    stops = "".join(
+        f'<a:gs pos="{int(stop.pos * 1000)}">{_color_xml(stop.hex, stop.alpha)}</a:gs>'
+        for stop in sorted(paint.stops, key=lambda stop: stop.pos)
+    )
+    if paint.kind == "radial":
+        path = (
+            '<a:path path="circle">'
+            '<a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>'
+        )
+    else:
+        path = f'<a:lin ang="{int((paint.angle_deg % 360) * 60000)}" scaled="0"/>'
+    return (
+        f'<a:gradFill xmlns:a="{_A_NS}" rotWithShape="1">'
+        f"<a:gsLst>{stops}</a:gsLst>{path}</a:gradFill>"
+    )
+
+
+def _render_box(slide, item: BoxItem) -> None:
+    frame = item.frame
+    shape = slide.shapes.add_shape(
+        _BOX_SHAPES[item.shape],
+        _emu(frame.x), _emu(frame.y), max(_emu(frame.w), Emu(1)), max(_emu(frame.h), Emu(1)),
+    )
+    if item.shape in ("round", "round_top"):
+        shape.adjustments[0] = max(0.0, min(0.5, item.radius / max(min(frame.w, frame.h), 1e-6)))
+    # Children of spPr must follow the schema order: geometry, fill, line, effects.
+    sp_pr = shape._element.spPr  # noqa: SLF001 - literal fills need raw XML
+    for tag in ("a:solidFill", "a:gradFill", "a:noFill", "a:ln", "a:effectLst"):
+        for old in sp_pr.findall(qn(tag)):
+            sp_pr.remove(old)
+    sp_pr.append(etree.fromstring(_paint_xml(item.fill)))
+    if item.stroke_hex and item.stroke_width > 0:
+        line = (
+            f'<a:ln xmlns:a="{_A_NS}" w="{int(_emu(item.stroke_width))}"><a:solidFill>'
+            f"{_color_xml(item.stroke_hex, item.stroke_alpha)}</a:solidFill></a:ln>"
+        )
+    else:
+        line = f'<a:ln xmlns:a="{_A_NS}"><a:noFill/></a:ln>'
+    sp_pr.append(etree.fromstring(line))
+    glow = ""
+    if item.glow_hex and item.glow_radius > 0:
+        glow = (
+            f'<a:glow rad="{int(_emu(item.glow_radius))}">'
+            f"{_color_xml(item.glow_hex, item.glow_alpha)}</a:glow>"
+        )
+    # An explicit (even empty) effect list switches the theme's default shadow off.
+    sp_pr.append(etree.fromstring(f'<a:effectLst xmlns:a="{_A_NS}">{glow}</a:effectLst>'))
+
+
+def _render_rich_text(slide, item: RichTextItem) -> None:
+    frame = item.frame
+    box = slide.shapes.add_textbox(
+        _emu(frame.x), _emu(frame.y), max(_emu(frame.w), Emu(1)), max(_emu(frame.h), Emu(1))
+    )
+    text_frame = box.text_frame
+    text_frame.margin_left = text_frame.margin_right = Emu(0)
+    text_frame.margin_top = text_frame.margin_bottom = Emu(0)
+    text_frame.word_wrap = item.wrap
+    text_frame.vertical_anchor = _VALIGN_MAP[item.valign]
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = _ALIGN_MAP[item.align]
+    if item.line_pt:
+        paragraph.line_spacing = Pt(item.line_pt)
+    _enable_cjk_line_breaking(paragraph)
+    for part in item.runs:
+        if part.line_break:
+            paragraph.add_line_break()
+            continue
+        if not part.text:
+            continue
+        run = paragraph.add_run()
+        run.text = part.text
+        run.font.size = Pt(part.size_pt)
+        run.font.bold = part.bold
+        run.font.italic = part.italic
+        run.font.name = part.font
+        r_pr = run._r.get_or_add_rPr()  # noqa: SLF001 - fills and CJK font need raw XML
+        ea = r_pr.makeelement(qn("a:ea"), {"typeface": part.font})
+        r_pr.append(ea)
+        if _has_cjk(part.text):
+            r_pr.set("lang", "zh-CN")
+            r_pr.set("altLang", "en-US")
+        if part.letter_spacing_pt:
+            r_pr.set("spc", str(int(round(part.letter_spacing_pt * 100))))
+        paint = part.paint or Paint(hex=part.hex, alpha=part.alpha)
+        r_pr.insert(0, etree.fromstring(_paint_xml(paint)))
+
+
 def _paint_background(slide, page: PageDesign, theme: ThemeSpec) -> None:
+    if page.background_hex is not None:
+        fill = slide.background.fill
+        fill.solid()
+        fill.fore_color.rgb = RGBColor.from_string(page.background_hex.upper())
+        return
     if page.background_gradient is not None:
         backdrop = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, 0, 0, Emu(SLIDE_WIDTH_EMU), Emu(SLIDE_HEIGHT_EMU)
@@ -533,6 +655,8 @@ def _paint_background(slide, page: PageDesign, theme: ThemeSpec) -> None:
 def _stamp_motif(slide, page: PageDesign, theme: ThemeSpec) -> None:
     if theme.motif == "none" or page.role in ("cover", "section_divider", "closing"):
         return
+    if page.background_hex is not None:
+        return  # a browser-designed page carries its own decoration
     if theme.motif == "corner_arc":
         arc = slide.shapes.add_shape(
             MSO_SHAPE.OVAL, _emu(CANVAS_WIDTH - 120), _emu(-120), _emu(240), _emu(240)
@@ -639,6 +763,10 @@ def render_page(slide, page: PageDesign, deck: DeckDesign, *, assets_dir: Path |
             _render_table(slide, element, theme)
         elif isinstance(element, ImageItem):
             _render_image(slide, element, theme, assets_dir)
+        elif isinstance(element, BoxItem):
+            _render_box(slide, element)
+        elif isinstance(element, RichTextItem):
+            _render_rich_text(slide, element)
     _stamp_chrome(slide, page, deck, theme)
     if page.speaker_notes:
         slide.notes_slide.notes_text_frame.text = page.speaker_notes

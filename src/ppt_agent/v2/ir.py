@@ -194,8 +194,104 @@ class ImageItem(BaseElement):
     label: str = Field(default="Image", min_length=1)
 
 
+class BleedFrame(StrictModel):
+    """Bounding box for measured HTML elements; decorative shapes may hang far
+    off the canvas (a glow centred on a corner), so the bounds are loose."""
+
+    x: float = Field(..., ge=-2 * CANVAS_WIDTH, le=2 * CANVAS_WIDTH)
+    y: float = Field(..., ge=-2 * CANVAS_HEIGHT, le=2 * CANVAS_HEIGHT)
+    w: float = Field(..., gt=0, le=3 * CANVAS_WIDTH)
+    h: float = Field(..., gt=0, le=3 * CANVAS_HEIGHT)
+
+    @property
+    def right(self) -> float:
+        return self.x + self.w
+
+    @property
+    def bottom(self) -> float:
+        return self.y + self.h
+
+
+HexStr = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
+
+
+class ColorStop(StrictModel):
+    hex: HexStr
+    alpha: float = Field(default=1.0, ge=0, le=1)
+    pos: float = Field(..., ge=0, le=100)
+
+
+class Paint(StrictModel):
+    """A literal fill measured from a browser: solid colour or gradient."""
+
+    kind: Literal["solid", "linear", "radial"] = "solid"
+    hex: HexStr | None = None
+    alpha: float = Field(default=1.0, ge=0, le=1)
+    stops: list[ColorStop] | None = None
+    angle_deg: float = 0  # PowerPoint convention: 0 = left to right, 90 = top to bottom
+
+    @model_validator(mode="after")
+    def validate_paint(self) -> Self:
+        if self.kind == "solid" and self.hex is None:
+            raise ValueError("A solid paint needs a hex colour")
+        if self.kind != "solid" and (not self.stops or len(self.stops) < 2):
+            raise ValueError("A gradient paint needs at least two stops")
+        return self
+
+
+class TextRun(StrictModel):
+    text: str = ""
+    line_break: bool = False  # a forced break; ``text`` is ignored
+    size_pt: float = Field(default=12, gt=1, le=400)
+    hex: HexStr = "000000"
+    alpha: float = Field(default=1.0, ge=0, le=1)
+    bold: bool = False
+    italic: bool = False
+    font: str = "Microsoft YaHei"
+    letter_spacing_pt: float = 0
+    paint: Paint | None = None  # gradient text; overrides ``hex``
+
+
+class RichTextItem(StrictModel):
+    """Text measured from a browser: literal styling per run, no theme roles."""
+
+    type: Literal["rich_text"] = "rich_text"
+    id: str = Field(..., min_length=1)
+    frame: BleedFrame
+    runs: list[TextRun] = Field(..., min_length=1)
+    align: Align = "left"
+    valign: VAlign = "top"
+    wrap: bool = True
+    line_pt: float | None = Field(default=None, gt=0)  # exact line pitch
+
+    @property
+    def text(self) -> str:
+        return "".join("\n" if run.line_break else run.text for run in self.runs)
+
+
+BoxShape = Literal["rect", "round", "round_top", "ellipse"]
+
+
+class BoxItem(StrictModel):
+    """A shape measured from a browser: literal fill, stroke, radius, glow."""
+
+    type: Literal["box"] = "box"
+    id: str = Field(..., min_length=1)
+    frame: BleedFrame
+    shape: BoxShape = "rect"
+    radius: float = Field(default=0, ge=0)  # canvas units
+    fill: Paint | None = None
+    stroke_hex: HexStr | None = None
+    stroke_alpha: float = Field(default=1.0, ge=0, le=1)
+    stroke_width: float = Field(default=0, ge=0, le=40)
+    glow_hex: HexStr | None = None
+    glow_alpha: float = Field(default=1.0, ge=0, le=1)
+    glow_radius: float = Field(default=0, ge=0)
+
+
 PageElement = Annotated[
-    TextItem | ShapeItem | LineItem | IconItem | ChartItem | TableItem | ImageItem,
+    TextItem | ShapeItem | LineItem | IconItem | ChartItem | TableItem | ImageItem
+    | RichTextItem | BoxItem,
     Field(discriminator="type"),
 ]
 
@@ -209,6 +305,7 @@ class PageDesign(StrictModel):
     title: str | None = None
     background: ColorRole = "background"
     background_gradient: Gradient | None = None
+    background_hex: HexStr | None = None  # literal colour; wins over ``background``
     show_chrome: bool = True
     elements: list[PageElement] = Field(..., min_length=1)
     speaker_notes: str | None = None
@@ -309,6 +406,8 @@ _ELEMENT_TYPES: dict[str, type[StrictModel]] = {
     "chart": ChartItem,
     "table": TableItem,
     "image": ImageItem,
+    "rich_text": RichTextItem,
+    "box": BoxItem,
 }
 
 

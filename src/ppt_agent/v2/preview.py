@@ -18,9 +18,12 @@ from ppt_agent.v2.ir import (
     ChartItem,
     DeckDesign,
     IconItem,
+    BoxItem,
     ImageItem,
     LineItem,
     PageDesign,
+    Paint,
+    RichTextItem,
     ShapeItem,
     TableItem,
     TextItem,
@@ -207,9 +210,84 @@ def _svg_image(item: ImageItem, theme: ThemeSpec) -> str:
     )
 
 
+def _rgba(hex_color: str, alpha: float) -> str:
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha:.3f})"
+
+
+def _css_paint(paint: Paint | None) -> str:
+    if paint is None:
+        return "transparent"
+    if paint.kind == "solid":
+        return _rgba(paint.hex, paint.alpha)
+    stops = ",".join(f"{_rgba(stop.hex, stop.alpha)} {stop.pos}%" for stop in paint.stops)
+    if paint.kind == "radial":
+        return f"radial-gradient(circle,{stops})"
+    return f"linear-gradient({paint.angle_deg + 90}deg,{stops})"
+
+
+def _svg_box(item: BoxItem) -> str:
+    frame = item.frame
+    radius = {
+        "rect": "0",
+        "round": f"{item.radius}px",
+        "round_top": f"{item.radius}px {item.radius}px 0 0",
+        "ellipse": "50%",
+    }[item.shape]
+    border = (
+        f"border:{item.stroke_width}px solid {_rgba(item.stroke_hex, item.stroke_alpha)};"
+        if item.stroke_hex and item.stroke_width
+        else ""
+    )
+    glow = (
+        f"box-shadow:0 0 {item.glow_radius * 2}px {_rgba(item.glow_hex, item.glow_alpha)};"
+        if item.glow_hex and item.glow_radius
+        else ""
+    )
+    return (
+        f'<div style="position:absolute;left:{frame.x}px;top:{frame.y}px;width:{frame.w}px;'
+        f"height:{frame.h}px;box-sizing:border-box;background:{_css_paint(item.fill)};"
+        f'border-radius:{radius};{border}{glow}"></div>'
+    )
+
+
+def _svg_rich_text(item: RichTextItem) -> str:
+    frame = item.frame
+    spans = []
+    for run in item.runs:
+        if run.line_break:
+            spans.append("<br>")
+            continue
+        if run.paint is not None and run.paint.kind != "solid":
+            color = (
+                f"background:{_css_paint(run.paint)};-webkit-background-clip:text;"
+                "background-clip:text;color:transparent;"
+            )
+        else:
+            color = f"color:{_rgba(run.hex, run.alpha)};"
+        spans.append(
+            f'<span style="font-size:{run.size_pt * UNITS_PER_PT}px;{color}'
+            f"font-weight:{700 if run.bold else 400};"
+            f"{'font-style:italic;' if run.italic else ''}"
+            f"letter-spacing:{run.letter_spacing_pt * UNITS_PER_PT}px;"
+            f"font-family:'{run.font}','PingFang SC',sans-serif;\">{html.escape(run.text)}</span>"
+        )
+    justify = {"left": "flex-start", "center": "center", "right": "flex-end"}[item.align]
+    valign = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}[item.valign]
+    line = f"line-height:{item.line_pt * UNITS_PER_PT}px;" if item.line_pt else "line-height:1.2;"
+    return (
+        f'<div style="position:absolute;left:{frame.x}px;top:{frame.y}px;width:{frame.w}px;'
+        f"height:{frame.h}px;display:flex;align-items:{valign};justify-content:{justify};"
+        f"text-align:{item.align};{line}{'' if item.wrap else 'white-space:nowrap;'}\">"
+        f"<div>{''.join(spans)}</div></div>"
+    )
+
+
 def page_to_html(page: PageDesign, deck: DeckDesign) -> str:
     theme = deck.theme
-    if page.background_gradient is not None:
+    if page.background_hex is not None:
+        background = f"background:#{page.background_hex};"
+    elif page.background_gradient is not None:
         background = (
             f"background:linear-gradient({page.background_gradient.angle_deg + 90}deg,"
             f"{_c(theme, page.background_gradient.start)},"
@@ -233,6 +311,10 @@ def page_to_html(page: PageDesign, deck: DeckDesign) -> str:
             parts.append(_svg_table(element, theme))
         elif isinstance(element, ImageItem):
             parts.append(_svg_image(element, theme))
+        elif isinstance(element, BoxItem):
+            parts.append(_svg_box(element))
+        elif isinstance(element, RichTextItem):
+            parts.append(_svg_rich_text(element))
     chrome = ""
     if page.show_chrome and page.role not in ("cover", "closing"):
         if theme.chrome.show_footer:
