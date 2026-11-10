@@ -1044,7 +1044,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                        'removed_numbers': sum(x.get('action') == 'removed_number' for r in records
                                               for x in r.get('numeric_check', {}).get('removed', []))}
     numeric_summary['structural_removed_numbers'] = len(structural_removed)
-    run = {'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    # Repetition a reader would notice: the same fact carrying several pages,
+    # and the same arrangement coming round again too soon.
+    from ppt_agent.v2.htmldeck import signature as layout_signature
+    from ppt_agent.v2.htmldeck.ledger import FactLedger
+    ledger = FactLedger()
+    for slot, content in zip(content_slots, final_contents):
+        ledger.register(slot.page_number, content.model_dump(mode='json', exclude_none=True))
+    content_numbers = {slot.page_number for slot in content_slots}
+    layouts = layout_signature.conflicts(
+        [layout_signature.of(page) for page in pages if page.page_number in content_numbers])
+    run = {'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,
