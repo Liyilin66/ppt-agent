@@ -111,6 +111,9 @@ async def design_deck(
                 checkpoints.save(name, {"html": result.html, "content": _fingerprint(job),
                                         "attempts": result.attempts, "idea": job.idea,
                                         "review_problems": result.review_problems})
+            if checkpoints is not None and not result.ok:
+                checkpoints.save(f"html/failed_{job.page_number:03d}.json",
+                                 {"html": result.html, "defects": result.defects, "idea": job.idea})
             progress(f"[design] page {job.page_number} "
                      + ("ready" if result.ok else "fell back: " + "; ".join(result.defects[:2])))
 

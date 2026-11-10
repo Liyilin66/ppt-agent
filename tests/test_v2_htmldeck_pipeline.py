@@ -111,3 +111,13 @@ def test_structural_pages_need_no_model():
     results = asyncio.run(go())
     assert all(result.ok for result in results), [result.defects for result in results if not result.ok]
     assert {result.page.role for result in results} == {"cover", "toc", "section_divider", "closing"}
+
+
+def test_a_page_that_is_slightly_too_tall_is_tightened_without_another_call():
+    rows = "".join(f'<div class="card"><div class="h">第 {n} 点</div><div class="p">说明文字说明文字说明文字</div></div>'
+                   for n in (1, 2, 3))
+    tall = GOOD.replace('<div class="body stretch">', '<div class="body col">').replace(
+        '<div class="card f1"><div class="h">周期缩短</div><div class="p">从数年缩短至数月</div></div>', rows)
+    client = Scripted([tall])
+    result = run(client, look=False)
+    assert result.ok and result.attempts == 1 and 'class="page compact' in result.html

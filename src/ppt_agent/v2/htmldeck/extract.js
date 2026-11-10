@@ -86,7 +86,7 @@
     const short = Math.min(r.width, r.height);
     const radius = [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius]
       .map(v => v.trim().split(' ')[0]).map(v => v.endsWith('%') ? parseFloat(v) / 100 * short : num(v));
-    items.push({kind: 'box', ...rectOf(r), bg: cs.backgroundColor, img: cs.backgroundImage, sides, radius, shadow: cs.boxShadow, op: opacityOf(el)});
+    items.push({kind: 'box', cls: el.className || '', ...rectOf(r), bg: cs.backgroundColor, img: cs.backgroundImage, sides, radius, shadow: cs.boxShadow, op: opacityOf(el)});
   }
   function emitTable(el) {
     const rows = [...el.querySelectorAll('tr')];

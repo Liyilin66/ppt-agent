@@ -22,6 +22,7 @@ from ppt_agent.v2.ir import PageDesign, PageRole
 
 MAX_REWRITES = 2
 SOFT = frozenset({"sparse", "small_text"})  # worth one more try, not worth losing the page
+FIT = frozenset({"overflow", "off_canvas", "overlap"})  # too much for the space
 DESIGN_TOKENS = 2600
 
 
@@ -129,7 +130,15 @@ async def design_page(
             result.defects.append("empty reply")
             return None
         measured = await _measure(session, theme, font_css, body)
-        return body, measured, find_defects(measured, allowed) + _required(job, measured)
+        defects = find_defects(measured, allowed) + _required(job, measured)
+        if any(defect.kind in FIT for defect in defects) and 'class="page compact' not in body:
+            # A little too tall: the same page with less air often fits, at no model cost.
+            tighter = body.replace('class="page', 'class="page compact', 1)
+            remeasured = await _measure(session, theme, font_css, tighter)
+            again = find_defects(remeasured, allowed) + _required(job, remeasured)
+            if not [defect for defect in again if defect.kind not in SOFT]:
+                return tighter, remeasured, again
+        return body, measured, defects
 
     for _ in range(1 + MAX_REWRITES):
         outcome = await attempt()
@@ -145,6 +154,7 @@ async def design_page(
         result.defects = list(problems)
 
     if best is None:
+        result.html = previous_html or ""  # kept for diagnosis; the page itself is not used
         return result
     result.defects = [] if not problems or best[0] != previous_html else result.defects
 

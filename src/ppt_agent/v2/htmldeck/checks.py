@@ -69,6 +69,24 @@ def _short(text: str, limit: int = 18) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def _line_rect(item: dict[str, Any]) -> dict[str, float]:
+    """The text's line boxes. The browser reports glyph boxes, which for CJK
+    fonts are about a third taller than a tight line and would make stacked
+    headings look as if they collide."""
+
+    rect = item["text"]
+    pitch = item.get("linePx")
+    if not pitch:
+        return rect
+    height = min(rect["h"], pitch * max(1, int(item.get("lines", 1))))
+    return {"x": rect["x"], "y": rect["y"] + (rect["h"] - height) / 2, "w": rect["w"], "h": height}
+
+
+def _decorative(item: dict[str, Any]) -> bool:
+    names = item.get("cls", "").split()
+    return any(name.startswith("deco") or name == "backdrop" for name in names)
+
+
 def _ordinal(token: str) -> bool:
     """"01", "3": a page counting its own items, not a claim about the source."""
 
@@ -89,7 +107,7 @@ def find_defects(
         defects.append(Defect("overflow", f"「{_short(clip.get('text', ''))}」所在的容器装不下内容，请减少文字或放大容器。", clip.get("text", "")))
     texts = [item for item in measured.items if item["kind"] == "text" and _item_text(item)]
     for item in texts:
-        rect, parent, label = item["text"], item["parent"], _short(_item_text(item))
+        rect, parent, label = _line_rect(item), item["parent"], _short(_item_text(item))
         if (rect["x"] < -TOLERANCE or rect["y"] < -TOLERANCE
                 or rect["x"] + rect["w"] > CANVAS_WIDTH + TOLERANCE
                 or rect["y"] + rect["h"] > CANVAS_HEIGHT + TOLERANCE):
@@ -103,9 +121,9 @@ def find_defects(
             defects.append(Defect("small_text", f"文字「{label}」只有 {min(sizes):.0f} 像素，太小。请减少内容，不要缩小字号。", label))
 
     for index, first in enumerate(texts):
-        a = first["text"]
+        a = _line_rect(first)
         for second in texts[index + 1:]:
-            b = second["text"]
+            b = _line_rect(second)
             width = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])
             height = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"])
             if width <= TOLERANCE or height <= TOLERANCE:
@@ -117,6 +135,46 @@ def find_defects(
                     f"文字「{_short(_item_text(first))}」和「{_short(_item_text(second))}」重叠了。",
                     _item_text(first),
                 ))
+
+    blocks = [item for item in measured.items if item["kind"] == "box" and not _decorative(item)
+              and item["w"] * item["h"] < 0.9 * CANVAS_WIDTH * CANVAS_HEIGHT
+              and item["w"] > 24 and item["h"] > 24]
+    for block in blocks:
+        if (block["x"] < -TOLERANCE or block["y"] < -TOLERANCE
+                or block["x"] + block["w"] > CANVAS_WIDTH + TOLERANCE
+                or block["y"] + block["h"] > CANVAS_HEIGHT + TOLERANCE):
+            over = max(block["y"] + block["h"] - CANVAS_HEIGHT, block["x"] + block["w"] - CANVAS_WIDTH, 0)
+            defects.append(Defect(
+                "off_canvas",
+                f"内容比页面多出约 {over:.0f} 像素，有色块被挤出了页面。请删掉一个块或一段文字，不要只改措辞。"))
+            break
+    footer = [item for item in texts if any(name in item.get("cls", "").split() for name in ("source", "pageno"))]
+    for block in blocks:
+        hit = False
+        for item in footer:
+            rect = _line_rect(item)
+            width = min(block["x"] + block["w"], rect["x"] + rect["w"]) - max(block["x"], rect["x"])
+            height = min(block["y"] + block["h"], rect["y"] + rect["h"]) - max(block["y"], rect["y"])
+            if width > TOLERANCE and height > TOLERANCE:
+                hit = True
+        if hit:
+            defects.append(Defect("overlap", "内容区的色块压到了页脚（资料来源或页码），内容太高了，请减少内容。"))
+            break
+    for index, first in enumerate(blocks):
+        for second in blocks[index + 1:]:
+            width = min(first["x"] + first["w"], second["x"] + second["w"]) - max(first["x"], second["x"])
+            height = min(first["y"] + first["h"], second["y"] + second["h"]) - max(first["y"], second["y"])
+            if width <= TOLERANCE or height <= TOLERANCE:
+                continue
+            overlap = width * height
+            smaller = min(first["w"] * first["h"], second["w"] * second["h"])
+            # One block inside another is nesting; a partial intersection is a collision.
+            if 0.05 * smaller < overlap < 0.95 * smaller:
+                defects.append(Defect("overlap", "有两个色块互相压住了（通常是内容太多把下面的块挤上来），请减少内容。"))
+                break
+        else:
+            continue
+        break
 
     for item in measured.items:
         if item["kind"] in ("chart", "table") and (
