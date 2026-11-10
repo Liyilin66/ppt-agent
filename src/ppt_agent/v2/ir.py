@@ -242,7 +242,7 @@ class Paint(StrictModel):
 class TextRun(StrictModel):
     text: str = ""
     line_break: bool = False  # a forced break; ``text`` is ignored
-    size_pt: float = Field(default=12, gt=1, le=400)
+    size_pt: float = Field(default=12, gt=1, le=1000)
     hex: HexStr = "000000"
     alpha: float = Field(default=1.0, ge=0, le=1)
     bold: bool = False

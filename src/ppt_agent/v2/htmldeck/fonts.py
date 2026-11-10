@@ -21,6 +21,7 @@ OFFICE_FACES: tuple[tuple[str, int, str], ...] = (
     ("DengXian Light", 400, "Dengl.ttf"),
     ("SimSun", 400, "Simsun.ttc"),
     ("SimHei", 400, "SimHei.ttf"),
+    ("Modern No. 20", 400, "ModernNo.20.ttf"),  # high-contrast display figures
 )
 FAMILIES = tuple(dict.fromkeys(family for family, _, _ in OFFICE_FACES))
 
@@ -32,6 +33,7 @@ _FALLBACKS = {
     "DengXian Light": ("PingFang SC", "Noto Sans CJK SC"),
     "SimSun": ("Songti SC", "Noto Serif CJK SC", "Source Han Serif SC"),
     "SimHei": ("Heiti SC", "PingFang SC", "Noto Sans CJK SC"),
+    "Modern No. 20": ("Didot", "Bodoni 72", "Georgia"),
 }
 
 _MAC_DIRS = tuple(
