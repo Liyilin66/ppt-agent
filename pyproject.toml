@@ -38,7 +38,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-ppt_agent = ["webui/*", "v2/htmldeck/*.js", "v2/htmldeck/themes/*/*", "v2/htmldeck/themes/*/examples/*"]
+ppt_agent = ["webui/*", "v2/htmldeck/*.js", "v2/htmldeck/themes/*/*", "v2/htmldeck/themes/*/examples/*", "v2/htmldeck/themes/*.css", "v2/htmldeck/themes/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -445,6 +445,10 @@ RICH_SYSTEM = (
     'restate the title as an item. Do not repeat what other_page_titles cover. '
     'Fill categories + values + unit_format + chart_title ONLY for one measure in one unit across categories or years '
     '(2-8 values); never put different measures in one series. For raw percentages like 47.1 use unit_format 0.0"%". '
+    'Whenever the evidence gives the same measure at two or more points - 4.5% in 2022 and 12.1% in 2024, or one '
+    'rate for several companies - fill the series: a drawn comparison is worth more than the same numbers in prose. '
+    'The source field uses exactly the form "<filename> 第N页" or "<filename> 第N-M页"; several pages are separated '
+    'by "；". Item ref is optional and uses the same form. '
     'Fill headers + rows when several cases share the same attributes; cells are short. '
     'takeaway is one sentence on what this means for the audience. lead only if it adds a fact the title lacks. '
     'Density for this page - {tier_rule} '
@@ -555,7 +559,10 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 trims.extend(trimmed)
             parsed = adapter.validate_python(payload)
             if rich_tier:
-                parsed = parsed.model_copy(update={'tier': rich_tier})
+                update = {'tier': rich_tier}
+                if parsed.highlight is not None and not re.search(r'\d', parsed.highlight.value or ''):
+                    update['highlight'] = None  # the focal fact is a figure, or there is none
+                parsed = parsed.model_copy(update=update)
             empty_sources += int(not parsed.source or not parsed.source.strip())
             trimmed_source, dropped_pages = trim_source(parsed.source, source_references, source_page_counts,
                                                         evidence.allowed_pages if evidence is not None else None)
@@ -565,7 +572,12 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
             if not source_is_valid(parsed.source, source_references, source_page_counts,
                                    evidence.allowed_pages if evidence is not None else None):
                 invalid_sources += 1
-                raise ValueError('source must be a supplied filename, page or URL; no source material means source=null')
+                allowed = dict(evidence.allowed_pages) if evidence is not None and getattr(evidence, 'allowed_pages', None) else None
+                raise ValueError(
+                    f'source {parsed.source!r} is not valid: it must be a supplied filename, page or URL; '
+                    'no source material means source=null. '
+                    f'Valid references: {source_references}.'
+                    + (f' Valid pages for this slide: {allowed}.' if allowed else ''))
             if evidence is not None and content_qa(parsed, slot.page_number).issues and not parsed.source:
                 raise ValueError('numeric content must cite the supplied filename and physical page in source')
             if parsed.archetype == 'metrics' and any(

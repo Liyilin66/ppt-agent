@@ -118,3 +118,48 @@ def test_an_unsupported_focal_figure_is_dropped_not_blanked():
     issues = check_content_numbers(page, "TCL 面板缺陷检测准确率超 90%。")
     cleaned, _ = sanitize_content_numbers(page, issues)
     assert cleaned.highlight is None and [item.heading for item in cleaned.items] == ["检测"]
+
+
+def _rich(relation, tier="standard", items=3, highlight=None, **extra):
+    return {"archetype": "rich", "title": "t", "relation": relation, "tier": tier,
+            "highlight": {"value": highlight, "text": "x"} if highlight else None,
+            "items": [{"heading": f"h{n}", "date": extra.get("date")} for n in range(items)],
+            **{key: value for key, value in extra.items() if key != "date"}}
+
+
+def test_a_form_is_offered_only_when_the_content_can_fill_it():
+    from ppt_agent.v2.htmldeck.layout_plan import candidates
+
+    assert candidates(_rich("single", "visual", 2, "90%"))[:2] == ["poster", "units"]
+    assert "units" not in candidates(_rich("single", "visual", 2, "316亿美元"))
+    assert "chart" not in candidates(_rich("ranking"))
+    assert candidates(_rich("ranking", categories=["a", "b"], values=[1, 2]))[0] == "chart"
+    assert candidates(_rich("timeline", items=4, date="2024年"))[0] == "timeline"
+    assert candidates(_rich("timeline", items=4))[0] == "ledger"  # no dates, no axis
+    assert candidates(_rich("structure", items=4))[0] == "matrix"
+    assert candidates({"archetype": "summary"})[0] == "ledger"
+
+
+def test_no_page_repeats_the_structure_of_any_earlier_page_too_soon():
+    from ppt_agent.v2.htmldeck.layout_plan import SAME_FORM_GAP, SAME_STRUCTURE_GAP, audit, resolve
+
+    relations = ["cases", "comparison", "single", "sequence", "structure", "cause", "trend", "cases"]
+    contents = {page: _rich(relations[page % 8], items=4 if relations[page % 8] == "structure" else 3,
+                            highlight="12.1%" if page % 3 == 0 else None)
+                for page in range(1, 41)}
+    lazy = {page: {"form": "ledger", "focus": "left"} for page in contents}  # a model that always says the same
+    plan = resolve(lazy, contents)
+    assert [item.page for item in plan] == list(range(1, 41))
+    close_forms = close_structures = 0
+    for index, item in enumerate(plan):
+        for other in plan[:index]:
+            gap = item.page - other.page
+            # The firm guarantee: two pages in a row never share a form.
+            assert not (other.form == item.form and gap == 1), (other, item)
+            close_forms += other.form == item.form and gap <= SAME_FORM_GAP
+            close_structures += other.structure == item.structure and gap <= SAME_STRUCTURE_GAP
+    # The softer rules give way only when the content allows little else; it must stay rare.
+    assert close_forms <= 3 and close_structures <= 5, (close_forms, close_structures)
+    report = audit(plan)
+    assert report["forms_used"] >= 7 and report["largest_form_share"] <= 0.25
+    assert report["distinct_structures"] >= 16
