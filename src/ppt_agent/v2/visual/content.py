@@ -156,6 +156,77 @@ class RoadmapContent(PageCopy):
         return self
 
 
+Relation = Literal[
+    "single",      # one figure or statement carries the page
+    "comparison",  # two or more things set against each other
+    "trend",       # one measure changing over time
+    "proportion",  # a part of a whole
+    "ranking",     # the same measure across several things, ordered
+    "sequence",    # steps that follow one another
+    "timeline",    # dated events
+    "structure",   # parts of a whole and how they relate
+    "cause",       # one thing leading to another
+    "cases",       # named examples supporting one claim
+]
+Tier = Literal["visual", "standard", "deep"]
+
+
+class RichItem(StrictModel):
+    heading: str = Field(..., min_length=1, max_length=18)
+    body: str | None = Field(default=None, max_length=90)
+    value: str | None = Field(default=None, max_length=12)  # the item's figure, when it has one
+    date: str | None = Field(default=None, max_length=12)   # for timelines
+    ref: str | None = Field(default=None, max_length=40)
+
+
+class RichContent(PageCopy):
+    """A page for the model-designed (HTML) engine: one claim, one focal fact,
+    supporting facts, and how they relate. Deliberately not part of
+    ``AnyContent``: the code-driven engine lays it out as plain points."""
+
+    archetype: Literal["rich"] = "rich"
+    relation: Relation = "cases"
+    tier: Tier = "standard"
+    highlight: Insight | None = None  # the focal fact: {value, text}
+    items: list[RichItem] = Field(..., min_length=1, max_length=8)
+    # One measure across categories, when the evidence has it (becomes a native chart).
+    chart_title: str | None = Field(default=None, max_length=30)
+    categories: list[str] | None = Field(default=None, max_length=8)
+    values: list[float] | None = Field(default=None, max_length=8)
+    unit_format: str | None = None
+    # A grid of short cells, when rows share the same attributes (becomes a native table).
+    headers: list[Annotated[str, Field(min_length=1, max_length=12)]] | None = Field(default=None, max_length=6)
+    rows: list[list[Annotated[str, Field(min_length=1, max_length=40)]]] | None = Field(default=None, max_length=8)
+
+    @model_validator(mode="after")
+    def _data_is_consistent(self) -> "RichContent":
+        if (self.categories is None) != (self.values is None):
+            raise ValueError("categories and values go together")
+        if self.categories is not None and len(self.categories) != len(self.values):
+            raise ValueError("categories and values must have identical lengths")
+        if self.categories is not None and len(self.categories) < 2:
+            raise ValueError("a series needs at least two values")
+        if (self.headers is None) != (self.rows is None):
+            raise ValueError("headers and rows go together")
+        if self.rows and any(len(row) != len(self.headers) for row in self.rows):
+            raise ValueError("every table row needs one cell per header")
+        return self
+
+    def to_points(self) -> "PointsContent":
+        """The same page as plain points, for the code-driven layout engine."""
+
+        items = [
+            PointItem(heading=item.heading, body=(
+                f"{item.value} {item.body or ''}".strip() if item.value else item.body or item.heading)[:100])
+            for item in self.items[:4]
+        ]
+        while len(items) < 2:
+            items.append(PointItem(heading=self.title[:18], body=(self.takeaway or self.lead or self.title)[:100]))
+        return PointsContent(title=self.title, kicker=self.kicker, lead=self.lead, takeaway=self.takeaway,
+                             source=self.source, speaker_notes=self.speaker_notes, items=items,
+                             highlight=self.highlight)
+
+
 AnyContent = (
     PointsContent | ProcessContent | ChartContent | MetricsContent | StatementContent
     | CompareContent | TimelineContent | TableContent | SummaryContent | RoadmapContent

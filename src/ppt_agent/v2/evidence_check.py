@@ -269,6 +269,8 @@ def sanitize_content_numbers(content, issues: list[dict]):
         # A numeric chart value and its category form one inseparable item.
         if path[0]=='values':
             remove.add(('values',int(path[1])))
+        elif path[0]=='highlight' and data.get('archetype')=='rich':
+            data['highlight']=None  # a focal figure that cannot be shown is no focal fact
         elif path[0] in {'metrics','items','steps','milestones','insights','rows'} and len(path)>2 and path[-1]!='note':
             remove.add((path[0],int(path[1])))
         else:
@@ -288,6 +290,9 @@ def sanitize_content_numbers(content, issues: list[dict]):
         if field=='values':
             del data['categories'][index]
     try:
+        if data.get('archetype')=='rich':
+            from .visual.content import RichContent
+            return RichContent.model_validate(data),records
         return _ADAPTER.validate_python(data),records
     except ValidationError:
         # When the archetype minimum cardinality fails, carry surviving copy in

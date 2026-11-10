@@ -159,6 +159,13 @@ class MockLLMClient:
             points = ["明确问题与使用场景", "验证方案与推进路径"]
         if len(points) == 1:
             points.append("核对资料并明确下一步")
+        if context.get("rich_tier"):
+            relations = ("cases", "sequence", "comparison", "structure")
+            return {"archetype": "rich", "title": str(brief.get("title") or "内容要点")[:40],
+                    "relation": relations[int(context.get("page_number", 0)) % len(relations)],
+                    "tier": context["rich_tier"], "source": None,
+                    "takeaway": "先验证，再推广。",
+                    "items": [{"heading": point[:18], "body": point} for point in points]}
         diversity = context.get("diversity", {})
         allowed = diversity.get("allowed_archetypes", ["points"])
         assigned = diversity.get("assigned_archetype")

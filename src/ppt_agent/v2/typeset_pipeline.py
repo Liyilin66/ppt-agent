@@ -419,17 +419,63 @@ def content_qa(content, page_number, seen_titles=None):
     return PageQAResult(page_number=page_number, issues=issues)
 
 
+RICH_TIERS = {
+    'visual': 'visual: the page is carried by ONE focal fact. Set highlight to that fact; give 1-3 short '
+              'items that explain or qualify it. Nothing else.',
+    'standard': 'standard: one claim argued with 3-5 items, each a distinct concrete fact. Set highlight '
+                'when one fact clearly matters most.',
+    'deep': 'deep: a dense reference page. Give 5-8 items, or a table (headers + rows, 3-6 rows) with 2-3 '
+            'items that read it. Use every distinct relevant fact the evidence offers.',
+}
+RICH_SYSTEM = (
+    'Return one JSON object matching the schema: the content of one slide. Content only, no layout. '
+    'Use the requested slide language. Respect every field length and item-count limit. '
+    'The page argues ONE claim. title is that claim as a complete conclusion a reader could repeat, '
+    'with the most important number from the evidence when it has one (at most 40 characters); never a topic label. '
+    'relation says how the facts relate, and decides how the page will be drawn - choose what the evidence '
+    'actually supports: single (one figure carries it), comparison (things set against each other), '
+    'trend (one measure over time), proportion (part of a whole), ranking (one measure across several things), '
+    'sequence (steps in order), timeline (dated events: fill date on each item), structure (parts of a whole), '
+    'cause (one thing leading to another), cases (named examples for one claim). '
+    'highlight is the focal fact {{value, text}}: the figure a reader should see first and the words that say what it measures. '
+    'It must be the same figure the title carries. '
+    'Each item is one concrete fact from the evidence: heading names it in a few words, value is its figure '
+    '(only when it has one; a figure with its unit, like 12.1% or 316亿美元), body says what the figure measures, '
+    'whose it is and when. Items are ordered by importance. Do not pad: fewer real facts beat filler, and never '
+    'restate the title as an item. Do not repeat what other_page_titles cover. '
+    'Fill categories + values + unit_format + chart_title ONLY for one measure in one unit across categories or years '
+    '(2-8 values); never put different measures in one series. For raw percentages like 47.1 use unit_format 0.0"%". '
+    'Fill headers + rows when several cases share the same attributes; cells are short. '
+    'takeaway is one sentence on what this means for the audience. lead only if it adds a fact the title lacks. '
+    'Density for this page - {tier_rule} '
+    'Grounding: only the supplied evidence excerpts are evidence. Retain exact subjects, metric labels, '
+    'denominators and periods. Never move a number between different purposes, cases or groups. Keep '
+    'expected/projected/planned qualifiers. Percentage and percentage-point are different units. Use literal '
+    'source observations; do not compute new aggregates. If no evidence supports a number, leave it out. '
+    'source must identify an actual supplied filename, page or URL in source_references; for PDF evidence use the '
+    'exact filename and physical PDF page, e.g. report.pdf 第12页, only pages appearing in the excerpts. Without '
+    'source material leave source null. When revising, edit current_content per the instruction and keep the rest. '
+    'Schema:\n'
+)
+
+
 async def generate_content(client, checkpoints, slot, brief, profile, *,
                            revision_instruction=None, force_regenerate=False, current_content: dict[str, Any] | None = None,
-                           diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None, evidence=None):
+                           diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None, evidence=None,
+                           rich_tier: str | None = None):
+    """``rich_tier`` asks for the richer page model the HTML engine designs from."""
+    from ppt_agent.v2.visual.content import RichContent
     source_references = source_references or re.findall(r'https?://[^\s]+', brief.source_digest or '')
     name = f'typeset/content_{slot.page_number:03d}.json'
     cached = None if force_regenerate else checkpoints.load(name)
+    adapter = TypeAdapter(RichContent) if rich_tier else content_adapter()
     if cached is not None:
-        parsed = content_adapter().validate_python(cached['content'])
+        saved = cached['content']
+        parsed = (RichContent.model_validate(saved) if saved.get('archetype') == 'rich'
+                  else content_adapter().validate_python(saved))
         return parsed, cached['record']
     page_brief = slot.brief or PageBrief(title=slot.section_title or '内容要点')
-    schema = content_adapter().json_schema()
+    schema = adapter.json_schema()
     if evidence is not None:
         source_references = evidence.references
         source_page_counts = evidence.page_counts
@@ -475,11 +521,14 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         'For raw percentage values like 47.1, use unit_format 0.0"%", not 0.0%. '
         'Chart categories and values must have identical lengths. Schema:\n' + json.dumps(schema, ensure_ascii=False)
     )
+    if rich_tier:
+        system = RICH_SYSTEM.format(tier=rich_tier, tier_rule=RICH_TIERS[rich_tier]) + json.dumps(schema, ensure_ascii=False)
     context = {'page_number': slot.page_number, 'page_brief': page_brief.model_dump(mode='json'),
                'section_title': slot.section_title, 'language': brief.language,
                'suggested_archetype': suggested, 'revision_instruction': revision_instruction,
                'current_content': current_content, 'diversity': diversity,
-               'evidence': evidence.to_dict() if evidence is not None else None}
+               'evidence': evidence.to_dict() if evidence is not None else None,
+               'rich_tier': rich_tier}
     prompt_page = dict(context)
     if evidence is not None:
         prompt_page['evidence'] = {key: value for key, value in evidence.to_dict().items() if key != 'text'}
@@ -504,7 +553,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
             payload, trimmed = trim_overlong_lists(payload)
             if trimmed:
                 trims.extend(trimmed)
-            parsed = content_adapter().validate_python(payload)
+            parsed = adapter.validate_python(payload)
+            if rich_tier:
+                parsed = parsed.model_copy(update={'tier': rich_tier})
             empty_sources += int(not parsed.source or not parsed.source.strip())
             trimmed_source, dropped_pages = trim_source(parsed.source, source_references, source_page_counts,
                                                         evidence.allowed_pages if evidence is not None else None)
@@ -607,6 +658,25 @@ def has_numeric_evidence(text: str | None, minimum: int = 3) -> bool:
 def has_dated_evidence(text: str | None, minimum: int = 2) -> bool:
     """Real dates (2024年 / 2025.08) to put on a timeline, not stage numbers."""
     return bool(text) and len(_DATE.findall(text)) >= minimum
+
+
+_TIER_CYCLE = ('standard', 'visual', 'standard', 'deep', 'standard', 'standard', 'deep', 'visual',
+               'standard', 'standard', 'deep', 'standard', 'visual', 'standard', 'deep', 'standard',
+               'standard', 'visual', 'standard', 'deep')  # 20% visual, 55% standard, 25% deep
+
+
+def plan_tiers(slots, numeric: dict[int, bool]) -> dict[int, str]:
+    """Density per content page: about 20% visual, 55% standard, 25% deep.
+
+    A visual page needs a figure to carry it; without one it becomes standard.
+    """
+    tiers = {}
+    for index, slot in enumerate(sorted(slots, key=lambda item: item.page_number)):
+        tier = _TIER_CYCLE[index % len(_TIER_CYCLE)]
+        if tier == 'visual' and not numeric.get(slot.page_number):
+            tier = 'standard'
+        tiers[slot.page_number] = tier
+    return tiers
 
 
 def plan_archetypes(slots, numeric: dict[int, bool], dated: dict[int, bool] | None = None) -> dict[int, str]:
@@ -828,6 +898,13 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     })
     checkpoints.save('typeset/archetype_plan.json', {str(k): v for k, v in plan.items()})
     semaphore = asyncio.Semaphore(max(1, request.concurrency))
+    # The HTML engine designs from a richer page model, in three densities.
+    rich = bool(getattr(request, 'html_theme', None))
+    tiers = plan_tiers(content_slots, {
+        number: has_numeric_evidence(packet.text if packet is not None else None, minimum=1)
+        for number, packet in packets.items()}) if rich else {}
+    if rich:
+        checkpoints.save('typeset/tier_plan.json', {str(k): v for k, v in tiers.items()})
 
     async def produce(slot):
         assigned = plan[slot.page_number]
@@ -846,9 +923,12 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                      'original_layout_hint': slot.brief.layout_hint if slot.brief else 'auto'}
         packet = packets[slot.page_number]
         async with semaphore:
+            if rich:
+                diversity = {'other_page_titles': diversity['other_page_titles']}
             content, record = await generate_content(client, checkpoints, slot, brief, profile,
                                                     diversity=diversity, source_references=references,
-                                                    source_page_counts=page_counts, evidence=packet)
+                                                    source_page_counts=page_counts, evidence=packet,
+                                                    rich_tier=tiers.get(slot.page_number))
         record = {**record, 'assigned_archetype': assigned,
                   'archetype_downgraded': content.archetype != assigned}
         if record.get('evidence') is not None:
@@ -941,8 +1021,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             content, record = results[slot.page_number]
             reader_copy = display_copy(content, website_titles, document_names)
             record = {**record, 'source_display': reader_copy.source}
+            layout_copy = reader_copy.to_points() if reader_copy.archetype == 'rich' else reader_copy
             try:
-                page, notes = typeset_page(reader_copy, profile, page_number=slot.page_number,
+                page, notes = typeset_page(layout_copy, profile, page_number=slot.page_number,
                                           deck_title=skeleton.deck_title, history=history, frames=frame_history)
             except ValueError as exc:
                 # A legal schema may still be too dense for a composition.

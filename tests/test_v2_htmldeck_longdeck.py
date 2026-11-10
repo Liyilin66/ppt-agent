@@ -76,3 +76,45 @@ def test_materials_only_brief_objects_when_asked_for_more_than_the_source_carrie
     assert status(50).status == "ready"
     over = status(100)
     assert over.status == "clarifying" and "58 页以内" in over.conflicts[0].message
+
+
+def test_density_tiers_follow_the_planned_mix_and_need_a_figure_to_be_visual():
+    from types import SimpleNamespace
+
+    from ppt_agent.v2.typeset_pipeline import plan_tiers
+
+    slots = [SimpleNamespace(page_number=n) for n in range(1, 41)]
+    tiers = plan_tiers(slots, {n: True for n in range(1, 41)})
+    counts = {tier: list(tiers.values()).count(tier) for tier in ("visual", "standard", "deep")}
+    assert counts == {"visual": 8, "standard": 22, "deep": 10}
+    assert "visual" not in plan_tiers(slots, {}).values()
+
+
+def test_rich_content_checks_its_data_and_degrades_to_points():
+    import pytest
+    from pydantic import ValidationError
+
+    from ppt_agent.v2.visual.content import PointsContent, RichContent
+
+    page = RichContent(title="采购自动化率超 85%", relation="cases", tier="standard",
+                       highlight={"value": "85%", "text": "采购自动化率"},
+                       items=[{"heading": "京东物流", "value": "85%", "body": "采购自动化率"}])
+    points = page.to_points()
+    assert isinstance(points, PointsContent) and len(points.items) == 2
+    assert points.items[0].body == "85% 采购自动化率"
+    with pytest.raises(ValidationError):
+        RichContent(title="t", items=[{"heading": "a"}], categories=["a", "b"], values=[1.0])
+    with pytest.raises(ValidationError):
+        RichContent(title="t", items=[{"heading": "a"}], headers=["a", "b"], rows=[["only one"]])
+
+
+def test_an_unsupported_focal_figure_is_dropped_not_blanked():
+    from ppt_agent.v2.evidence_check import check_content_numbers, sanitize_content_numbers
+    from ppt_agent.v2.visual.content import RichContent
+
+    page = RichContent(title="准确率很高", highlight={"value": "93%", "text": "准确率"},
+                       items=[{"heading": "检测", "value": "90%", "body": "准确率超 90%"},
+                              {"heading": "编造", "value": "77%", "body": "没有出处"}])
+    issues = check_content_numbers(page, "TCL 面板缺陷检测准确率超 90%。")
+    cleaned, _ = sanitize_content_numbers(page, issues)
+    assert cleaned.highlight is None and [item.heading for item in cleaned.items] == ["检测"]
