@@ -17,7 +17,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
@@ -563,6 +563,11 @@ def _render_box(slide, item: BoxItem) -> None:
     )
     if item.shape in ("round", "round_top"):
         shape.adjustments[0] = max(0.0, min(0.5, item.radius / max(min(frame.w, frame.h), 1e-6)))
+    # Drop the reference to the theme's shape style: PowerPoint lets the explicit
+    # properties below win, but other viewers still draw the theme's shadow.
+    style = shape._element.find(qn("p:style"))  # noqa: SLF001
+    if style is not None:
+        shape._element.remove(style)
     # Children of spPr must follow the schema order: geometry, fill, line, effects.
     sp_pr = shape._element.spPr  # noqa: SLF001 - literal fills need raw XML
     for tag in ("a:solidFill", "a:gradFill", "a:noFill", "a:ln", "a:effectLst"):
@@ -596,6 +601,8 @@ def _render_rich_text(slide, item: RichTextItem) -> None:
     text_frame.margin_left = text_frame.margin_right = Emu(0)
     text_frame.margin_top = text_frame.margin_bottom = Emu(0)
     text_frame.word_wrap = item.wrap
+    # A fixed box: viewers that resize it to fit a substituted font move the text.
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
     text_frame.vertical_anchor = _VALIGN_MAP[item.valign]
     paragraph = text_frame.paragraphs[0]
     paragraph.alignment = _ALIGN_MAP[item.align]

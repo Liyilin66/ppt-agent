@@ -74,6 +74,8 @@ def test_literal_elements_render_as_native_text_and_shapes(tmp_path):
     for shape in (glow, card):
         order = [child.tag.split("}")[1] for child in shape._element.spPr]
         assert order == ["xfrm", "prstGeom", "gradFill", "ln", "effectLst"]
+    assert glow._element.find(qn("p:style")) is None  # no theme shadow in other viewers
+    assert "spAutoFit" not in text._element.xml
     xml = glow._element.xml
     assert 'path="circle"' in xml and '<a:alpha val="40000"/>' in xml
     assert 'ang="5400000"' in card._element.xml and "<a:glow" in card._element.xml

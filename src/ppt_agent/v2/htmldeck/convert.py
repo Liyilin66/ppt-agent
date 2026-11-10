@@ -32,7 +32,8 @@ from ppt_agent.v2.ir import (
 )
 
 PT_PER_PX = 0.75
-SINGLE_LINE_PAD = 48.0  # spare width on the free side of an unwrapped line
+SINGLE_LINE_PAD = 48.0  # least spare width on the free side of an unwrapped line
+EDGE = 8.0  # unwrapped lines may run this close to the slide edge
 WRAP_SLACK = 2.0
 CHART_KINDS = {"bar", "column", "line", "area", "pie", "doughnut"}
 _COLOR = re.compile(r"rgba?\(([^)]+)\)")
@@ -238,12 +239,20 @@ def _text(item: dict[str, Any], next_id) -> RichTextItem | None:
     top = text["y"] - (pitch - glyph) / 2  # glyph boxes sit centred in the line box
     align = item.get("align") if item.get("align") in ("left", "center", "right") else "left"
     if lines == 1:
+        # One line gets all the room there is on its free side. A viewer that
+        # lacks the font, or ignores "do not wrap", then still has space for a
+        # wider substitute instead of breaking a headline figure in two.
+        left, right = text["x"], text["x"] + text["w"]
         if align == "center":
-            x, w = text["x"] - SINGLE_LINE_PAD, text["w"] + 2 * SINGLE_LINE_PAD
+            middle = (left + right) / 2
+            half = max(text["w"] / 2 + SINGLE_LINE_PAD, min(middle, CANVAS_WIDTH - middle) - EDGE)
+            x, w = middle - half, 2 * half
         elif align == "right":
-            x, w = text["x"] - SINGLE_LINE_PAD, text["w"] + SINGLE_LINE_PAD
+            x = min(left - SINGLE_LINE_PAD, EDGE)
+            w = right - x
         else:
-            x, w = text["x"], text["w"] + SINGLE_LINE_PAD
+            x = left
+            w = max(text["w"] + SINGLE_LINE_PAD, CANVAS_WIDTH - EDGE - left)
         return RichTextItem(
             id=next_id(), frame=_bleed(x, top, w, pitch), runs=runs, align=align,
             valign="middle", wrap=False, line_pt=round(pitch * PT_PER_PX, 2),
