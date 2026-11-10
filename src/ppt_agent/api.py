@@ -182,6 +182,7 @@ class ConfirmDeckPlanRequest(StrictModel):
     enable_search: bool | None = None
     plan: EditableDeckPlan | None = None
     layout_engine: Literal["typeset", "free"] | None = None
+    html_theme: Literal["editorial", "dark", "bright"] | None = None
 
 
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024
@@ -2429,6 +2430,8 @@ def create_app(data_dir: str | Path | None = None, store: JobStore | None = None
         }
         if payload is not None and payload.layout_engine is not None:
             request_updates["layout_engine"] = payload.layout_engine
+        if payload is not None:
+            request_updates["html_theme"] = payload.html_theme
         request_payload = CreateLongDeckJobRequest.model_validate_json(
             record.request_json
         ).model_copy(update=request_updates)

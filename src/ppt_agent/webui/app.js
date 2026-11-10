@@ -2564,7 +2564,7 @@ async function confirmDeckPlan() {
     const job = await requestJson(`/api/deck-plans/${activePlanId}/confirm`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({plan: activePlan, layout_engine: document.getElementById("layoutEngine").value, enable_search: document.getElementById("planEnableSearch").checked})
+      body: JSON.stringify({plan: activePlan, layout_engine: document.getElementById("layoutEngine").value, enable_search: document.getElementById("planEnableSearch").checked, html_theme: document.getElementById("planHtmlTheme").value || null})
     });
     localStorage.removeItem(activePlanStorageKey);
     longSlideCount.value = String(total);
