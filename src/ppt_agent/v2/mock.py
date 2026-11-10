@@ -37,6 +37,53 @@ class MockLLMClient:
         self.usage = UsageMeter()
         self.latency_seconds = latency_seconds
 
+    async def complete_text(
+        self,
+        *,
+        task: str,
+        system: str,
+        user: str,
+        max_output_tokens: int | None = None,
+        context: Any = None,
+        images: list[tuple[str, str]] | None = None,
+    ) -> str:
+        """A plain but valid slide for the HTML design step."""
+
+        del system, user, max_output_tokens, images
+        if self.latency_seconds:
+            await asyncio.sleep(self.latency_seconds)
+        if task != "html_page":
+            raise ValueError(f"MockLLMClient has no text task '{task}'")
+        return self._html_page(context["job"])
+
+    @staticmethod
+    def _html_page(job: Any) -> str:
+        from html import escape
+
+        def strings(value: Any) -> list[str]:
+            if isinstance(value, dict):
+                return [text for key, child in value.items()
+                        if key not in ("title", "source", "speaker_notes", "archetype", "kicker", "unit_format", "chart")
+                        for text in strings(child)]
+            if isinstance(value, list):
+                return [text for child in value for text in strings(child)]
+            if isinstance(value, bool) or value is None:
+                return []
+            return [f"{value:g}" if isinstance(value, float) else str(value)]
+
+        lines = strings(job.content)[:8] or ["（无内容）"]
+        half = (len(lines) + 1) // 2
+        column = lambda rows, kind: (  # noqa: E731
+            f'<div class="{kind} f1">' + "".join(f'<div class="p">{escape(row)}</div>' for row in rows) + "</div>")
+        return (
+            '<div class="page"><div class="head">'
+            + (f'<div class="kicker">{escape(job.kicker)}</div>' if job.kicker else "")
+            + f'<h1 class="title">{escape(job.title or "")}</h1></div>'
+            + f'<div class="body stretch">{column(lines[:half], "panel")}{column(lines[half:] or lines[:1], "card")}</div>'
+            + f'<div class="foot"><div class="source">{escape(job.source or "")}</div>'
+            + f'<div class="pageno">{job.page_number:02d}</div></div></div>'
+        )
+
     async def complete_json(
         self,
         *,
@@ -59,6 +106,8 @@ class MockLLMClient:
             return self._outline(context)
         if task == "section_pages":
             return self._section_pages(context)
+        if task == "html_review":
+            return {"problems": []}
         if task == "page_content":
             return self._page_content(context)
         if task == "deck_frame":

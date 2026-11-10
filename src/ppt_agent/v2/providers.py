@@ -321,6 +321,24 @@ class HttpLLMClient:
         context: Any = None,
         images: list[tuple[str, str]] | None = None,
     ) -> Any:
+        text = await self.complete_text(
+            task=task, system=system, user=user, max_output_tokens=max_output_tokens,
+            context=context, images=images,
+        )
+        return extract_json_payload(text)
+
+    async def complete_text(
+        self,
+        *,
+        task: str,
+        system: str,
+        user: str,
+        max_output_tokens: int | None = None,
+        context: Any = None,
+        images: list[tuple[str, str]] | None = None,
+    ) -> str:
+        """Run one task and return the model's reply as written (HTML, prose)."""
+
         del context  # structured context is for the mock client only
         self.usage.check_budget()
         url, headers, body = self._build_request(
@@ -350,7 +368,7 @@ class HttpLLMClient:
                     output_tokens=output_tokens,
                     config=self.config,
                 )
-                return extract_json_payload(text)
+                return text
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = exc
                 continue
