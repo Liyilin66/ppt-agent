@@ -615,7 +615,7 @@ def _render_rich_text(slide, item: RichTextItem) -> None:
         run.font.italic = part.italic
         run.font.name = part.font
         r_pr = run._r.get_or_add_rPr()  # noqa: SLF001 - fills and CJK font need raw XML
-        ea = r_pr.makeelement(qn("a:ea"), {"typeface": part.font})
+        ea = r_pr.makeelement(qn("a:ea"), {"typeface": part.ea_font or part.font})
         r_pr.append(ea)
         if _has_cjk(part.text):
             r_pr.set("lang", "zh-CN")

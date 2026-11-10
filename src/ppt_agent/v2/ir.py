@@ -248,6 +248,7 @@ class TextRun(StrictModel):
     bold: bool = False
     italic: bool = False
     font: str = "Microsoft YaHei"
+    ea_font: str | None = None  # Chinese typeface when it differs from ``font``
     letter_spacing_pt: float = 0
     paint: Paint | None = None  # gradient text; overrides ``hex``
 
