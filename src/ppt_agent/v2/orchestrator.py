@@ -79,6 +79,12 @@ PageStatus = Literal["anchor", "model", "repaired", "fallback"]
 class BuildRequest(StrictModel):
     layout_engine: Literal["typeset", "free"] = "typeset"
     style_profile: Literal["consulting", "launch", "training", "corporate"] | None = None
+    html_theme: Literal["editorial", "dark", "bright"] | None = Field(
+        default=None,
+        description="Design pages in HTML with this theme (typeset engine only); "
+        "pages that fail fall back to the code-driven layout.",
+    )
+    html_review: bool = Field(default=True, description="Let the model look at each rendered page once.")
     prompt: str = Field(..., min_length=1)
     page_count: int = Field(default=100, ge=MIN_PAGES, le=MAX_PAGES)
     language: str | None = Field(

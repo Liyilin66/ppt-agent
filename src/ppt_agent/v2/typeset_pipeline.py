@@ -896,6 +896,39 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     sections = _skeleton_sections(skeleton)
     website_titles = {doc['name']: doc.get('title', '') for doc in evidence_store.documents
                       if doc.get('page_kind') == 'web'} if evidence_store is not None else {}
+    html_pages, html_summary = {}, None
+    html_theme = getattr(request, 'html_theme', None)
+    if html_theme:
+        # Model-designed pages. Anything that fails keeps the page the layout
+        # engine builds below, so a deck is never short a page.
+        from ppt_agent.v2.htmldeck import browser as html_browser, themes as html_themes
+        from ppt_agent.v2.htmldeck.deck import design_deck, job_for
+        theme = html_themes.get(html_theme).spec
+        checkpoints.save('theme.json', theme.model_dump(mode='json'))
+        jobs, fixed = [], []
+        summary_job_placed = False
+        for slot in sorted(skeleton.slots, key=lambda item: item.page_number):
+            framed = frame.get({'toc': 'summary', 'closing': 'roadmap'}.get(slot.kind)) if frame else None
+            if slot.kind == 'content':
+                jobs.append(job_for(display_copy(results[slot.page_number][0], website_titles, document_names),
+                                    page_number=slot.page_number, section_index=slot.section_index,
+                                    section_title=slot.section_title))
+            elif framed is not None and not (slot.kind == 'toc' and summary_job_placed):
+                summary_job_placed = summary_job_placed or slot.kind == 'toc'
+                jobs.append(job_for(framed, page_number=slot.page_number, section_index=None, section_title=None))
+            else:
+                fixed.append({'kind': slot.kind, 'page_number': slot.page_number,
+                              'deck_title': skeleton.deck_title, 'subtitle': skeleton.subtitle,
+                              'sections': sections, 'section_index': slot.section_index,
+                              'section_title': slot.section_title})
+        try:
+            html_pages, html_summary = await design_deck(
+                client, html_theme, jobs, fixed, checkpoints=checkpoints,
+                concurrency=request.concurrency, look=getattr(request, 'html_review', True), progress=progress)
+        except html_browser.BrowserUnavailable as exc:
+            progress(f'[design] no browser available, using the layout engine instead: {exc}')
+            html_summary = {'theme': html_theme, 'unavailable': str(exc)}
+    design_seconds = time.perf_counter() - started - content_seconds
     history, pages, qa_results, outcomes, records = [], [], [], [], []
     frame_history = []
     summary_placed = False
@@ -959,6 +992,19 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             page, qa = review_page(page, theme)
             outcome = PageOutcome(page_number=slot.page_number, status='anchor',
                 error_issues=len(qa.errors), warning_issues=len(qa.issues)-len(qa.errors))
+        designed = html_pages.get(slot.page_number)
+        if designed is not None and designed.ok:
+            page = designed.page.model_copy(update={'section': slot.section_title})
+            qa = PageQAResult(page_number=slot.page_number, issues=[])
+            outcome = outcome.model_copy(update={
+                'error_issues': 0, 'warning_issues': 0,
+                'model_attempts': outcome.model_attempts + designed.attempts,
+                'note': f'html design, {designed.attempts} call(s)'})
+            if slot.kind == 'content':
+                records[-1] = {**records[-1], 'html': {'attempts': designed.attempts,
+                               'review_problems': designed.review_problems}}
+        elif designed is not None and slot.kind == 'content':
+            records[-1] = {**records[-1], 'html': {'fell_back': True, 'defects': designed.defects}}
         pages.append(page)
         qa_results.append(qa)
         outcomes.append(outcome)
@@ -978,7 +1024,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     pptx_path = None
     if passed or request.qa_gate == 'lenient':
         pptx_path = render_deck(deck, output_dir / f'{request.deck_name}.pptx', assets_dir=output_dir / 'assets')
-    seconds = {'content': content_seconds, 'typeset_assemble_render': time.perf_counter()-started-content_seconds}
+    seconds = {'content': content_seconds, 'html_design': design_seconds,
+               'typeset_assemble_render': time.perf_counter()-started-content_seconds-design_seconds}
     statistics = diversity_statistics(final_contents, content_slots)
     statistics.update(
         source_empty_pages=sum(not content.source or not content.source.strip() for content in final_contents),
@@ -997,7 +1044,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                        'removed_numbers': sum(x.get('action') == 'removed_number' for r in records
                                               for x in r.get('numeric_check', {}).get('removed', []))}
     numeric_summary['structural_removed_numbers'] = len(structural_removed)
-    run = {'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    run = {'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,
