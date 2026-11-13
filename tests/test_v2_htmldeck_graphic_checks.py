@@ -77,3 +77,13 @@ def test_a_saved_plan_keeps_every_page_whose_form_still_suits_it():
     plan = layout_plan.repair(saved, {4: GROWTH, 5: SHARE})
     assert plan[1] == saved[1]
     assert plan[0].form in layout_plan.candidates(GROWTH) and plan[0].form not in ("strip", "ledger")
+
+
+def test_regions_may_not_share_cells():
+    def page(second_rows):
+        return ('<div class="page"><div class="r" style="grid-column:1/8;grid-row:5/9"><div class="b">数字和说明</div></div>'
+                f'<div class="r" style="grid-column:1/8;grid-row:{second_rows}"><div class="call">结论</div></div></div>')
+
+    assert "unsupported" in kinds(page("8/9"), {}) and kinds(page("9/10"), {}) == []
+    assert "unsupported" not in kinds('<div class="page"><div class="r" style="grid-column:1/7;grid-row:2/9">左</div>'
+                                      '<div class="r" style="grid-column:7/13;grid-row:2/9">右</div></div>', {})

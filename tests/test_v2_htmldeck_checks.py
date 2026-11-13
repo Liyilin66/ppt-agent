@@ -65,12 +65,14 @@ def test_a_clean_page_has_no_defects():
     ('<div class="tall"></div><div class="tall" style="display:flex;align-items:flex-end">底部</div>', "off_canvas"),
     ('<div class="tall" style="position:relative"><p style="position:absolute;left:0;top:0">第一段文字</p>'
      '<p style="position:absolute;left:10px;top:4px">第二段文字</p><p style="position:absolute;top:480px">底</p></div>', "overlap"),
+    ('<div class="tall" style="position:relative"><p style="position:absolute;top:70px">被色块盖住一半的一行字</p>'
+     '<div class="card" style="position:absolute;left:0;top:0"></div><p style="position:absolute;top:480px">底</p></div>', "overlap"),
     ('<div class="card tall"><span class="tiny">很小的字</span></div>', "small_text"),
     ('<div class="card">只有上面一点内容</div>', "sparse"),
     ('<div class="card tall">准确率 93%</div>', "extra_number"),
     ('<div class="card tall">文字</div><div class="chart" style="width:300px;height:200px" data-chart="{bad"></div>', "bad_chart"),
     ('<div class="card tall" style="display:flex"><div class="spin">转</div></div>', "unsupported"),
-], ids=["overflow", "off_canvas", "overlap", "small_text", "sparse", "extra_number", "bad_chart", "unsupported"])
+], ids=["overflow", "off_canvas", "overlap", "cut-by-block", "small_text", "sparse", "extra_number", "bad_chart", "unsupported"])
 def test_each_kind_of_defect_is_found(body, kind):  # noqa: D103
     found = _defects(body, allowed=numbers_in("70%"))
     assert kind in found, found

@@ -322,14 +322,16 @@ async def design_deck(
                 before = results[job.page_number]
                 async with gate:
                     after = await design_page(client, session, theme, font_css, job, look=look)
-                if after.ok:
+                # A redesign replaces the page only if it is no rougher than what it replaces.
+                kept = after.ok and (not before.ok or before.templated or len(after.aesthetic) <= len(before.aesthetic))
+                if kept:
                     results[job.page_number] = after
                     if checkpoints is not None:
                         checkpoints.save(f"html/page_{job.page_number:03d}.json",
                                          {"html": after.html, "content": _fingerprint(job),
                                           "attempts": before.attempts + after.attempts, "idea": job.idea,
                                           "review_problems": [why]})
-                redesigned.append({"page": job.page_number, "why": why, "kept": after.ok, "form": job.form})
+                redesigned.append({"page": job.page_number, "why": why, "kept": kept, "form": job.form})
                 progress(f"[design] page {job.page_number} redesigned ({why[:40]})")
 
             # Pages whose outlines nearly coincide, anywhere in the deck: recompose the later one.

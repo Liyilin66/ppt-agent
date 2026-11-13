@@ -14,6 +14,7 @@ from ppt_agent.v2.ir import CANVAS_HEIGHT, CANVAS_WIDTH
 
 MIN_TEXT_PX = 12.0
 TOLERANCE = 2.0
+CUT = 4.0  # how far text may cross a block's edge before it reads as a collision
 FILL_BOTTOM = 0.62  # content pages should reach at least this far down the page
 EXEMPT_CLASSES = ("pageno", "kicker", "index")
 # Reasons to revise a page, never reasons to drop it.
@@ -195,6 +196,28 @@ def find_defects(
         else:
             continue
         break
+
+    # Text half under a block or a ruled box that is not its own container: the block
+    # (or the rule along its edge) cuts through the words.
+    painted = [item for item in measured.items if item["kind"] == "box" and not _decorative(item)
+               and item["w"] * item["h"] < 0.9 * CANVAS_WIDTH * CANVAS_HEIGHT]
+    for item in texts:
+        if any(name in item.get("cls", "").split() for name in ("source", "pageno")):
+            continue
+        rect = _line_rect(item)
+        for block in painted:
+            width = min(block["x"] + block["w"], rect["x"] + rect["w"]) - max(block["x"], rect["x"])
+            height = min(block["y"] + block["h"], rect["y"] + rect["h"]) - max(block["y"], rect["y"])
+            if width <= CUT or height <= CUT:
+                continue
+            inside = (rect["y"] >= block["y"] - CUT and rect["y"] + rect["h"] <= block["y"] + block["h"] + CUT)
+            if not inside:
+                defects.append(Defect(
+                    "overlap",
+                    f"文字「{_short(_item_text(item))}」被旁边的色块或线框压住了一部分（上下错开了 "
+                    f"{min(height, rect['h'] - height):.0f} 像素）。请给它们各自的区域，行号不要重叠；内容太多就删减。",
+                    _item_text(item)))
+                break
 
     for data in (item for item in measured.items if item["kind"] in ("chart", "table")):
         for item in texts:

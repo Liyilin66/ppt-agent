@@ -122,10 +122,35 @@ def _same(a: float, b: float, tolerance: float = 0.06) -> bool:
     return abs(a - b) <= tolerance
 
 
+def _cell(node: _Node) -> tuple[int, int, int, int] | None:
+    """(first column, last column line, first row, last row line) of a grid region."""
+
+    column = re.search(r"grid-column\s*:\s*(\d+)\s*/\s*(\d+)", node.style)
+    row = re.search(r"grid-row\s*:\s*(\d+)\s*/\s*(\d+)", node.style)
+    if not column or not row:
+        return None
+    return int(column.group(1)), int(column.group(2)), int(row.group(1)), int(row.group(2))
+
+
+def _label(node: _Node) -> str:
+    return re.sub(r"\s+", " ", node.text).strip()[:12]
+
+
 def find(html: str, content: dict[str, Any]) -> list[Defect]:
     tree = _Tree()
     tree.feed(html or "")
     defects: list[Defect] = []
+
+    # Two regions that claim the same cells are laid on top of each other.
+    page = next((node for node in tree.root.walk() if node.has("page")), None)
+    regions = [(node, _cell(node)) for node in (page.children if page else []) if node.has("r") and _cell(node)]
+    for index, (first, a) in enumerate(regions):
+        for second, b in regions[index + 1:]:
+            if a[0] < b[1] and b[0] < a[1] and a[2] < b[3] and b[2] < a[3]:
+                defects.append(Defect(
+                    "unsupported",
+                    f"以「{_label(first)}」开头的区域（列 {a[0]}/{a[1]}、行 {a[2]}/{a[3]}）和以「{_label(second)}」开头的区域"
+                    f"（列 {b[0]}/{b[1]}、行 {b[2]}/{b[3]}）占了同一块格子，内容会叠在一起。请改行号让它们上下错开。"))
     allowed, known = shares(content), _percentages(content)
 
     for node in tree.root.walk():
