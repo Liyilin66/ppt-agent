@@ -121,3 +121,66 @@ def test_a_page_that_is_slightly_too_tall_is_tightened_without_another_call():
     client = Scripted([tall])
     result = run(client, look=False)
     assert result.ok and result.attempts == 1 and 'class="page compact' in result.html
+
+
+# --- studio theme: aesthetic defects are polished, never fatal ---------------
+
+STUDIO_SOURCE = "资料来源：《人工智能发展报告（2024年）》第 42 页"
+
+
+def studio_page(conclusion):
+    return (
+        '<div class="page"><div class="r" style="grid-column:1/9;grid-row:1/2"><div class="kicker">02 · 机会</div></div>'
+        '<div class="r" style="grid-column:1/8;grid-row:2/4"><div class="t2">北汽福田AI设计使零部件4减至1</div></div>'
+        f'<div class="r" style="grid-column:1/8;grid-row:4/9">{conclusion}</div>'
+        '<div class="r ll" style="grid-column:8/13;grid-row:2/9"><div class="t3">产品轻量化</div>'
+        '<div class="b">通过AI设计路径优化，产品重量减轻70%。</div><div class="t3">结构强度</div>'
+        '<div class="b">零部件整合的同时，产品强度增强18.8%。</div><div class="t3">设计迭代</div>'
+        '<div class="b">辅助设计软件可根据市场需求快速迭代产品设计，并提升仿真效率。</div>'
+        '<div class="t3">仿真验证</div><div class="b">工程约束明确的任务更容易验证效果。</div></div>'
+        f'<div class="source">{STUDIO_SOURCE}</div><div class="pageno">11</div></div>'
+    )
+
+
+LOUD = studio_page('<div class="q1">管理层应优先在工程约束明确、可仿真验证的设计任务中投入AI试点。</div>')
+CALM = studio_page('<div class="b">管理层应优先在工程约束明确、可仿真验证的设计任务中投入AI试点。</div>'
+                   '<div class="b mut">研发设计是AI创造战略价值的重要切口。</div><div class="t3">先试点</div>'
+                   '<div class="b">选择验证数据充分的设计任务。</div><div class="t3">再推广</div>'
+                   '<div class="b">效果可验证后扩大范围。</div>')
+
+
+def studio_job():
+    return DesignJob(page_number=11, archetype="rich", title="北汽福田AI设计使零部件4减至1", kicker="02 · 机会",
+                     source=STUDIO_SOURCE, form="ledger", idea="账本",
+                     content={"title": "北汽福田AI设计使零部件4减至1", "tier": "standard", "items": [
+                         {"heading": "产品轻量化", "value": "70%"}, {"heading": "结构强度", "value": "18.8%"}]})
+
+
+def run_studio(client, **kwargs):
+    async def go():
+        async with browser.Session() as session:
+            return await design_page(client, session, themes.get("studio"), office_font_css()[0],
+                                     studio_job(), look=False, **kwargs)
+
+    return asyncio.run(go())
+
+
+def test_an_aesthetic_defect_is_sent_back_and_the_calmer_page_is_used():
+    client = Scripted([LOUD, CALM])
+    result = run_studio(client)
+    assert result.ok and result.attempts == 2 and result.aesthetic == []
+    assert "不能用这么大的字" in client.prompts[1] and 'class="q1"' not in result.html
+
+
+def test_a_page_that_stays_loud_is_still_kept():
+    client = Scripted([LOUD] * 3)
+    result = run_studio(client)
+    assert result.ok and result.attempts == 3 and client.pages == []
+    assert any("不能用这么大的字" in message for message in result.aesthetic)
+
+
+def test_an_existing_page_can_be_repaired_in_place():
+    client = Scripted([CALM])
+    result = run_studio(client, seed_html=LOUD, seed_problems=["结论的字太大"])
+    assert result.ok and result.attempts == 1
+    assert "你上一次写的 HTML" in client.prompts[0] and "结论的字太大" in client.prompts[0]

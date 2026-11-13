@@ -84,6 +84,11 @@ def candidates(content: dict[str, Any]) -> list[str]:
     rows = content.get("rows") or []
     dated = sum(bool(item.get("date")) for item in items)
 
+    # Only a part of a whole may be drawn as one; a growth rate is not a share.
+    from ppt_agent.v2.htmldeck.graphic_checks import shares
+
+    parts = shares(content)
+
     def usable(form: str) -> bool:
         if form == "chart":
             return len(series) >= 2
@@ -93,10 +98,9 @@ def candidates(content: dict[str, Any]) -> list[str]:
             return bool(highlight)
         if form == "units":
             percent = _percent(highlight)
-            return percent is not None and 0 < percent <= 100
+            return percent is not None and percent in parts
         if form == "strip":
-            shares = [_percent(item.get("value")) for item in items] + [_percent(highlight)]
-            return sum(1 for share in shares if share is not None and share <= 100) >= 1
+            return bool(parts)
         if form == "timeline":
             return dated >= 3 and len(items) <= 5
         if form == "statement":

@@ -13,15 +13,17 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from ppt_agent.v2.htmldeck import prompts, review, sanitize, structural, themes
+from ppt_agent.v2.htmldeck import graphic_checks, prompts, review, sanitize, structural, themes
 from ppt_agent.v2.htmldeck.browser import Measured, MeasureFailed, Session
-from ppt_agent.v2.htmldeck.checks import Defect, allowed_numbers, find_defects
+from ppt_agent.v2.htmldeck.checks import AESTHETIC, Defect, allowed_numbers, find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
 from ppt_agent.v2.htmldeck.document import wrap
 from ppt_agent.v2.ir import PageDesign, PageRole
 
-MAX_REWRITES = 2
-SOFT = frozenset({"sparse", "small_text"})  # worth one more try, not worth losing the page
+MAX_REWRITES = 2  # for defects that must not ship
+MAX_POLISH = 2    # further tries once only soft defects are left
+# Worth another try, not worth losing the page.
+SOFT = frozenset({"sparse", "small_text"}) | AESTHETIC
 FIT = frozenset({"overflow", "off_canvas", "overlap"})  # too much for the space
 DESIGN_TOKENS = 2600
 
@@ -50,6 +52,7 @@ class PageResult:
     reviewed: bool = False
     review_problems: list[str] = field(default_factory=list)
     defects: list[str] = field(default_factory=list)
+    aesthetic: list[str] = field(default_factory=list)  # soft defects the final version still has
     screenshot_png: bytes = b""
     templated: bool = False  # built from the plain template after the designed page failed
 
@@ -102,13 +105,25 @@ async def design_page(
     job: DesignJob,
     *,
     look: bool = True,
+    seed_html: str | None = None,
+    seed_problems: list[str] | None = None,
 ) -> PageResult:
+    """``seed_html`` with ``seed_problems`` starts from an existing page and asks
+    for those problems to be fixed, instead of designing from nothing."""
+
     allowed = allowed_numbers([job.content, job.source, job.kicker, job.title, job.page_number])
+    studio = theme.vocabulary == 2
+    tier = str(job.content.get("tier") or "standard") if studio else None
+
+    def check(body: str, measured: Measured) -> list[Defect]:
+        found = find_defects(measured, allowed, tier=tier) + _required(job, measured)
+        return found + (graphic_checks.find(body, job.content) if studio else [])
+
     system = prompts.system_prompt(theme)
     result = PageResult(page_number=job.page_number, page=None)
-    best: tuple[str, Measured] | None = None
-    previous_html: str | None = None
-    problems: list[str] = []
+    best: tuple[str, Measured, list[Defect]] | None = None
+    previous_html: str | None = seed_html if seed_problems else None
+    problems: list[str] = list(seed_problems or []) if seed_html else []
 
     async def attempt() -> tuple[str, Measured, list[Defect]] | None:
         result.attempts += 1
@@ -137,7 +152,7 @@ async def design_page(
         except MeasureFailed as error:
             result.defects.append(f"browser failed: {error}")
             return None
-        defects = find_defects(measured, allowed) + _required(job, measured)
+        defects = check(body, measured)
         if any(defect.kind in FIT for defect in defects) and 'class="page compact' not in body:
             # A little too tall: the same page with less air often fits, at no model cost.
             tighter = body.replace('class="page', 'class="page compact', 1)
@@ -145,28 +160,37 @@ async def design_page(
                 remeasured = await _measure(session, theme, font_css, tighter)
             except MeasureFailed:
                 return body, measured, defects
-            again = find_defects(remeasured, allowed) + _required(job, remeasured)
+            again = check(tighter, remeasured)
             if not [defect for defect in again if defect.kind not in SOFT]:
                 return tighter, remeasured, again
         return body, measured, defects
 
-    for _ in range(1 + MAX_REWRITES):
+    rewrites, polish = MAX_REWRITES, MAX_POLISH
+    while True:
         outcome = await attempt()
         if outcome is None:
             break
         body, measured, defects = outcome
         hard = [defect for defect in defects if defect.kind not in SOFT]
-        if not hard:
-            best = (body, measured)
+        if not hard and (best is None or len(defects) < len(best[2])):
+            best = (body, measured, defects)  # of the pages that may ship, the one with least left to fix
         if not defects:
             break
+        if hard:
+            if not rewrites:
+                break
+            rewrites -= 1
+        else:
+            if not polish:
+                break
+            polish -= 1
         previous_html, problems = body, [defect.message for defect in defects][:6]
         result.defects = list(problems)
 
     if best is None:
         result.html = previous_html or ""  # kept for diagnosis; the page itself is not used
         return result
-    result.defects = [] if not problems or best[0] != previous_html else result.defects
+    result.defects = []
 
     if look:
         seen = await review.look(client, best[1].screenshot_png, title=job.title)
@@ -177,10 +201,12 @@ async def design_page(
             outcome = await attempt()
             if outcome is not None:
                 body, measured, defects = outcome
-                if not [defect for defect in defects if defect.kind not in SOFT]:
-                    best = (body, measured)  # keep the revision only if it broke nothing
+                # Keep the revision only if it broke nothing and left the page no rougher.
+                if not [defect for defect in defects if defect.kind not in SOFT] and len(defects) <= len(best[2]):
+                    best = (body, measured, defects)
 
-    body, measured = best
+    body, measured, left = best
+    result.aesthetic = [defect.message for defect in left]
     try:
         page = to_page(measured, page_number=job.page_number, role=job.role, section=job.section,
                        title=job.title, notes=job.notes)
