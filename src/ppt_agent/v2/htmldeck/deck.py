@@ -185,6 +185,9 @@ async def design_deck(
                 if not template.ok:
                     template = await _replay(session, theme, font_css, job,
                                              _plain_html(job).replace('class="page', 'class="page compact', 1))
+                if checkpoints is not None:
+                    checkpoints.save(f"html/failed_{job.page_number:03d}.json",
+                                     {"html": result.html, "defects": result.defects, "idea": job.idea})
                 if template.ok:
                     template.attempts, template.defects = result.attempts, result.defects
                     template.templated = True

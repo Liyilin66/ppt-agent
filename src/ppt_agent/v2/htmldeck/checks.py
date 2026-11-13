@@ -104,7 +104,19 @@ def find_defects(
     for note in measured.notes:
         defects.append(Defect("unsupported", f"用了不支持的写法：{note}。请只用主题提供的类。"))
     for clip in measured.clipped:
-        defects.append(Defect("overflow", f"「{_short(clip.get('text', ''))}」所在的容器装不下内容，请减少文字或放大容器。", clip.get("text", "")))
+        label = _short(clip.get("text", ""))
+        if clip.get("region"):
+            over, wide = clip.get("over", 0), clip.get("wide", 0)
+            if over > wide:
+                rows = max(1, -(-int(over) // 75))
+                message = (f"以「{label}」开头的区域，内容比它占的格子高出 {over:.0f} 像素。"
+                           f"请把这个区域的 grid-row 再多占 {rows} 行（并相应挪动下面的区域），或删掉次要文字。")
+            else:
+                message = (f"以「{label}」开头的区域，内容比它占的格子宽出 {wide:.0f} 像素。"
+                           "请让它多占几列，或把大数字换小一号（d1→d2→d3）。")
+        else:
+            message = f"「{label}」所在的容器装不下内容，请减少文字或放大容器。"
+        defects.append(Defect("overflow", message, clip.get("text", "")))
     texts = [item for item in measured.items if item["kind"] == "text" and _item_text(item)]
     for item in texts:
         rect, parent, label = _line_rect(item), item["parent"], _short(_item_text(item))

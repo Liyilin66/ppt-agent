@@ -110,7 +110,8 @@
       // A grid region ("r") owns a fixed cell: content taller than the cell spills onto its neighbours.
       const region = el.classList.contains('r') && el.parentElement && el.parentElement.classList.contains('page');
       if ((cs.overflow !== 'visible' || region) && (el.scrollHeight > el.clientHeight + (region ? 6 : 2) || el.scrollWidth > el.clientWidth + (region ? 6 : 2))) {
-        clipped.push({...rectOf(el.getBoundingClientRect()), text: el.textContent.trim().slice(0, 30)});
+        clipped.push({...rectOf(el.getBoundingClientRect()), text: el.textContent.trim().slice(0, 30), region: !!region,
+                      over: Math.max(el.scrollHeight - el.clientHeight, 0), wide: Math.max(el.scrollWidth - el.clientWidth, 0)});
       }
       if (!clipsText(cs) && painted(cs)) emitBox(el, cs);
       if (el.classList.contains('chart') && el.dataset.chart) {
