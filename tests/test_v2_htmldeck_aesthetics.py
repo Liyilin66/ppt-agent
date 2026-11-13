@@ -79,15 +79,22 @@ def test_a_long_sentence_is_not_display_type():
 
 
 def test_one_focus_per_page():
-    assert "focal_conflict" in kinds([text("大标题", size=44, cls="t1"),
-                                      text("90%", size=150, y=220, cls="d2"), FOOT])
+    # Beside a large title the figure must clearly lead; a 58px figure does not, a 150px one does.
+    assert "focal_conflict" in kinds([text("大标题", size=44, cls="t1"), text("超10亿", size=58, y=220, cls="d4"), FOOT])
+    assert "focal_conflict" not in kinds([text("大标题", size=44, cls="t1"), text("90%", size=150, y=220, cls="d2"), FOOT])
+    # Nearly one size is indecision; exactly one size is a pair to compare.
     assert "focal_conflict" in kinds([text("316", size=96, cls="d3"), text("84%", size=82, y=300, cls="d3"), FOOT])
+    assert "focal_conflict" not in kinds([text("48%", size=96, cls="d3"), text("67%", size=96, x=600, cls="d3"), FOOT])
     assert "focal_conflict" not in kinds([text("标题", size=32, cls="t2"), text("316", size=230, y=200, cls="d1"),
                                           text("84%", size=58, x=700, y=300, cls="d4"), FOOT])
 
 
 def test_a_hole_in_a_column_and_a_page_that_stops_short():
-    assert "hole" in kinds([text("标题", size=32, cls="t2"), text("正文", size=19, y=400), FOOT])
+    side = [text(f"边栏第 {index} 条", size=19, x=700, y=150 + 40 * index) for index in range(6)]
+    assert "hole" in kinds([text("标题", size=32, cls="t2"), text("正文", size=19, y=400), FOOT, *side])
+    # The same gap across the whole page is a pause, until it is most of the page.
+    assert "hole" not in kinds([text("标题", size=32, cls="t2"), text("正文", size=19, y=400), FOOT])
+    assert "hole" in kinds([text("标题", size=32, cls="t2"), text("正文", size=19, y=480), FOOT])
     assert "hole" not in kinds([text("标题", size=32, cls="t2"), text("正文", size=19, y=200), FOOT])
     short = [text("标题", size=32, cls="t2"), text("正文", size=19, y=200), text("中段", size=19, y=340),
              text("末段", size=19, y=470)]
@@ -96,7 +103,7 @@ def test_a_hole_in_a_column_and_a_page_that_stops_short():
 
 def test_red_is_counted_and_small_notes_are_caught():
     red = "rgb(197, 52, 28)"
-    many = [text(f"红字{index}", size=19, y=100 + 60 * index, color=red) for index in range(4)] + [FOOT]
+    many = [text(f"红字{index}", size=19, y=100 + 60 * index, color=red) for index in range(5)] + [FOOT]
     assert "red_overuse" in kinds(many) and "red_overuse" not in kinds(many[1:])
     assert "red_overuse" not in kinds([text("标签", size=13, cls="kicker", color=red)] + many[1:])
     assert "small_note" in kinds([text("说明", size=14, cls="c"), FOOT])

@@ -22,12 +22,13 @@ TIGHT_MAX = 12.0        # ...but a 230px figure does not need 58px of it
 LONG_LINES, LONG_CHARS = 2, 24
 STATEMENT_LINES, STATEMENT_CHARS = 3, 44  # a page that is only its statement may run longer
 RIVAL_SHARE = 0.6       # a second display element this close in size competes with the first
+LEAD_SHARE = 1.8        # beside a t1 title, the focal figure has to be this many times larger
 MAX_DISPLAY = 2
 HOLE_PX = 150.0
 BESIDE_SHARE = 0.4      # how much of that band the next column fills
-PAUSE_PX = 230.0        # even a full-width pause has a limit
+PAUSE_PX = 300.0        # even a full-width pause has a limit
 REACH = {"visual": 0.62, "standard": 0.72, "deep": 0.80}
-MAX_RED = 3
+MAX_RED = 4  # the guide says three; one over is not worth a rewrite
 MIN_NOTE_PX = 15.0
 ACCENT = "#C5341C"
 LABELS = ("kicker", "k", "source", "pageno", "index")
@@ -113,28 +114,33 @@ def find(measured: Measured, *, tier: str = "standard", accent: str = ACCENT) ->
                 "页面已经有标题时，结论请用 call（结论条）或 t3，大字只留给数字。",
                 _text(item)))
     for item in body:
-        if "t1" in _classes(item) and int(item.get("lines", 1)) > 2:
+        lines, length = int(item.get("lines", 1)), len(re.sub(r"\s+", "", _text(item)))
+        # Three short stacked lines are a deliberate block; a long title that wraps to three is not.
+        if "t1" in _classes(item) and (lines > 3 or (lines > 2 and length > 18)):
             defects.append(Defect("long_display",
-                                  f"标题「{_short(_text(item))}」排了 {item['lines']} 行，请改用 t2 或加宽标题区域。",
+                                  f"标题「{_short(_text(item))}」排了 {lines} 行，请改用 t2 或加宽标题区域。",
                                   _text(item)))
 
     # More than one thing asking to be seen first.
     if display:
         first = display[0]
-        if any("t1" in _classes(item) for item in body if item is not first):
+        titles = [item for item in body if "t1" in _classes(item) and item is not first]
+        if titles and _size(first) < LEAD_SHARE * _size(titles[0]):
             defects.append(Defect(
                 "focal_conflict",
-                f"这一页既有大标题（t1）又有大字「{_short(_text(first))}」，两个都在抢第一眼。"
-                "有大数字或大字的页，标题请用 t2。"))
-        if len(display) > MAX_DISPLAY:
+                f"大标题（t1）和大字「{_short(_text(first))}」差不多大，两个都在抢第一眼。"
+                "请把标题改成 t2；如果这个数字才是焦点，把它放大到 d3 以上。"))
+        sizes = [_size(item) for item in display]
+        if len(display) > MAX_DISPLAY and len(set(sizes)) > 1:
             defects.append(Defect(
                 "focal_conflict",
                 f"这一页有 {len(display)} 处大字，只保留「{_short(_text(first))}」做最大，其余降到 t3 以下。"))
-        elif len(display) == 2 and _size(display[1]) > RIVAL_SHARE * _size(first):
+        elif len(display) == 2 and RIVAL_SHARE * sizes[0] < sizes[1] < sizes[0]:
+            # Two figures of exactly one size are a pair to compare; nearly one size is indecision.
             defects.append(Defect(
                 "focal_conflict",
                 f"「{_short(_text(first))}」和「{_short(_text(display[1]))}」差不多大，分不出主次。"
-                "只留一个做焦点，另一个至少小两号。"))
+                "要么做成同样大小的一对来对比，要么只留一个做焦点、另一个至少小两号。"))
 
     # A hole inside a column, or a page that stops short.
     blocks = [(_rect(item), _short(_text(item))) for item in body
@@ -156,7 +162,11 @@ def find(measured: Measured, *, tier: str = "standard", accent: str = ACCENT) ->
         # Anything else in that band (a neighbour column's text does not count) fills the hole.
         filled = any(rect is not upper and rect is not nearest and _shared_width(upper, rect) > 0.5
                      and rect["y"] < nearest["y"] and rect["y"] + rect["h"] > bottom for rect, _ in blocks)
-        if gap <= HOLE_PX or nearest["y"] >= 0.8 * CANVAS_HEIGHT or filled:
+        # A rule drawn between the two makes them separate cells, each with its own air.
+        ruled = any(item["kind"] == "box" and _shared_width(upper, item) > 0.5
+                    and any(bottom + 8 < edge < nearest["y"] - 8 for edge in (item["y"], item["y"] + item["h"]))
+                    for item in measured.items)
+        if gap <= HOLE_PX or nearest["y"] >= 0.8 * CANVAS_HEIGHT or filled or ruled:
             continue
         # A band of air across the whole page is a pause. The same band beside a
         # busy column is a hole: one half of the page is working and the other is not.

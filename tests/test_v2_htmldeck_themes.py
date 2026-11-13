@@ -67,6 +67,14 @@ def test_the_studio_theme_has_a_sample_for_every_form():
     assert "grid-column" in themes.studio_guide()
 
 
+def test_display_type_is_for_figures_and_the_conclusion_has_its_own_style():
+    guide, css = themes.studio_guide(), themes.get("studio").css
+    assert ".call{" in css and "call（结论条）" in guide and "q1 只用在观点页" in guide
+    for form in themes.STUDIO_FORMS:
+        assert ('class="q1' in themes.studio_example(form)) is (form == "statement"), form
+    assert any('class="call"' in themes.studio_example(form) for form in themes.STUDIO_FORMS)
+
+
 @pytest.mark.skipif(not browser.available(), reason="no Chromium-based browser")
 def test_studio_samples_are_clean_and_no_two_share_an_outline():
     from ppt_agent.v2.htmldeck import signature
@@ -78,7 +86,8 @@ def test_studio_samples_are_clean_and_no_two_share_an_outline():
             for number, form in enumerate(themes.STUDIO_FORMS, 1):
                 body, _ = sanitize.clean(themes.studio_example(form))
                 measured = await session.measure(wrap(body, studio.css, fonts), screenshot=False)
-                problems += [(form, defect.message) for defect in find_defects(measured)]
+                # The samples are what the model learns from: they pass the aesthetic checks too.
+                problems += [(form, defect.message) for defect in find_defects(measured, tier="standard")]
                 outlines[number] = signature.silhouette(to_page(measured, page_number=number))
         return problems, outlines
 
