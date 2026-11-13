@@ -51,6 +51,7 @@ class PageResult:
     review_problems: list[str] = field(default_factory=list)
     defects: list[str] = field(default_factory=list)
     screenshot_png: bytes = b""
+    templated: bool = False  # built from the plain template after the designed page failed
 
     @property
     def ok(self) -> bool:

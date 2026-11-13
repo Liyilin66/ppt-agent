@@ -52,6 +52,26 @@ def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
                                    core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path)
 
 
+def _plain_html(job: DesignJob) -> str:
+    """The job's facts as (figure, heading, body) rows for the plain template."""
+
+    from ppt_agent.v2.htmldeck import structural
+
+    content, rows = job.content, []
+    for index, item in enumerate(content.get("items") or content.get("rows") or content.get("metrics")
+                                 or content.get("steps") or content.get("milestones") or [], 1):
+        if not isinstance(item, dict):
+            continue
+        figure = str(item.get("value") or item.get("date") or item.get("tag") or f"{index:02d}")
+        head = str(item.get("heading") or item.get("headline") or item.get("label") or "")
+        body = str(item.get("body") or item.get("detail") or item.get("note") or "")
+        rows.append((figure[:10], head, body))
+    if not rows:
+        rows = [("01", content.get("takeaway") or job.title or "", "")]
+    return structural.plain(title=job.title, kicker=job.kicker, source=job.source,
+                            page_number=job.page_number, rows=rows, note=content.get("takeaway"))
+
+
 def contact_sheet(shots: dict[int, bytes], columns: int = 5, width: int = 380) -> bytes:
     """All pages side by side, numbered, as one PNG: the deck seen from a distance."""
 
@@ -159,8 +179,18 @@ async def design_deck(
                         results[job.page_number] = result
                         return
                 result = await design_page(client, session, theme, font_css, job, look=look)
+            if not result.ok and theme.vocabulary == 2:
+                # Rather than a page from the other layout engine, a plain page in this theme.
+                template = await _replay(session, theme, font_css, job, _plain_html(job))
+                if not template.ok:
+                    template = await _replay(session, theme, font_css, job,
+                                             _plain_html(job).replace('class="page', 'class="page compact', 1))
+                if template.ok:
+                    template.attempts, template.defects = result.attempts, result.defects
+                    template.templated = True
+                    result = template
             results[job.page_number] = result
-            if checkpoints is not None and result.ok:
+            if checkpoints is not None and result.ok and not result.templated:
                 checkpoints.save(name, {"html": result.html, "content": _fingerprint(job),
                                         "attempts": result.attempts, "idea": job.idea,
                                         "review_problems": result.review_problems})
@@ -186,8 +216,9 @@ async def design_deck(
             async def redo(job: DesignJob, why: str, *, new_form: bool) -> None:
                 current = next(item for item in plan if item.page == job.page_number)
                 if new_form:
+                    nearby = {item.form for item in plan if 0 < abs(item.page - job.page_number) <= 3}
                     options = [form for form in layout_plan.candidates(contents[job.page_number])
-                               if form != current.form]
+                               if form != current.form and form not in nearby]
                     if not options:
                         return
                     current = layout_plan.Fingerprint(page=job.page_number, form=options[0],
@@ -225,12 +256,14 @@ async def design_deck(
             if checkpoints is not None:
                 checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
 
-    designed = [job.page_number for job in jobs if results[job.page_number].ok]
+    designed = [job.page_number for job in jobs
+                if results[job.page_number].ok and not results[job.page_number].templated]
     summary = {
         "theme": theme_name,
         "office_fonts": real_fonts,
         "designed_pages": len(designed),
         "fell_back_pages": sorted(job.page_number for job in jobs if not results[job.page_number].ok),
+        "templated_pages": sorted(job.page_number for job in jobs if results[job.page_number].templated),
         "structural_fell_back": sorted(spec["page_number"] for spec in structural
                                        if not results[spec["page_number"]].ok),
         "model_calls": sum(results[job.page_number].attempts for job in jobs),

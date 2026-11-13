@@ -112,12 +112,12 @@ td{padding:10px 14px 10px 0;border-bottom:1px solid #cdc5b3;vertical-align:middl
 .deco,.deco2,.deco3{position:absolute}
 .cover .kicker{position:absolute;left:80px;top:64px}
 .cover .deco{left:80px;top:150px;width:18px;height:18px;background:#c5341c}
-.cover .deco2{left:940px;top:150px;width:1px;height:420px;background:#1a1916}
+.cover .deco2{left:888px;top:150px;width:1px;height:420px;background:#1a1916}
 .cover .deco3{left:80px;top:628px;width:1120px;height:1px;background:#1a1916}
-.cover-main{position:absolute;left:80px;top:196px;width:800px;display:flex;flex-direction:column;gap:30px}
-.cover-title{font-family:'Times New Roman','SimSun',serif;font-weight:400;font-size:74px;line-height:1.24}
+.cover-main{position:absolute;left:80px;top:196px;width:770px;display:flex;flex-direction:column;gap:30px}
+.cover-title{font-family:'Times New Roman','SimSun',serif;font-weight:400;font-size:66px;line-height:1.26}
 .cover-sub{font-size:16px;line-height:1.6;color:#6f6a5e}
-.cover-aside{position:absolute;left:972px;top:146px;width:228px;display:flex;flex-direction:column;gap:14px}
+.cover-aside{position:absolute;left:918px;top:146px;width:282px;display:flex;flex-direction:column;gap:14px}
 .label{font-size:14px;line-height:1.5;color:#6f6a5e}
 .list{display:flex;flex-direction:column}
 .item{display:flex;gap:18px;align-items:baseline;padding:12px 0;border-bottom:1px solid #cdc5b3}

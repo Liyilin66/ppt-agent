@@ -5,6 +5,37 @@ from __future__ import annotations
 from html import escape
 
 
+def _title_lines(title: str) -> str:
+    """Break a title at its colon so no line ends on an orphaned character."""
+
+    for mark in ("：", ":", "——"):
+        head, found, tail = title.partition(mark)
+        if found and head.strip() and tail.strip():
+            return f"{escape(head.strip())}{'：' if mark != '——' else ''}<br>{escape(tail.strip())}"
+    return escape(title)
+
+
+def plain(*, title: str | None, kicker: str | None, source: str | None, page_number: int,
+          rows: list[tuple[str, str, str]], note: str | None = None) -> str:
+    """A sober studio page built without the model: the claim on the left, the
+    facts as a ledger on the right. Used when a designed page cannot be made to fit."""
+
+    lines = "".join(
+        f'<div class="li"><div class="fig{" n" if not any(ch.isdigit() for ch in figure) or len(figure) <= 2 else ""}">'
+        f'{escape(figure)}</div><div class="r gap0"><div class="b bold">{escape(head)}</div>'
+        + (f'<div class="c">{escape(body)}</div>' if body else "") + "</div></div>"
+        for figure, head, body in rows[:6]
+    )
+    return (
+        '<div class="page">'
+        + (f'<div class="r" style="grid-column:1/9;grid-row:1/2"><div class="kicker">{escape(kicker)}</div></div>' if kicker else "")
+        + f'<div class="r" style="grid-column:1/5;grid-row:2/8"><div class="t2">{escape(title or "")}</div>'
+        + (f'<div class="s mut">{escape(note)}</div>' if note else "") + "</div>"
+        + f'<div class="r" style="grid-column:5/13;grid-row:2/9"><div class="ledger">{lines}</div></div>'
+        + f'<div class="source">{escape(source or "")}</div><div class="pageno">{page_number:02d}</div></div>'
+    )
+
+
 def cover(title: str, subtitle: str | None, sections: list[str], kicker: str = "") -> str:
     agenda = "".join(
         f'<div class="item"><span class="num">{index:02d}</span>'
@@ -18,7 +49,7 @@ def cover(title: str, subtitle: str | None, sections: list[str], kicker: str = "
     return (
         '<div class="page cover"><div class="deco"></div><div class="deco2"></div><div class="deco3"></div>'
         + (f'<div class="kicker">{escape(kicker)}</div>' if kicker else "")
-        + f'<div class="cover-main"><h1 class="cover-title">{escape(title)}</h1>'
+        + f'<div class="cover-main"><h1 class="cover-title">{_title_lines(title)}</h1>'
         + (f'<p class="cover-sub">{escape(subtitle)}</p>' if subtitle else "")
         + f"</div>{aside}</div>"
     )

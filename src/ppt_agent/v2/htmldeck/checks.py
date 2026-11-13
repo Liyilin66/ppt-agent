@@ -129,7 +129,7 @@ def find_defects(
             if width <= TOLERANCE or height <= TOLERANCE:
                 continue
             smaller = min(a["w"] * a["h"], b["w"] * b["h"])
-            if smaller > 0 and width * height / smaller > 0.2:
+            if smaller > 0 and width * height / smaller > 0.1:
                 defects.append(Defect(
                     "overlap",
                     f"文字「{_short(_item_text(first))}」和「{_short(_item_text(second))}」重叠了。",
@@ -175,6 +175,17 @@ def find_defects(
         else:
             continue
         break
+
+    for data in (item for item in measured.items if item["kind"] in ("chart", "table")):
+        for item in texts:
+            rect = _line_rect(item)
+            width = min(data["x"] + data["w"], rect["x"] + rect["w"]) - max(data["x"], rect["x"])
+            height = min(data["y"] + data["h"], rect["y"] + rect["h"]) - max(data["y"], rect["y"])
+            if width > TOLERANCE and height > TOLERANCE and width * height > 0.1 * rect["w"] * rect["h"]:
+                name = "图表" if data["kind"] == "chart" else "表格"
+                defects.append(Defect("overlap", f"文字「{_short(_item_text(item))}」压在了{name}上，请把它们放进不同的区域。",
+                                      _item_text(item)))
+                break
 
     for item in measured.items:
         if item["kind"] in ("chart", "table") and (

@@ -107,7 +107,9 @@
       if (cs.filter && cs.filter !== 'none') notes.push('filter');
       if (cs.backgroundImage && cs.backgroundImage.includes('url(')) notes.push('background image');
       if (el.tagName === 'IMG' || el.tagName === 'SVG' || el.tagName === 'svg' || el.tagName === 'CANVAS') { notes.push(el.tagName.toLowerCase()); return; }
-      if (cs.overflow !== 'visible' && (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2)) {
+      // A grid region ("r") owns a fixed cell: content taller than the cell spills onto its neighbours.
+      const region = el.classList.contains('r') && el.parentElement && el.parentElement.classList.contains('page');
+      if ((cs.overflow !== 'visible' || region) && (el.scrollHeight > el.clientHeight + (region ? 6 : 2) || el.scrollWidth > el.clientWidth + (region ? 6 : 2))) {
         clipped.push({...rectOf(el.getBoundingClientRect()), text: el.textContent.trim().slice(0, 30)});
       }
       if (!clipsText(cs) && painted(cs)) emitBox(el, cs);
