@@ -69,3 +69,11 @@ def test_the_hand_written_samples_obey_the_rules():
     for form in themes.STUDIO_FORMS:
         found = graphic_checks.find(sanitize.clean(themes.studio_example(form))[0], samples.get(form, {}))
         assert found == [], (form, [defect.message for defect in found])
+
+
+def test_a_saved_plan_keeps_every_page_whose_form_still_suits_it():
+    saved = [layout_plan.Fingerprint(page=4, form="strip", focus="right"),
+             layout_plan.Fingerprint(page=5, form="ledger", focus="left", ratio="wide", core_visual="账本")]
+    plan = layout_plan.repair(saved, {4: GROWTH, 5: SHARE})
+    assert plan[1] == saved[1]
+    assert plan[0].form in layout_plan.candidates(GROWTH) and plan[0].form not in ("strip", "ledger")

@@ -121,10 +121,14 @@ def contact_sheet(shots: dict[int, bytes], columns: int = 5, width: int = 380) -
     return out.getvalue()
 
 
-def _fingerprint(job: DesignJob) -> str:
-    """Identifies the content a saved page was designed for."""
+def _fingerprint(job: DesignJob, idea: str | None = None) -> str:
+    """Identifies the content and form a saved page was designed for.
 
-    payload = json.dumps([job.content, job.source, job.kicker, job.title, job.form, job.idea if job.form else ""],
+    ``idea`` is the brief the saved page was written to, which may carry a
+    reviewer's note the fresh job does not have."""
+
+    payload = json.dumps([job.content, job.source, job.kicker, job.title, job.form,
+                          (job.idea if idea is None else idea) if job.form else ""],
                          ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -184,13 +188,13 @@ async def design_deck(
         # Compose the whole deck first: every page gets a form and a fingerprint,
         # checked against all the pages before it.
         saved = checkpoints.load("html/layout_plan.json") if checkpoints is not None else None
-        if saved and [item["page"] for item in saved] == sorted(contents) and all(
-                item["form"] in layout_plan.candidates(contents[item["page"]]) for item in saved):
-            plan = [layout_plan.Fingerprint(**item) for item in saved]
+        if saved and [item["page"] for item in saved] == sorted(contents):
+            # Keep the saved compositions; re-plan only pages whose form no longer suits the content.
+            plan = layout_plan.repair([layout_plan.Fingerprint(**item) for item in saved], contents)
         else:
             plan = await layout_plan.plan_layouts(client, contents)
-            if checkpoints is not None:
-                checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
+        if checkpoints is not None:
+            checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
         by_page = {item.page: item for item in plan}
         for job in jobs:
             _apply(job, by_page[job.page_number])
@@ -224,7 +228,9 @@ async def design_deck(
             cached = checkpoints.load(name) if checkpoints is not None else None
             async with gate:
                 result = None
-                if cached and cached.get("html") and cached.get("content") == _fingerprint(job):
+                if cached and cached.get("html") and cached.get("content") in (
+                        _fingerprint(job), _fingerprint(job, cached.get("idea"))):
+                    job.idea = cached.get("idea") or job.idea
                     studio = theme.vocabulary == 2
                     saved = await _replay(session, theme, font_css, job, cached["html"], recheck=studio)
                     saved.attempts = 0

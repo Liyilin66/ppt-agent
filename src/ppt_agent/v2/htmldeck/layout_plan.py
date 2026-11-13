@@ -187,6 +187,23 @@ def resolve(proposed: dict[int, dict[str, Any]], contents: dict[int, dict[str, A
     return plan
 
 
+def repair(saved: list[Fingerprint], contents: dict[int, dict[str, Any]]) -> list[Fingerprint]:
+    """A saved plan, with only the pages whose form the content can no longer
+    take given a new one. Every other page keeps its composition, so pages
+    already designed from the plan stay valid."""
+
+    plan = list(saved)
+    for index, item in enumerate(plan):
+        allowed = candidates(contents[item.page])
+        if item.form in allowed:
+            continue
+        nearby = {other.form for other in plan if 0 < abs(other.page - item.page) <= SAME_FORM_GAP}
+        form = next((name for name in allowed if name not in nearby), allowed[0])
+        plan[index] = Fingerprint(page=item.page, form=form, focus=item.focus,
+                                  ratio="even" if form in SYMMETRIC else item.ratio)
+    return plan
+
+
 PLAN_SYSTEM = (
     "你是一份演示文稿的艺术指导。下面是整套内容页的摘要。请为每一页选一种视觉形式，并说明读者第一眼看什么、"
     "视线怎么走。要求：形式必须从该页的 allowed 里选；相邻三页不能用同一种形式；整套要有节奏，"
