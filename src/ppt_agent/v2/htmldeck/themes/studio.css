@@ -21,6 +21,10 @@
 .t2{font-size:32px;line-height:1.4}
 .t3{font-size:24px;line-height:1.45}
 .q1{font-size:54px;line-height:1.42}
+/* the page's conclusion, when the page already has a title: a ruled line of serif, never display type */
+.call{font-family:'Times New Roman','SimSun',serif;font-size:24px;line-height:1.5;border-top:2px solid #c5341c;padding-top:14px;max-width:30em}
+/* display type keeps its distance from whatever sits above it */
+.r>.q1:not(:first-child){margin-top:14px}.r>.d1:not(:first-child),.r>.d2:not(:first-child),.r>.d3:not(:first-child),.r>.d4:not(:first-child){margin-top:6px}
 .b{font-size:19px;line-height:1.65}
 .s{font-size:17px;line-height:1.6}
 .c{font-size:15px;line-height:1.55;color:#6f6a5e}
@@ -88,6 +92,7 @@
 .fig{flex:0 0 150px;font-size:32px;line-height:1.25;white-space:nowrap}
 .fig.w{flex-basis:240px}
 .fig.n{flex-basis:56px;color:#c5341c}
+.ledger.fill{flex:1 1 auto}.ledger.fill .li{flex:1 1 0;max-height:124px}
 /* native chart and table */
 .chart{flex:1 1 0;min-height:220px;min-width:260px;--chart:#c5341c}
 table{width:100%;flex:1 1 auto;font-size:17px;line-height:1.5}
@@ -101,7 +106,7 @@ td{padding:10px 14px 10px 0;border-bottom:1px solid #cdc5b3;vertical-align:middl
 /* a little less air, tried automatically when a page is slightly too tall */
 .compact{padding-top:40px}
 .compact .b{font-size:17px;line-height:1.55}.compact .s{font-size:16px}
-.compact .t1{font-size:38px}.compact .t2{font-size:28px}.compact .t3{font-size:22px}
+.compact .call{font-size:21px;padding-top:10px}.compact .t1{font-size:38px}.compact .t2{font-size:28px}.compact .t3{font-size:22px}
 .compact .d1{font-size:190px}.compact .d2{font-size:126px}.compact .d3{font-size:82px}.compact .d4{font-size:50px}
 .compact .li{padding:8px 0}.compact .fig{font-size:27px}
 .compact .r{gap:8px}.compact .pad{padding:16px 22px}

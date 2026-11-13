@@ -138,7 +138,7 @@ def find(measured: Measured, *, tier: str = "standard", accent: str = ACCENT) ->
 
     # A hole inside a column, or a page that stops short.
     blocks = [(_rect(item), _short(_text(item))) for item in body
-              if not {"kicker", "arrow"} & set(_classes(item)) and item["text"]["w"] >= 40]
+              if not {"kicker", "arrow"} & set(_classes(item))]
     blocks += [({"x": item["x"], "y": item["y"], "w": item["w"], "h": item["h"]},
                 "图表" if item["kind"] == "chart" else "表格")
                for item in measured.items if item["kind"] in ("chart", "table")]

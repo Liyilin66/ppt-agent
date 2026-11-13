@@ -22,6 +22,7 @@ from ppt_agent.v2.htmldeck.pipeline import (
     structural_page,
 )
 
+OTHER_FORMS = 2  # other compositions to try before a plain page
 _HIDDEN = {"speaker_notes", "source", "archetype"}
 
 
@@ -52,24 +53,48 @@ def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
                                    core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path)
 
 
-def _plain_html(job: DesignJob) -> str:
-    """The job's facts as (figure, heading, body) rows for the plain template."""
-
-    from ppt_agent.v2.htmldeck import structural
+def _plain_rows(job: DesignJob) -> list[tuple[str, str, str]]:
+    """The job's facts as (figure, heading, body). A figure is the fact's own
+    value; a date is not a figure, and goes with the words."""
 
     content, rows = job.content, []
-    for index, item in enumerate(content.get("items") or content.get("rows") or content.get("metrics")
-                                 or content.get("steps") or content.get("milestones") or [], 1):
+    for item in (content.get("items") or content.get("rows") or content.get("metrics")
+                 or content.get("steps") or content.get("milestones") or []):
         if not isinstance(item, dict):
             continue
-        figure = str(item.get("value") or item.get("date") or item.get("tag") or f"{index:02d}")
+        figure = str(item.get("value") or item.get("tag") or "")
         head = str(item.get("heading") or item.get("headline") or item.get("label") or "")
         body = str(item.get("body") or item.get("detail") or item.get("note") or "")
-        rows.append((figure[:10], head, body))
-    if not rows:
-        rows = [("01", content.get("takeaway") or job.title or "", "")]
-    return structural.plain(title=job.title, kicker=job.kicker, source=job.source,
-                            page_number=job.page_number, rows=rows, note=content.get("takeaway"))
+        date = str(item.get("date") or "")
+        if date and date not in head and date not in body:
+            head = f"{date} · {head}" if head else date
+        rows.append((figure[:12], head, body))
+    return rows or [("", content.get("takeaway") or job.title or "", "")]
+
+
+def _plain_variant(job: DesignJob, nearby: set[str]) -> str:
+    """Which plain page suits this content, avoiding what nearby pages already use."""
+
+    rows = _plain_rows(job)
+    highlight = (job.content.get("highlight") or {}).get("value") or ""
+    fits = []
+    if highlight and any(char.isdigit() for char in highlight) and len(highlight) <= 10:
+        fits.append("poster")
+    if 2 <= len(rows) <= 4:
+        fits.append("columns")
+    fits.append("ledger")
+    return next((variant for variant in fits if variant not in nearby), fits[0])
+
+
+def _plain_html(job: DesignJob, variant: str = "ledger") -> str:
+    from ppt_agent.v2.htmldeck import structural
+
+    content = job.content
+    highlight = content.get("highlight") or {}
+    return structural.plain(
+        title=job.title, kicker=job.kicker, source=job.source, page_number=job.page_number,
+        rows=_plain_rows(job), note=content.get("takeaway"), variant=variant,
+        highlight=(str(highlight["value"]), str(highlight.get("text") or "")) if highlight.get("value") else None)
 
 
 def contact_sheet(shots: dict[int, bytes], columns: int = 5, width: int = 380) -> bytes:
@@ -165,6 +190,23 @@ async def design_deck(
         assign_ideas(jobs)
     gate = asyncio.Semaphore(max(1, concurrency))
     results: dict[int, PageResult] = {}
+    plain_used: dict[int, str] = {}
+
+    def _other_forms(page_number: int) -> list[str]:
+        """Forms this page could also take, leaving out its own and its neighbours'."""
+
+        current = next((item for item in plan if item.page == page_number), None)
+        if current is None:
+            return []
+        nearby = {item.form for item in plan if 0 < abs(item.page - page_number) <= 3}
+        return [form for form in layout_plan.candidates(contents[page_number])
+                if form != current.form and form not in nearby]
+
+    def _recompose(job: DesignJob, form: str) -> None:
+        index = next(i for i, item in enumerate(plan) if item.page == job.page_number)
+        focus = "right" if plan[index].focus == "left" else "left"
+        plan[index] = layout_plan.Fingerprint(page=job.page_number, form=form, focus=focus)
+        _apply(job, plan[index])
 
     async with browser.Session(concurrency=max(2, min(concurrency, 6))) as session:
 
@@ -180,16 +222,33 @@ async def design_deck(
                         return
                 result = await design_page(client, session, theme, font_css, job, look=look)
             if not result.ok and theme.vocabulary == 2:
-                # Rather than a page from the other layout engine, a plain page in this theme.
-                template = await _replay(session, theme, font_css, job, _plain_html(job))
-                if not template.ok:
-                    template = await _replay(session, theme, font_css, job,
-                                             _plain_html(job).replace('class="page', 'class="page compact', 1))
+                failed = result
                 if checkpoints is not None:
                     checkpoints.save(f"html/failed_{job.page_number:03d}.json",
                                      {"html": result.html, "defects": result.defects, "idea": job.idea})
+                # The content did not fit this form: compose it another way before giving up on design.
+                for form in _other_forms(job.page_number)[:OTHER_FORMS]:
+                    _recompose(job, form)
+                    async with gate:
+                        again = await design_page(client, session, theme, font_css, job, look=look)
+                    again.attempts += result.attempts
+                    result = again
+                    if result.ok:
+                        break
+            if not result.ok and theme.vocabulary == 2:
+                # Rather than a page from the other layout engine, a plain page in this theme,
+                # arranged unlike the plain pages near it.
+                nearby = {name for number, name in plain_used.items() if 0 < abs(number - job.page_number) <= 3}
+                variant = _plain_variant(job, nearby)
+                plain_used[job.page_number] = variant
+                async with gate:
+                    template = await _replay(session, theme, font_css, job, _plain_html(job, variant))
+                    for body in (_plain_html(job, variant).replace('class="page', 'class="page compact', 1),
+                                 _plain_html(job, "ledger").replace('class="page', 'class="page compact', 1)):
+                        if not template.ok:
+                            template = await _replay(session, theme, font_css, job, body)
                 if template.ok:
-                    template.attempts, template.defects = result.attempts, result.defects
+                    template.attempts, template.defects = result.attempts, failed.defects
                     template.templated = True
                     result = template
             results[job.page_number] = result
@@ -216,23 +275,22 @@ async def design_deck(
                 return {number: signature.silhouette(result.page) for number, result in results.items()
                         if number in by_page and result.ok}
 
-            async def redo(job: DesignJob, why: str, *, new_form: bool) -> None:
-                current = next(item for item in plan if item.page == job.page_number)
-                if new_form:
-                    nearby = {item.form for item in plan if 0 < abs(item.page - job.page_number) <= 3}
-                    options = [form for form in layout_plan.candidates(contents[job.page_number])
-                               if form != current.form and form not in nearby]
-                    if not options:
-                        return
-                    current = layout_plan.Fingerprint(page=job.page_number, form=options[0],
-                                                      focus="right" if current.focus == "left" else "left")
-                    plan[plan.index(next(item for item in plan if item.page == job.page_number))] = current
-                    _apply(job, current)
+            async def redo(job: DesignJob, why: str, *, new_form: bool, form: str | None = None) -> None:
+                options = _other_forms(job.page_number)
+                if form is not None and form in options:
+                    options = [form]  # the reviewer named a form this content can take
+                elif not new_form:
+                    options = []
+                if options:
+                    _recompose(job, options[0])
+                    job.idea += "审稿意见：" + why
+                elif new_form:
+                    return
                 else:
-                    job.idea += "审稿意见（请据此调整）：" + why
+                    job.idea += "审稿意见（请据此调整，形式不变）：" + why
                 before = results[job.page_number]
                 async with gate:
-                    after = await design_page(client, session, theme, font_css, job, look=False)
+                    after = await design_page(client, session, theme, font_css, job, look=look)
                 if after.ok:
                     results[job.page_number] = after
                     if checkpoints is not None:
@@ -252,10 +310,12 @@ async def design_deck(
                 # The whole deck at a glance: which pages look alike, which one is weakest.
                 sheet = contact_sheet({number: result.screenshot_png for number, result in results.items()
                                        if number in by_page})
-                for entry in await review.matrix(client, sheet):
+                allowed = {number: [item.form for item in plan if item.page == number] + _other_forms(number)
+                           for number in by_page}
+                for entry in await review.matrix(client, sheet, allowed=allowed):
                     job = by_page.get(entry["page"])
                     if job is not None:
-                        await redo(job, entry["problem"], new_form=False)
+                        await redo(job, entry["problem"], new_form=False, form=entry.get("form"))
             if checkpoints is not None:
                 checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
 
@@ -270,6 +330,9 @@ async def design_deck(
         "structural_fell_back": sorted(spec["page_number"] for spec in structural
                                        if not results[spec["page_number"]].ok),
         "model_calls": sum(results[job.page_number].attempts for job in jobs),
+        "plain_variants": {str(number): name for number, name in sorted(plain_used.items())},
+        "aesthetic_left": {str(job.page_number): results[job.page_number].aesthetic for job in jobs
+                           if results[job.page_number].aesthetic},
         "rewritten_pages": sum(results[job.page_number].attempts > 1 for job in jobs),
         "reviewed_pages": sum(results[job.page_number].reviewed for job in jobs),
         "review_flagged_pages": sum(bool(results[job.page_number].review_problems) for job in jobs),
