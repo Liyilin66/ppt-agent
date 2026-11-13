@@ -16,11 +16,15 @@ MIN_TEXT_PX = 12.0
 TOLERANCE = 2.0
 FILL_BOTTOM = 0.62  # content pages should reach at least this far down the page
 EXEMPT_CLASSES = ("pageno", "kicker", "index")
+# Reasons to revise a page, never reasons to drop it.
+AESTHETIC = frozenset({"tight", "focal_conflict", "long_display", "hole", "red_overuse", "small_note"})
 
 
 @dataclass(frozen=True)
 class Defect:
-    kind: str  # overflow | off_canvas | overlap | small_text | sparse | extra_number | bad_chart | unsupported
+    # overflow | off_canvas | overlap | small_text | sparse | extra_number | bad_chart | unsupported
+    # | unbound_graphic | missing, and the aesthetic kinds in ``AESTHETIC``
+    kind: str
     message: str
     text: str = ""
 
@@ -99,7 +103,11 @@ def find_defects(
     allowed: set[Decimal] | None = None,
     *,
     require_fill: bool = True,
+    tier: str | None = None,
 ) -> list[Defect]:
+    """``tier`` (visual / standard / deep) also asks for the aesthetic checks,
+    which judge a designed content page against the density it was planned at."""
+
     defects: list[Defect] = []
     for note in measured.notes:
         defects.append(Defect("unsupported", f"用了不支持的写法：{note}。请只用主题提供的类。"))
@@ -220,7 +228,7 @@ def find_defects(
             elif len(item["headers"]) > 8 or len(item["rows"]) > 12:
                 defects.append(Defect("bad_chart", "表格最多 8 列、12 行，请拆分或删减。"))
 
-    if require_fill:
+    if require_fill and tier is None:
         # How far down the page real content reaches: text (not the footer),
         # charts, tables and any block that is not a full-page backdrop.
         reach = [0.0]
@@ -249,4 +257,8 @@ def find_defects(
                     continue
                 if value not in allowed:
                     defects.append(Defect("extra_number", f"数字「{token}」不在给定内容里，请删除或改用给定的数字。", text))
+    if tier is not None:
+        from ppt_agent.v2.htmldeck import aesthetics
+
+        defects.extend(aesthetics.find(measured, tier=tier))
     return list(dict.fromkeys(defects))

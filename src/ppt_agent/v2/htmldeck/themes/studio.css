@@ -22,8 +22,8 @@
 .t3{font-size:24px;line-height:1.45}
 .q1{font-size:54px;line-height:1.42}
 .b{font-size:19px;line-height:1.65}
-.s{font-size:16px;line-height:1.6}
-.c{font-size:14px;line-height:1.55;color:#6f6a5e}
+.s{font-size:17px;line-height:1.6}
+.c{font-size:15px;line-height:1.55;color:#6f6a5e}
 .kicker,.k{font-size:13px;line-height:1.4;letter-spacing:4px;font-weight:700;color:#c5341c}
 .unit{font-size:24px;line-height:1.4;font-weight:700}
 .red{color:#c5341c}.mut{color:#6f6a5e}.bold{font-weight:700}
@@ -100,7 +100,7 @@ td{padding:10px 14px 10px 0;border-bottom:1px solid #cdc5b3;vertical-align:middl
 
 /* a little less air, tried automatically when a page is slightly too tall */
 .compact{padding-top:40px}
-.compact .b{font-size:17px;line-height:1.55}.compact .s{font-size:15px}
+.compact .b{font-size:17px;line-height:1.55}.compact .s{font-size:16px}
 .compact .t1{font-size:38px}.compact .t2{font-size:28px}.compact .t3{font-size:22px}
 .compact .d1{font-size:190px}.compact .d2{font-size:126px}.compact .d3{font-size:82px}.compact .d4{font-size:50px}
 .compact .li{padding:8px 0}.compact .fig{font-size:27px}
