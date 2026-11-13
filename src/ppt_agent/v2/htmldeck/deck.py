@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
-from ppt_agent.v2.htmldeck import browser, layout_plan, prompts, review, sanitize, signature, themes
+from ppt_agent.v2.htmldeck import browser, graphic_checks, layout_plan, prompts, review, sanitize, signature, themes
 from ppt_agent.v2.htmldeck.browser import MeasureFailed
 from ppt_agent.v2.htmldeck.checks import find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
@@ -129,8 +129,12 @@ def _fingerprint(job: DesignJob) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
-async def _replay(session, theme, font_css, job: DesignJob, html: str) -> PageResult:
-    """Rebuild a page from HTML saved by an earlier run; no model call."""
+async def _replay(session, theme, font_css, job: DesignJob, html: str, *, recheck: bool = False) -> PageResult:
+    """Rebuild a page from HTML saved by an earlier run; no model call.
+
+    A page that no longer fits comes back not ok with what is wrong in
+    ``defects``. With ``recheck`` a page that still fits is also held to the
+    current aesthetic and diagram rules: what it fails goes in ``aesthetic``."""
 
     result = PageResult(page_number=job.page_number, page=None, html=html)
     body, _ = sanitize.clean(html)
@@ -138,13 +142,18 @@ async def _replay(session, theme, font_css, job: DesignJob, html: str) -> PageRe
         measured = await _measure(session, theme, font_css, body)
     except MeasureFailed:
         return result
-    if any(defect.kind not in SOFT for defect in find_defects(measured, None)):
+    tier = str(job.content.get("tier") or "standard") if recheck else None
+    found = find_defects(measured, None, tier=tier) + (graphic_checks.find(body, job.content) if recheck else [])
+    hard = [defect.message for defect in found if defect.kind not in SOFT]
+    if hard:
+        result.defects = hard
         return result
     try:
         result.page = to_page(measured, page_number=job.page_number, role=job.role,
                               section=job.section, title=job.title, notes=job.notes)
     except (ConvertError, ValueError):
         return result
+    result.aesthetic = [defect.message for defect in found] if recheck else []
     result.screenshot_png = measured.screenshot_png
     return result
 
@@ -214,13 +223,29 @@ async def design_deck(
             name = f"html/page_{job.page_number:03d}.json"
             cached = checkpoints.load(name) if checkpoints is not None else None
             async with gate:
+                result = None
                 if cached and cached.get("html") and cached.get("content") == _fingerprint(job):
-                    result = await _replay(session, theme, font_css, job, cached["html"])
-                    result.attempts = 0
-                    if result.ok:
-                        results[job.page_number] = result
+                    studio = theme.vocabulary == 2
+                    saved = await _replay(session, theme, font_css, job, cached["html"], recheck=studio)
+                    saved.attempts = 0
+                    if saved.ok and not saved.aesthetic:
+                        results[job.page_number] = saved
                         return
-                result = await design_page(client, session, theme, font_css, job, look=look)
+                    if studio and (saved.aesthetic or saved.defects):
+                        # The saved page fails rules written since: repair it where it stands
+                        # rather than design the page again from nothing.
+                        result = await design_page(
+                            client, session, theme, font_css, job, look=False, seed_html=cached["html"],
+                            seed_problems=(saved.defects or saved.aesthetic)[:6])
+                        if saved.ok and not (result.ok and len(result.aesthetic) < len(saved.aesthetic)):
+                            results[job.page_number] = saved  # the repair was no better: keep what was there
+                            return
+                        progress(f"[design] page {job.page_number} repaired from its saved version")
+                    elif saved.ok:
+                        results[job.page_number] = saved
+                        return
+                if result is None or not result.ok:
+                    result = await design_page(client, session, theme, font_css, job, look=look)
             if not result.ok and theme.vocabulary == 2:
                 failed = result
                 if checkpoints is not None:

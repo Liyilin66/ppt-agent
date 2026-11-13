@@ -121,3 +121,47 @@ def test_every_plain_page_fits_and_looks_finished(variant, count):
     if any(defect.kind not in AESTHETIC for defect in found):  # as the deck does: the same page with less air
         found = find_defects(asyncio.run(measure(True)), None, tier="standard")
     assert [defect.message for defect in found] == []
+
+
+class Store:
+    def __init__(self):
+        self.saved = {}
+
+    def load(self, name):
+        return self.saved.get(name)
+
+    def save(self, name, value):
+        self.saved[name] = json.loads(json.dumps(value))
+
+
+class Pages:
+    """Replies with the page registered for each page number, in order."""
+
+    def __init__(self, pages):
+        self.pages, self.prompts = {number: list(bodies) for number, bodies in pages.items()}, []
+
+    async def complete_text(self, *, task, system, user, max_output_tokens=None, context=None, images=None):
+        self.prompts.append(user)
+        bodies = self.pages[context["job"].page_number]
+        return bodies.pop(0) if len(bodies) > 1 else bodies[0]
+
+    async def complete_json(self, *, task, system, user, max_output_tokens=None, context=None, images=None):
+        return {}
+
+
+@needs_browser
+def test_saved_pages_are_rechecked_and_only_the_flawed_one_is_repaired():
+    loud = page_html(5, '<div class="q1">管理层应将AI视为战略投入，优先配置资源到可规模化落地的业务场景。</div>'
+                        '<div class="b">IDC预测，2024年全球人工智能产业规模将同比增长21.5%。</div>'
+                        '<div class="t3">模型迭代活跃</div><div class="b">2024年以来新增或迭代近百个。</div>')
+    store = Store()
+    first = Pages({4: [fits(4)], 5: [loud]})
+    asyncio.run(deck.design_deck(first, "studio", [job(4), job(5)], [], checkpoints=store, look=False))
+    assert 'class="q1"' in store.saved["html/page_005.json"]["html"]
+
+    second = Pages({4: [too_tall(4)], 5: [fits(5)]})
+    results, summary = asyncio.run(
+        deck.design_deck(second, "studio", [job(4), job(5)], [], checkpoints=store, look=False))
+    assert len(second.prompts) == 1 and "你上一次写的 HTML" in second.prompts[0] and 'class="q1"' in second.prompts[0]
+    assert results[4].ok and results[5].ok and summary["aesthetic_left"] == {}
+    assert 'class="q1"' not in store.saved["html/page_005.json"]["html"]
