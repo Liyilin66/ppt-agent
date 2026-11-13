@@ -8,6 +8,7 @@ import json
 from typing import Any, Callable
 
 from ppt_agent.v2.htmldeck import browser, layout_plan, prompts, review, sanitize, signature, themes
+from ppt_agent.v2.htmldeck.browser import MeasureFailed
 from ppt_agent.v2.htmldeck.checks import find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
 from ppt_agent.v2.htmldeck.fonts import office_font_css
@@ -88,7 +89,10 @@ async def _replay(session, theme, font_css, job: DesignJob, html: str) -> PageRe
 
     result = PageResult(page_number=job.page_number, page=None, html=html)
     body, _ = sanitize.clean(html)
-    measured = await _measure(session, theme, font_css, body)
+    try:
+        measured = await _measure(session, theme, font_css, body)
+    except MeasureFailed:
+        return result
     if any(defect.kind not in SOFT for defect in find_defects(measured, None)):
         return result
     try:

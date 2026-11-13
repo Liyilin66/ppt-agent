@@ -17,6 +17,10 @@ class BrowserUnavailable(RuntimeError):
     """No usable browser; callers fall back to the code-driven layout engine."""
 
 
+class MeasureFailed(RuntimeError):
+    """The browser could not lay this page out (timeout, crash); the page falls back."""
+
+
 @dataclass
 class Measured:
     background: str
@@ -90,16 +94,23 @@ class Session:
             path.write_text(html_document, encoding="utf-8")
             page = await self._context.new_page()
             try:
-                await page.goto(path.as_uri())
+                await page.goto(path.as_uri(), timeout=20000)
                 await page.evaluate("() => document.fonts.ready.then(() => true)")
                 data = await page.evaluate(self._script)
-                png = (
-                    await page.screenshot(clip={"x": 0, "y": 0, "width": W, "height": H})
-                    if screenshot
-                    else b""
-                )
+                png = b""
+                if screenshot:
+                    try:
+                        png = await page.screenshot(
+                            clip={"x": 0, "y": 0, "width": W, "height": H}, timeout=15000)
+                    except Exception:  # noqa: BLE001 - the picture is for review only; the layout is measured
+                        png = b""
+            except Exception as error:  # noqa: BLE001 - one page must not take the deck down
+                raise MeasureFailed(str(error).splitlines()[0][:200]) from error
             finally:
-                await page.close()
+                try:
+                    await page.close()
+                except Exception:  # noqa: BLE001
+                    pass
                 path.unlink(missing_ok=True)
         return Measured(
             background=data["background"],

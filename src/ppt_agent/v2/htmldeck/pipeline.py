@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ppt_agent.v2.htmldeck import prompts, review, sanitize, structural, themes
-from ppt_agent.v2.htmldeck.browser import Measured, Session
+from ppt_agent.v2.htmldeck.browser import Measured, MeasureFailed, Session
 from ppt_agent.v2.htmldeck.checks import Defect, allowed_numbers, find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
 from ppt_agent.v2.htmldeck.document import wrap
@@ -131,12 +131,19 @@ async def design_page(
         if not body:
             result.defects.append("empty reply")
             return None
-        measured = await _measure(session, theme, font_css, body)
+        try:
+            measured = await _measure(session, theme, font_css, body)
+        except MeasureFailed as error:
+            result.defects.append(f"browser failed: {error}")
+            return None
         defects = find_defects(measured, allowed) + _required(job, measured)
         if any(defect.kind in FIT for defect in defects) and 'class="page compact' not in body:
             # A little too tall: the same page with less air often fits, at no model cost.
             tighter = body.replace('class="page', 'class="page compact', 1)
-            remeasured = await _measure(session, theme, font_css, tighter)
+            try:
+                remeasured = await _measure(session, theme, font_css, tighter)
+            except MeasureFailed:
+                return body, measured, defects
             again = find_defects(remeasured, allowed) + _required(job, remeasured)
             if not [defect for defect in again if defect.kind not in SOFT]:
                 return tighter, remeasured, again
@@ -208,7 +215,11 @@ async def structural_page(
     else:
         body, role = structural.closing(deck_title, subtitle), "closing"
     result = PageResult(page_number=page_number, page=None, html=body, attempts=0)
-    measured = await _measure(session, theme, font_css, body, backdrop=kind == "toc")
+    try:
+        measured = await _measure(session, theme, font_css, body, backdrop=kind == "toc")
+    except MeasureFailed as error:
+        result.defects.append(f"browser failed: {error}")
+        return result
     defects = find_defects(measured, None, require_fill=False)
     if any(defect.kind not in SOFT for defect in defects):
         result.defects = [defect.message for defect in defects]
