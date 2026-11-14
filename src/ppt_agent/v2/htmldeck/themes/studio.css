@@ -97,6 +97,10 @@
 .ledger.fill{flex:1 1 auto}.ledger.fill .li{flex:1 1 0;max-height:124px}
 /* native chart and table */
 .chart{flex:1 1 0;min-height:220px;min-width:260px;--chart:#c5341c}
+/* a figure reproduced from the source, on a white plate */
+.plate{flex:1 1 0;min-height:220px;min-width:300px;display:flex;align-items:flex-start}
+.plate-in{background:#fff;border:1px solid #cdc5b3;padding:9px;box-sizing:border-box}
+.r.right>.plate{justify-content:flex-end}
 table{width:100%;flex:1 1 auto;font-size:17px;line-height:1.5}
 th{text-align:left;font-weight:700;padding:9px 14px 9px 0;border-bottom:2px solid #1a1916}
 td{padding:10px 14px 10px 0;border-bottom:1px solid #cdc5b3;vertical-align:middle}

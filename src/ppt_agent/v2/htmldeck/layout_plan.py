@@ -124,6 +124,8 @@ def candidates(content: dict[str, Any]) -> list[str]:
         ordered.sort(key=lambda form: form not in preferred)
     if series:
         ordered.sort(key=lambda form: form != "chart")  # whatever the density, data that can be drawn is drawn
+    elif content.get("figure"):
+        ordered.insert(0, "figure")  # the source's own figure says more than a paraphrase of it
     for fallback in ("ledger", "margin"):
         if fallback not in ordered:
             ordered.append(fallback)
@@ -140,12 +142,12 @@ def conflict(candidate: Fingerprint, earlier: list[Fingerprint], total: int, *, 
     for other in earlier:
         gap = candidate.page - other.page
         # A chart is drawn wherever the data is; two in a row differ in their data, and must differ in structure.
-        if other.form == candidate.form and gap <= SAME_FORM_GAP and candidate.form != "chart":
+        if other.form == candidate.form and gap <= SAME_FORM_GAP and candidate.form not in ("chart", "figure"):
             return f"第 {other.page} 页刚用过同一种形式"
         if strictness >= 1 and other.structure == candidate.structure and gap <= SAME_STRUCTURE_GAP:
             return f"和第 {other.page} 页的空间结构相同"
     used = sum(other.form == candidate.form for other in earlier)
-    if strictness >= 2 and total >= 8 and candidate.form != "chart" and (used + 1) / total > MAX_FORM_SHARE:
+    if strictness >= 2 and total >= 8 and candidate.form not in ("chart", "figure") and (used + 1) / total > MAX_FORM_SHARE:
         return "这种形式在整套里用得太多"
     return None
 
@@ -199,10 +201,10 @@ def repair(saved: list[Fingerprint], contents: dict[int, dict[str, Any]]) -> lis
     plan = list(saved)
     for index, item in enumerate(plan):
         allowed = candidates(contents[item.page])
-        if allowed[0] == "chart" and item.form != "chart":
-            # The page has gained data a chart can draw: draw it, on the side the last chart did not use.
-            last = next((other for other in reversed(plan[:index]) if other.form == "chart"), None)
-            plan[index] = Fingerprint(page=item.page, form="chart",
+        if allowed[0] in ("chart", "figure") and item.form != allowed[0]:
+            # The page has gained something to show: show it, on the side the last such page did not use.
+            last = next((other for other in reversed(plan[:index]) if other.form == allowed[0]), None)
+            plan[index] = Fingerprint(page=item.page, form=allowed[0],
                                       focus="right" if last is not None and last.focus == "left" else "left",
                                       ratio="wide")
             continue
@@ -233,7 +235,7 @@ async def plan_layouts(client: Any, contents: dict[int, dict[str, Any]]) -> list
         {"page": page, "title": content.get("title"), "relation": content.get("relation", content.get("archetype")),
          "tier": content.get("tier", "standard"), "items": len(content.get("items") or content.get("rows") or []),
          "focal_figure": (content.get("highlight") or {}).get("value"),
-         "has_series": chartable(content) is not None, "has_table": bool(content.get("headers")),
+         "has_series": chartable(content) is not None, "has_source_figure": bool(content.get("figure")), "has_table": bool(content.get("headers")),
          "allowed": candidates(content)}
         for page, content in sorted(contents.items())
     ]

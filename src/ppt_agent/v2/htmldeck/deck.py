@@ -40,7 +40,7 @@ def accept(checkpoints: Any, pages: list[int], note: str = "") -> list[int]:
 
 
 def job_for(content: Any, *, page_number: int, section_index: int | None,
-            section_title: str | None) -> DesignJob:
+            section_title: str | None, assets_dir: Any = None) -> DesignJob:
     """A design job from one page of verified, reader-facing content."""
 
     archetype = getattr(content, "archetype", "points")
@@ -64,6 +64,7 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
         source=content.source,
         notes=content.speaker_notes,
         section=section_title,
+        figure_file=str(assets_dir / data["figure"]["id"]) if assets_dir is not None and data.get("figure") else None,
     )
 
 
@@ -163,7 +164,7 @@ async def _replay(session, theme, font_css, job: DesignJob, html: str, *, rechec
     result = PageResult(page_number=job.page_number, page=None, html=html)
     body, _ = sanitize.clean(html)
     try:
-        measured = await _measure(session, theme, font_css, body)
+        measured = await _measure(session, theme, font_css, body, job=job)
     except MeasureFailed:
         return result
     tier = str(job.content.get("tier") or "standard") if recheck else None

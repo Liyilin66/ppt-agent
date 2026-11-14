@@ -23,6 +23,7 @@ from ppt_agent.v2.ir import (
     ChartSeries,
     ColorStop,
     Frame,
+    ImageItem,
     PageDesign,
     PageRole,
     Paint,
@@ -366,6 +367,10 @@ def to_page(
             elements.append(_chart(item, next_id))
         elif kind == "table":
             elements.append(_table(item, next_id))
+        elif kind == "image":
+            # ``figure`` is the picture's file name under the deck's assets folder.
+            elements.append(ImageItem(id=next_id(), frame=_inside(item["x"], item["y"], item["w"], item["h"]),
+                                      src=str(item["figure"]), label="原文图"))
     if not elements:
         raise ConvertError("the page has nothing on it")
     background = css_color(measured.background)

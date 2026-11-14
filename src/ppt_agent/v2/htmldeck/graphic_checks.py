@@ -158,6 +158,11 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
     drawable = [series for series in content.get("series") or [] if charts.kind_for(series)]
 
     for node in tree.root.walk():
+        if node.has("plate") and "data-figure" in node.attrs:
+            figure = content.get("figure") or {}
+            if node.attrs["data-figure"] != figure.get("id"):
+                defects.append(Defect(
+                    "unsupported", "页面引用了一张不属于这一页的图。只能使用给你的那一个 plate 元件；没有给就不要放图。"))
         # A chart says what a verified series says, value for value, or it is not drawn.
         if node.has("chart") and "data-chart" in node.attrs:
             try:

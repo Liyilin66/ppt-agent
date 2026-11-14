@@ -18,7 +18,7 @@ ALLOWED_TAGS = frozenset(
 VOID_TAGS = frozenset({"br"})
 # Removed together with everything inside them.
 DROP_WITH_CONTENT = frozenset("script style svg canvas iframe object video audio template noscript".split())
-ALLOWED_ATTRS = frozenset({"class", "style", "data-chart", "data-variant"})
+ALLOWED_ATTRS = frozenset({"class", "style", "data-chart", "data-variant", "data-figure", "data-ratio"})
 _LAYOUT_PROPERTY = re.compile(
     r"^(display|flex|flex-[a-z]+|grid|grid-[a-z-]+|gap|row-gap|column-gap|order|"
     r"width|height|min-width|min-height|max-width|max-height|"

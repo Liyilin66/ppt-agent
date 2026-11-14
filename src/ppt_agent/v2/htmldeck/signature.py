@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from ppt_agent.v2.ir import CANVAS_HEIGHT, CANVAS_WIDTH, BoxItem, ChartItem, PageDesign, TableItem
+from ppt_agent.v2.ir import CANVAS_HEIGHT, CANVAS_WIDTH, BoxItem, ChartItem, ImageItem, PageDesign, TableItem
 
 COLUMNS, ROWS = 6, 4
 MIN_SHARE = 0.03  # blocks smaller than this share of the page are detail, not structure
@@ -83,7 +83,7 @@ def silhouette(page: PageDesign) -> str:
                 continue
             if min(element.frame.w, element.frame.h) < 12:
                 continue  # a rule, not a block
-        elif isinstance(element, (ChartItem, TableItem)):
+        elif isinstance(element, (ChartItem, TableItem, ImageItem)):
             kind = "d"
         elif isinstance(element, RichTextItem):
             size = max((run.size_pt for run in element.runs if run.text.strip()), default=0)

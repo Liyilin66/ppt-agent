@@ -114,6 +114,19 @@ def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
     ]
 
 
+def _figure_brief(content: dict[str, Any], idea: str) -> list[str]:
+    figure = content.get("figure")
+    if not figure or not idea.startswith("figure"):
+        return []
+    return [
+        "这一页要放资料里的一张原图。把下面两行原样放进同一个区域（先图后图注），属性一个字符都不要改；"
+        "这个区域至少占 6 列、5 行，里面不要再放别的东西：\n"
+        f'<div class="plate" data-figure="{figure["id"]}" data-ratio="{figure["ratio"]}"></div>\n'
+        f'<div class="c">{figure["caption"]}</div>\n'
+        "图里已经有的数据不要再抄一遍；旁边的文字说这张图说明了什么。"
+    ]
+
+
 def user_prompt(
     *,
     content: dict[str, Any],
@@ -134,6 +147,7 @@ def user_prompt(
         "这一页的内容（已核对，数字和事实不能改，可以删减措辞，不能新增）：\n"
         + json.dumps(content, ensure_ascii=False, indent=1),
         *_chart_brief(content, idea),
+        *_figure_brief(content, idea),
         f"建议的排布：{idea}",
         "同一套类名写出的示范页（只学写法，内容不要照抄）：\n"
         + (example_html or themes.example(EXAMPLE_FOR.get(archetype, "columns"))),

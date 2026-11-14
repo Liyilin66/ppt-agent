@@ -55,6 +55,7 @@ ink（墨色底）、redf（朱红底）、sand（浅褐底），配 pad（内�
 - 四象限：<div class="mx"> 里 4 个 <div class="q">，用 br / bb 画出十字线。
 - 账本：<div class="ledger"> 里每行 <div class="li"><div class="fig">数字</div><div class="r gap0">名称和说明</div></div>；fig 加 w 放更宽的数字，加 n 当序号。
 - 图表（会变成可编辑的原生图表）：只有内容里给了核对过的数据序列时才能画。提示里会给出完整的一行 <div class="chart" data-chart='…'></div> 和它的图注，原样放进页面，data-chart 里一个字符都不要改，也不要自己写图表数据。图表区域至少占 6 列、4 行；图注（类名 c）写在图表正上方。图表旁边的文字只解释含义，不逐个重复图里的数。
+- 原文图版（资料里的原图，会变成 PPT 里的图片）：只有提示里给了 <div class="plate" data-figure="…" data-ratio="…"></div> 时才能用，原样照抄，放在单独的区域里，下面紧跟一行图注（类名 c）。图所在的区域至少占 6 列、5 行。不要自己写图片，也不要给没有图的页加 plate。
 - 表格：标准 <table>，第一行用 <th>，最多 6 列 8 行。
 
 ## 页脚

@@ -146,8 +146,8 @@ def find(measured: Measured, *, tier: str = "standard", accent: str = ACCENT) ->
     blocks = [(_rect(item), _short(_text(item))) for item in body
               if not {"kicker", "arrow"} & set(_classes(item))]
     blocks += [({"x": item["x"], "y": item["y"], "w": item["w"], "h": item["h"]},
-                "图表" if item["kind"] == "chart" else "表格")
-               for item in measured.items if item["kind"] in ("chart", "table")]
+                {"chart": "图表", "image": "原文图"}.get(item["kind"], "表格"))
+               for item in measured.items if item["kind"] in ("chart", "table", "image")]
     blocks.sort(key=lambda entry: entry[0]["y"])
     for index, (upper, label) in enumerate(blocks):
         bottom = upper["y"] + upper["h"]

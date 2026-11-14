@@ -43,6 +43,7 @@ class DesignJob:
     role: PageRole = "content"
     idea: str = ""
     form: str | None = None  # studio theme: the visual form the deck plan assigned
+    figure_file: str | None = None  # where the page's source figure is stored, when it has one
 
 
 @dataclass
@@ -99,12 +100,31 @@ def _required(job: DesignJob, measured: Measured) -> list[Defect]:
         missing.append(Defect("missing", "这一页的形式是图表，但页面上没有图表。请把给你的 data-chart 原样放进一个 chart 元件。"))
     if series is not None and drawn and _plain(charts.caption(series)) not in text:
         missing.append(Defect("missing", f"图表上方要有一行图注（类名 c），原样写：{charts.caption(series)}"))
+    figure = job.content.get("figure") if job.form == "figure" else None
+    shown = any(item["kind"] == "image" for item in measured.items)
+    if figure and not shown:
+        missing.append(Defect("missing", "这一页的形式是原文图版，但页面上没有图。请把给你的 plate 元件原样放进页面。"))
+    if figure and shown and _plain(figure["caption"]) not in text:
+        missing.append(Defect("missing", f"图的正下方要有一行图注（类名 c），原样写：{figure['caption']}"))
     return missing
 
 
+def _figures(job: "DesignJob | None") -> dict[str, str] | None:
+    """The job's figure as a data URI, so the browser can show it."""
+
+    import base64
+    from pathlib import Path
+
+    figure = (job.content.get("figure") if job is not None else None) or {}
+    if not figure.get("id") or not job.figure_file or not Path(job.figure_file).is_file():
+        return None
+    return {figure["id"]: "data:image/png;base64," + base64.b64encode(Path(job.figure_file).read_bytes()).decode("ascii")}
+
+
 async def _measure(session: Session, theme: themes.HtmlTheme, font_css: str, body: str,
-                   *, backdrop: bool = True) -> Measured:
-    return await session.measure(wrap(body, theme.css, font_css, theme.backdrop if backdrop else ""))
+                   *, backdrop: bool = True, job: "DesignJob | None" = None) -> Measured:
+    return await session.measure(wrap(body, theme.css, font_css, theme.backdrop if backdrop else "",
+                                      figures=_figures(job)))
 
 
 async def design_page(
@@ -158,7 +178,7 @@ async def design_page(
             result.defects.append("empty reply")
             return None
         try:
-            measured = await _measure(session, theme, font_css, body)
+            measured = await _measure(session, theme, font_css, body, job=job)
         except MeasureFailed as error:
             result.defects.append(f"browser failed: {error}")
             return None
@@ -167,7 +187,7 @@ async def design_page(
             # A little too tall: the same page with less air often fits, at no model cost.
             tighter = body.replace('class="page', 'class="page compact', 1)
             try:
-                remeasured = await _measure(session, theme, font_css, tighter)
+                remeasured = await _measure(session, theme, font_css, tighter, job=job)
             except MeasureFailed:
                 return body, measured, defects
             again = check(tighter, remeasured)

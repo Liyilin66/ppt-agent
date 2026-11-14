@@ -939,6 +939,16 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         progress(f'[data] {len({data_series.signature(s) for found in series_found.values() for s in found})} '
                  'series verified against the source')
 
+    source_figures = []
+    if rich:
+        from ppt_agent.v2 import figures as source_figure
+        source_figures = checkpoints.load('typeset/figures.json')
+        if source_figures is None or any(not (output_dir / 'assets' / item['id']).is_file() for item in source_figures):
+            source_figures = source_figure.extract(request.source_paths, output_dir / 'assets') or (source_figures or [])
+            checkpoints.save('typeset/figures.json', source_figures)
+        if source_figures:
+            progress(f'[data] {len(source_figures)} captioned figures found in the source')
+
     async def produce(slot):
         assigned = plan[slot.page_number]
         diversity = {'assigned_archetype': assigned,
@@ -963,6 +973,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                         {'metric': item.metric, 'scope': item.scope, 'period': item.period,
                          'values': {point.label: point.display for point in item.points}}
                         for item in series_found[slot.page_number]]
+                nearby = [f"{item['label']} {item['title']}" for item in source_figures
+                          if packet is not None and item['page'] in packet.allowed_pages.get(item['document'], [])]
+                if nearby:
+                    diversity['available_figures'] = nearby
             content, record = await generate_content(client, checkpoints, slot, brief, profile,
                                                     diversity=diversity, source_references=references,
                                                     source_page_counts=page_counts, evidence=packet,
@@ -1024,6 +1038,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 if data_series.signature(s) not in {data_series.signature(p) for items in placed.values() for p in items}
             }.values()],
             'rejected': [entry for result in series_read for entry in result['rejected']]})
+    if rich and source_figures:
+        # A page that draws a chart does not also carry a figure: one thing to look at.
+        shown = source_figure.assign(
+            [item for item in source_figures if (output_dir / 'assets' / item['id']).is_file()],
+            {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()},
+            taken={number for number, (content, _) in results.items() if content.series})
+        for number, (content, record) in list(results.items()):
+            results[number] = (content.model_copy(update={'figure': shown.get(number)}), record)
+        checkpoints.save('typeset/figure_plan.json', {str(number): item for number, item in sorted(shown.items())})
+        series_summary = {**(series_summary or {}), 'source_figures': len(source_figures),
+                          'pages_with_figure': sorted(shown)}
     frame = None
     if profile.name == 'consulting' and len(content_slots) >= 4:
         frame = await generate_deck_frame(client, checkpoints, skeleton, brief, results, document_names)
@@ -1047,7 +1072,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             if slot.kind == 'content':
                 jobs.append(job_for(display_copy(results[slot.page_number][0], website_titles, document_names),
                                     page_number=slot.page_number, section_index=slot.section_index,
-                                    section_title=slot.section_title))
+                                    section_title=slot.section_title, assets_dir=output_dir / 'assets'))
             elif framed is not None and not (slot.kind == 'toc' and summary_job_placed):
                 summary_job_placed = summary_job_placed or slot.kind == 'toc'
                 jobs.append(job_for(framed, page_number=slot.page_number, section_index=None, section_title=None))

@@ -118,6 +118,16 @@
         items.push({kind: 'chart', ...rectOf(el.getBoundingClientRect()), spec: el.dataset.chart});
         return;
       }
+      if (el.classList.contains('plate') && el.dataset.figure) {
+        // A figure reproduced from the source: the white plate, then the picture inset in it.
+        const inner = el.querySelector('.plate-in');
+        if (inner) {
+          emitBox(inner, getComputedStyle(inner));
+          const r = rectOf(inner.getBoundingClientRect()), pad = num(getComputedStyle(inner).paddingLeft) + 1;
+          items.push({kind: 'image', figure: el.dataset.figure, x: r.x + pad, y: r.y + pad, w: r.w - 2 * pad, h: r.h - 2 * pad});
+        }
+        return;
+      }
       if (el.tagName === 'TABLE') { emitTable(el); return; }
     }
     let group = [];

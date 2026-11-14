@@ -38,10 +38,37 @@ document.querySelectorAll('.chart[data-chart]').forEach(function (el) {
 """
 
 
-def wrap(body_html: str, theme_css: str, font_css: str, backdrop_html: str = "") -> str:
+# Fits each reproduced figure into the room its region leaves, keeping its proportions.
+PLATE_JS = """
+document.querySelectorAll('.plate[data-figure]').forEach(function (el) {
+  var ratio = parseFloat(el.dataset.ratio) || 1.6;
+  var w = el.clientWidth, h = el.clientHeight;
+  var iw = Math.min(w, h * ratio), ih = iw / ratio;
+  var inner = document.createElement('div');
+  inner.className = 'plate-in';
+  inner.style.cssText = 'width:' + iw + 'px;height:' + ih + 'px;';
+  var src = (window.FIGURES || {})[el.dataset.figure];
+  if (src) {
+    var img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;';
+    inner.appendChild(img);
+  }
+  el.appendChild(inner);
+});
+"""
+
+
+def wrap(body_html: str, theme_css: str, font_css: str, backdrop_html: str = "",
+         figures: dict[str, str] | None = None) -> str:
+    """``figures`` maps a figure id to a data URI, so screenshots show the picture."""
+
+    import json
+
+    figure_js = "window.FIGURES=" + json.dumps(figures or {}) + ";" + PLATE_JS
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         f"<style>{font_css}</style><style>{BASE_CSS}{theme_css}</style></head>"
         f'<body><div class="slide">{backdrop_html}{body_html}</div>'
-        f"<script>{CHART_SKETCH_JS}</script></body></html>"
+        f"<script>{CHART_SKETCH_JS}{figure_js}</script></body></html>"
     )

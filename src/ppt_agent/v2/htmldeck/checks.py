@@ -219,24 +219,27 @@ def find_defects(
                     _item_text(item)))
                 break
 
-    for data in (item for item in measured.items if item["kind"] in ("chart", "table")):
+    for data in (item for item in measured.items if item["kind"] in ("chart", "table", "image")):
         for item in texts:
             rect = _line_rect(item)
             width = min(data["x"] + data["w"], rect["x"] + rect["w"]) - max(data["x"], rect["x"])
             height = min(data["y"] + data["h"], rect["y"] + rect["h"]) - max(data["y"], rect["y"])
             if width > TOLERANCE and height > TOLERANCE and width * height > 0.1 * rect["w"] * rect["h"]:
-                name = "图表" if data["kind"] == "chart" else "表格"
+                name = {"chart": "图表", "image": "原文图"}.get(data["kind"], "表格")
                 defects.append(Defect("overlap", f"文字「{_short(_item_text(item))}」压在了{name}上，请把它们放进不同的区域。",
                                       _item_text(item)))
                 break
 
     for item in measured.items:
-        if item["kind"] in ("chart", "table") and (
+        if item["kind"] == "image" and (item["w"] < 300 or item["h"] < 170):
+            defects.append(Defect("bad_chart", f"原文图只有 {item['w']:.0f}×{item['h']:.0f} 像素，图里的字看不清。"
+                                               "请让它所在的区域至少占 6 列、4 行。"))
+        if item["kind"] in ("chart", "table", "image") and (
             item["x"] < -TOLERANCE or item["y"] < -TOLERANCE
             or item["x"] + item["w"] > CANVAS_WIDTH + TOLERANCE
             or item["y"] + item["h"] > CANVAS_HEIGHT + TOLERANCE
         ):
-            name = "图表" if item["kind"] == "chart" else "表格"
+            name = {"chart": "图表", "image": "原文图"}.get(item["kind"], "表格")
             defects.append(Defect("off_canvas", f"{name}超出了页面边界，请减少内容或缩小它。"))
         if item["kind"] == "chart":
             try:
