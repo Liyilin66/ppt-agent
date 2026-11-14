@@ -24,7 +24,7 @@ from ppt_agent.v2.htmldeck.pipeline import (
 
 OTHER_FORMS = 2  # other compositions to try before a plain page
 _HIDDEN = {"speaker_notes", "source", "archetype"}
-_OPTIONAL = ("series", "figure")
+_OPTIONAL = ("series", "figure", "diagram", "visual")
 ACCEPTED = "html/accepted.json"  # pages a person has signed off: {"pages": [4, 5, ...]}
 
 
@@ -397,6 +397,11 @@ async def design_deck(
             if checkpoints is not None:
                 checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
 
+    remade = sorted(accepted & {job.page_number for job in jobs} - held)
+    if remade and checkpoints is not None:
+        # Its content changed, so it was designed again: what was signed off is no longer what is there.
+        saved = checkpoints.load(ACCEPTED) or {}
+        checkpoints.save(ACCEPTED, {**saved, "pages": [page for page in saved.get("pages", []) if page not in remade]})
     designed = [job.page_number for job in jobs
                 if results[job.page_number].ok and not results[job.page_number].templated]
     summary = {
@@ -404,6 +409,7 @@ async def design_deck(
         "office_fonts": real_fonts,
         "designed_pages": len(designed),
         "accepted_pages": sorted(held),
+        "no_longer_accepted": remade,
         "fell_back_pages": sorted(job.page_number for job in jobs if not results[job.page_number].ok),
         "templated_pages": sorted(job.page_number for job in jobs if results[job.page_number].templated),
         "structural_fell_back": sorted(spec["page_number"] for spec in structural

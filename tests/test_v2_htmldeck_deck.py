@@ -185,6 +185,7 @@ def test_a_signed_off_page_is_replayed_untouched_until_its_content_changes():
     changed.content["takeaway"] = "另一句结论。"
     results, summary = asyncio.run(deck.design_deck(again, "studio", [changed], [], checkpoints=store, look=False))
     assert len(again.prompts) >= 1 and summary["accepted_pages"] == []
+    assert summary["no_longer_accepted"] == [5] and store.saved[deck.ACCEPTED]["pages"] == []
 
 
 def test_a_page_without_series_keeps_the_content_it_had():

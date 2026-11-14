@@ -94,10 +94,10 @@ def _required(job: DesignJob, measured: Measured) -> list[Defect]:
         missing.append(Defect("missing", "页脚的资料来源没有原样写出，请一字不差地放进 source。"))
     from ppt_agent.v2.htmldeck import charts
 
-    series = charts.chartable(job.content) if job.form == "chart" else None
+    series = charts.chartable(job.content) if job.form == "chart" or job.content.get("visual") else None
     drawn = any(item["kind"] == "chart" for item in measured.items)
     if series is not None and not drawn:
-        missing.append(Defect("missing", "这一页的形式是图表，但页面上没有图表。请把给你的 data-chart 原样放进一个 chart 元件。"))
+        missing.append(Defect("missing", "这一页要放图表，但页面上没有。请把给你的 data-chart 原样放进一个 chart 元件。"))
     if series is not None and drawn and _plain(charts.caption(series)) not in text:
         missing.append(Defect("missing", f"图表上方要有一行图注（类名 c），原样写：{charts.caption(series)}"))
     figure = job.content.get("figure") if job.form == "figure" else None
@@ -106,6 +106,29 @@ def _required(job: DesignJob, measured: Measured) -> list[Defect]:
         missing.append(Defect("missing", "这一页的形式是原文图版，但页面上没有图。请把给你的 plate 元件原样放进页面。"))
     if figure and shown and _plain(figure["caption"]) not in text:
         missing.append(Defect("missing", f"图的正下方要有一行图注（类名 c），原样写：{figure['caption']}"))
+    need = (figure or {}).get("min_width")
+    picture = next((item for item in measured.items if item["kind"] == "image"), None)
+    if need and picture is not None and picture["w"] < need - 4:
+        missing.append(Defect("bad_chart", f"原文图只有 {picture['w']:.0f} 像素宽，图里最小的字会看不清；至少要 {need:.0f} 像素宽，"
+                                           "请让它所在的区域占 7 列并给足行数，其余内容放在剩下的 5 列里。"))
+    diagram = job.content.get("diagram")
+    if diagram:
+        # A redrawn figure carries every word of the original, in the original's order.
+        from ppt_agent.v2.htmldeck.prompts import diagram_words
+
+        lost = [word for word in diagram_words(diagram) if _plain(word) not in text]
+        if lost:
+            missing.append(Defect("missing", "重画的图少了原图里的这些词，请原样补上：" + "、".join(lost[:8])))
+        names = [_plain(level["name"]) for level in diagram.get("levels") or []]
+        tops = []
+        for name in names:
+            hit = next((item for item in measured.items if item["kind"] == "text" and name in _plain(
+                "".join(run.get("t", "") for run in item["runs"]))), None)
+            tops.append(hit["text"]["y"] if hit else None)
+        if None not in tops and tops != sorted(tops):
+            missing.append(Defect("unsupported", "各层的上下顺序和原图不一样。请按给出的顺序自上而下排列。"))
+        if _plain(diagram["caption"]) not in text:
+            missing.append(Defect("missing", f"层级图下面要有一行图注（类名 c），原样写：{diagram['caption']}"))
     return missing
 
 

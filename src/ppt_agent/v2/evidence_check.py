@@ -15,7 +15,7 @@ from .visual.content import ArchetypeContent, StatementContent
 _NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|万亿|亿|万|千|百|pp)?', re.I)
 # Roadmap phases and bar positions are the deck's advice, not claims about a source.
 _SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart', 'phases', 'start', 'end',
-         'series', 'figure'}  # checked by v2.data_series and v2.figures, more strictly than here
+         'series', 'figure', 'diagram', 'visual'}  # checked by v2.data_series and v2.figures, more strictly than here
 _ADAPTER = TypeAdapter(ArchetypeContent)
 
 

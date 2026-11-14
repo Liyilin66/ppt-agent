@@ -1026,31 +1026,102 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
     series_summary = None
     if rich and evidence_store is not None:
-        # Each series is drawn once, on the page whose own words are about it.
-        placed = data_series.assign(series_found, {number: content.model_dump(mode='json', exclude_none=True)
-                                                   for number, (content, _) in results.items()})
-        for number, (content, record) in list(results.items()):
-            results[number] = (content.model_copy(update={'series': placed.get(number, [])}), record)
-        series_summary = data_series.summary(series_read, placed)
-        checkpoints.save('typeset/series_plan.json', {
+        # What each page shows is decided from what the page claims (v2.visual_brief), among the
+        # things the source offers it: series from its own evidence, columns of verified tables
+        # and figures on the pages it cites.
+        from ppt_agent.v2 import tables as source_table, visual_brief
+        dumps = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()}
+        found_tables = [table for path in request.source_paths if str(path).lower().endswith('.pdf')
+                        for table in source_table.captions(path)]
+
+        async def read_table(table):
+            async with semaphore:
+                return await source_table.read(client, checkpoints, table)
+
+        read_tables = list(await asyncio.gather(*(read_table(table) for table in found_tables)))
+        table_series = [(table, DataSeries.model_validate(item)) for table in read_tables
+                        for item in source_table.series_of(table)]
+        usable_figures = [item for item in source_figures if (output_dir / 'assets' / item['id']).is_file()]
+        assessments = {}
+        approved_redraws = set((checkpoints.load('figures/approved.json') or {}).get('ids', []))
+
+        def series_id(item):
+            import hashlib
+            return 'series:' + hashlib.sha1(repr(data_series.signature(item)).encode('utf-8')).hexdigest()[:8]
+
+        async def brief_page(number):
+            content = dumps[number]
+            candidates = []
+            for item in series_found.get(number, []) + [
+                    item for table, item in table_series
+                    if table['page'] in source_figure._cited(content.get('source'), table['document'])]:
+                candidates.append({'id': series_id(item), 'type': '核对过的数据序列', 'metric': item.metric,
+                                   'scope': item.scope, 'period': item.period,
+                                   'values': {point.label: point.display for point in item.points}, 'payload': item})
+            for figure in usable_figures:
+                if figure['page'] not in source_figure._cited(content.get('source'), figure['document']):
+                    continue
+                async with semaphore:
+                    verdict = await source_figure.assess(client, checkpoints, figure, output_dir / 'assets' / figure['id'])
+                assessments[figure['id']] = verdict
+                if verdict['use'] == 'redraw' and figure['id'] not in approved_redraws:
+                    # Three automatic looks have still passed a redrawing that flattened a nested box.
+                    # A redrawn figure is used only once a person has compared it with the original.
+                    verdict = {**verdict, 'use': 'original' if verdict.get('legible') else 'evidence',
+                               'why': '可以重画，但还没有人对照原图确认过；在确认之前'
+                                      + ('用原图' if verdict.get('legible') else '只作为出处保留'),
+                               'redraw_proposed': verdict['redraw']}
+                    assessments[figure['id']] = verdict
+                if verdict['use'] == 'evidence':
+                    continue  # not legible on a slide and not safely redrawn: cited, never shown
+                candidates.append({'id': 'figure:' + figure['id'],
+                                   'type': '可按原样重画的图' if verdict['use'] == 'redraw' else '资料原图（原样放上页面）',
+                                   'caption': f"{figure['label']} {figure['title']}", 'holds': verdict.get('redraw') or verdict.get('kind'),
+                                   'payload': (figure, verdict)})
+            async with semaphore:
+                return number, candidates, await visual_brief.decide(client, checkpoints, number, content, candidates)
+
+        briefed = await asyncio.gather(*(brief_page(number) for number in sorted(dumps)))
+        settled = visual_brief.settle({number: choice for number, _, choice in briefed})
+        placed, shown, redrawn = {}, {}, {}
+        for number, candidates, _ in briefed:
+            choice = settled[number]
+            chosen = next((candidate for candidate in candidates if candidate['id'] == choice['use']), None)
+            update = {'series': [], 'figure': None, 'diagram': None, 'visual': None}
+            if chosen is not None:
+                update['visual'] = {key: choice[key] for key in ('claim', 'core_metric', 'role', 'focus')}
+                if chosen['id'].startswith('series:'):
+                    update['series'] = placed[number] = [chosen['payload']]
+                else:
+                    figure, verdict = chosen['payload']
+                    credit = (' · 来源：' + figure['credit']) if figure.get('credit') else ''
+                    if verdict['use'] == 'redraw':
+                        update['diagram'] = redrawn[number] = {
+                            **verdict['redraw'], 'figure': figure['id'],
+                            'caption': f"据原文{figure['label']}「{figure['title']}」重绘{credit} · 原文第 {figure['page']} 页"}
+                    else:
+                        update['figure'] = shown[number] = {
+                            'id': figure['id'], 'caption': source_figure.caption(figure), 'ref': figure['ref'],
+                            'ratio': round(figure['width'] / figure['height'], 3), 'min_width': verdict.get('min_width')}
+            content, record = results[number]
+            results[number] = (content.model_copy(update=update), record)
+        series_summary = {**data_series.summary(series_read, placed),
+                          'tables_found': len(read_tables), 'tables_verified': sum(bool(table['rows']) for table in read_tables),
+                          'source_figures': len(source_figures), 'pages_with_figure': sorted(shown),
+                          'pages_with_redrawn_figure': sorted(redrawn),
+                          'pages_offered_a_visual': sorted(number for number, candidates, _ in briefed if candidates),
+                          'pages_that_declined': sorted(number for number, candidates, _ in briefed
+                                                        if candidates and settled[number]['use'] == 'none')}
+        checkpoints.save('typeset/visual_plan.json', {
             'summary': series_summary,
-            'placed': {str(number): [item.model_dump(mode='json') for item in items] for number, items in placed.items()},
-            'verified_not_placed': [item.model_dump(mode='json') for item in {
-                data_series.signature(s): s for found in series_found.values() for s in found
-                if data_series.signature(s) not in {data_series.signature(p) for items in placed.values() for p in items}
-            }.values()],
-            'rejected': [entry for result in series_read for entry in result['rejected']]})
-    if rich and source_figures:
-        # A page that draws a chart does not also carry a figure: one thing to look at.
-        shown = source_figure.assign(
-            [item for item in source_figures if (output_dir / 'assets' / item['id']).is_file()],
-            {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()},
-            taken={number for number, (content, _) in results.items() if content.series})
-        for number, (content, record) in list(results.items()):
-            results[number] = (content.model_copy(update={'figure': shown.get(number)}), record)
-        checkpoints.save('typeset/figure_plan.json', {str(number): item for number, item in sorted(shown.items())})
-        series_summary = {**(series_summary or {}), 'source_figures': len(source_figures),
-                          'pages_with_figure': sorted(shown)}
+            'pages': {str(number): {'offered': [{key: value for key, value in candidate.items() if key != 'payload'}
+                                                for candidate in candidates], 'brief': settled[number]}
+                      for number, candidates, _ in briefed if candidates},
+            'figures': {name: {key: verdict.get(key) for key in ('use', 'why', 'kind', 'elements', 'shown_text_px', 'check', 'redraw_proposed')}
+                        for name, verdict in sorted(assessments.items())},
+            'tables': [{key: table[key] for key in ('label', 'title', 'page', 'problems')} | {'rows': len(table['rows'])}
+                       for table in read_tables],
+            'series_rejected': [entry for result in series_read for entry in result['rejected']]})
     frame = None
     if profile.name == 'consulting' and len(content_slots) >= 4:
         frame = await generate_deck_frame(client, checkpoints, skeleton, brief, results, document_names)

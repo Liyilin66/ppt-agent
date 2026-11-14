@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ppt_agent.v2.figures import item_text
 from ppt_agent.v2.htmldeck import themes
 
 # Which hand-written sample to show for each kind of content.
@@ -103,14 +104,64 @@ def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
     from ppt_agent.v2.htmldeck import charts
 
     series = charts.chartable(content)
-    if series is None or not idea.startswith("chart"):
+    if series is None:
         return []
+    if not idea.startswith("chart"):
+        # Evidence for a claim about another measure: present, and second to the page's own figure.
+        return [
+            "这一页还要放一张小图表作为论据（数据已逐个核对过原文）。它不是主角：页面第一眼仍然是上面说的焦点，"
+            "图表放在次要位置，占 4 到 5 列、3 到 4 行。把下面两行原样放进同一个区域，data-chart 里一个字符都不要改，"
+            "图注用类名 c，写在图表的正上方：\n"
+            f'<div class="c">{charts.caption(series)}</div>\n'
+            f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
+            "图表已经画出了每个数值，文字不要再逐个重复。"
+        ]
     return [
         "这一页要画的图表（数据已逐个核对过原文）。把下面两行原样放进页面，data-chart 里一个字符都不要改，"
         "图注用类名 c，写在图表的正上方；图表区域至少占 6 列、4 行：\n"
         f'<div class="c">{charts.caption(series)}</div>\n'
         f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
         "图表已经画出了每个数值，旁边的文字不要再逐个重复这些数，只写它说明了什么。"
+    ]
+
+
+def _visual_brief(content: dict[str, Any]) -> list[str]:
+    visual = content.get("visual")
+    if not visual:
+        return []
+    role = ("它就是这一页的主视觉，其余内容围绕它。" if visual.get("role") == "primary"
+            else "它只是论据，不是主角：页面的第一眼必须是下面说的焦点。")
+    return [f"这一页的论点：{visual.get('claim')}\n核心指标：{visual.get('core_metric')}\n"
+            f"读者第一眼应该看到：{visual.get('focus') or visual.get('core_metric')}\n这一页的图：{role}"]
+
+
+def diagram_words(diagram: dict[str, Any]) -> list[str]:
+    """Every word of a redrawn figure that the page must carry."""
+
+    words = [level["name"] for level in diagram.get("levels") or []]
+    for level in diagram.get("levels") or []:
+        for item in level["items"]:
+            # A titled box is carried whole, with what it holds inside its brackets.
+            words.append(item_text(item))
+    words += [group["name"] for group in diagram.get("groups") or []]
+    return words + list(diagram.get("steps") or [])
+
+
+def _diagram_brief(content: dict[str, Any]) -> list[str]:
+    diagram = content.get("diagram")
+    if not diagram or diagram.get("kind") != "levels":
+        return []
+    lines = [f"第 {index} 层（自上而下）：{level['name']}"
+             + (f"——{'、'.join(item_text(item) for item in level['items'])}" if level["items"] else "")
+             for index, level in enumerate(diagram["levels"], 1)]
+    groups = [f"「{group['name']}」指第 {'、'.join(str(number) for number in group['covers'])} 层"
+              for group in diagram.get("groups") or []]
+    return [
+        "这一页的主视觉是按资料原图重画的层级图。用 layers 元件画，层的顺序、层名和每层的条目都必须和下面完全一样，"
+        "一个词都不要改、不要增删、不要合并两层；每层的条目用顿号隔开写在这一层里，带括号的条目连同括号里的内容原样照抄"
+        "（括号表示原图里这几项框在这个标题下面）：\n" + "\n".join(lines)
+        + ("\n原图还标了分组，要在对应的层里用小字（类名 c 或 k）标出来：" + "；".join(groups) if groups else "")
+        + f"\n层级图下面要有一行图注（类名 c），原样写：{diagram['caption']}"
     ]
 
 
@@ -146,7 +197,9 @@ def user_prompt(
         + (source or "（无，source 留空）"),
         "这一页的内容（已核对，数字和事实不能改，可以删减措辞，不能新增）：\n"
         + json.dumps(content, ensure_ascii=False, indent=1),
+        *_visual_brief(content),
         *_chart_brief(content, idea),
+        *_diagram_brief(content),
         *_figure_brief(content, idea),
         f"建议的排布：{idea}",
         "同一套类名写出的示范页（只学写法，内容不要照抄）：\n"

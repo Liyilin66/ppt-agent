@@ -17,7 +17,7 @@ from ppt_agent.v2.evidence_check import _NUMBER, _YEAR, _key
 
 MAX_LEAD, MAX_SUPPORT = 1, 2
 _SKIP_FIELDS = {"source", "speaker_notes", "ref", "archetype", "unit_format", "chart", "phases",
-                "start", "end", "kicker", "quote", "figure"}
+                "start", "end", "kicker", "quote", "figure", "diagram", "visual"}
 
 
 def fact_keys(text: str) -> list[str]:

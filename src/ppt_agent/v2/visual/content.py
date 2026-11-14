@@ -240,6 +240,10 @@ class RichContent(PageCopy):
     series: list[DataSeries] = Field(default_factory=list, max_length=2)
     # A figure reproduced from the source document: {"id", "caption", "ref", "path", "width", "height"}.
     figure: dict | None = None
+    # A figure of the source redrawn from what two readings of it agree on: {"kind","levels","groups","caption"}.
+    diagram: dict | None = None
+    # What the page claims, the measure it rests on, and the part its visual plays (v2.visual_brief).
+    visual: dict | None = None
 
     @model_validator(mode="after")
     def _data_is_consistent(self) -> "RichContent":
