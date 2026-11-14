@@ -23,13 +23,15 @@
 .q1{font-size:54px;line-height:1.42}
 /* the page's conclusion, when the page already has a title: a ruled line of serif, never display type */
 .call{font-family:'Times New Roman','SimSun',serif;font-size:24px;line-height:1.5;border-top:2px solid #c5341c;padding-top:14px;max-width:30em}
+/* rows of the grid touch: a conclusion that opens a region keeps clear of the row above */
+.r>.call:first-child{margin-top:14px}
 /* display type keeps its distance from whatever sits above it */
 .r>.q1:not(:first-child){margin-top:14px}.r>.d1:not(:first-child),.r>.d2:not(:first-child),.r>.d3:not(:first-child),.r>.d4:not(:first-child){margin-top:6px}
 .b{font-size:19px;line-height:1.65}
 .s{font-size:17px;line-height:1.6}
 .c{font-size:15px;line-height:1.55;color:#6f6a5e}
 .kicker,.k{font-size:13px;line-height:1.4;letter-spacing:4px;font-weight:700;color:#c5341c}
-.unit{font-size:24px;line-height:1.4;font-weight:700}
+.unit{font-size:24px;line-height:1.4;font-weight:700;letter-spacing:0}
 .red{color:#c5341c}.mut{color:#6f6a5e}.bold{font-weight:700}
 
 /* colour fields: rare, and each must mean something */
