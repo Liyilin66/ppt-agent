@@ -112,6 +112,8 @@ class MockLLMClient:
             return {"pages": []}
         if task == "data_series":
             return {"series": []}  # the mock source has no series; an empty answer is a valid one
+        if task in ("source_table", "figure_read", "visual_brief"):
+            return {}
         if task == "series_audit":
             return {"verdicts": []}
         if task == "page_content":

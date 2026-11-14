@@ -276,8 +276,8 @@ def chart_spec(raw: str) -> dict[str, Any]:
         raise ConvertError(f"chart kind must be one of {sorted(CHART_KINDS)}")
     categories = spec.get("categories")
     series = spec.get("series")
-    if not isinstance(categories, list) or not 2 <= len(categories) <= 12:
-        raise ConvertError("a chart needs 2 to 12 categories")
+    if not isinstance(categories, list) or not 2 <= len(categories) <= 16:
+        raise ConvertError("a chart needs 2 to 16 categories")
     if not isinstance(series, list) or not 1 <= len(series) <= 4:
         raise ConvertError("a chart needs 1 to 4 series")
     for entry in series:

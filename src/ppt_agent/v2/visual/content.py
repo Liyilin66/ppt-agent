@@ -202,7 +202,9 @@ class DataSeries(StrictModel):
     kind: SeriesKind
     period: str | None = Field(default=None, max_length=28)  # "2022年—2024年上半年"
     scope: str | None = Field(default=None, max_length=30)   # whose it is: "全球"
-    points: list[DataPoint] = Field(..., min_length=2, max_length=8)
+    points: list[DataPoint] = Field(..., min_length=2, max_length=16)
+    # Values the source also gives that could not be checked, so are not drawn: named, never hidden.
+    omitted: list[Annotated[str, Field(max_length=20)]] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def _points_are_one_series(self) -> "DataSeries":

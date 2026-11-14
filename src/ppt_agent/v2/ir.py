@@ -145,7 +145,7 @@ class ChartItem(BaseElement):
     type: Literal["chart"] = "chart"
     chart: ChartKind
     title: str | None = None
-    categories: list[str] = Field(..., min_length=1, max_length=12)
+    categories: list[str] = Field(..., min_length=1, max_length=16)
     series: list[ChartSeries] = Field(..., min_length=1, max_length=4)
     show_legend: bool = True
     show_data_labels: bool = False

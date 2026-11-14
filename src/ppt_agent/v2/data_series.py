@@ -20,7 +20,9 @@ from pydantic import ValidationError
 from ppt_agent.v2.visual.content import DataSeries
 
 MIN_NUMBERS = 2  # evidence with fewer figures than this cannot hold a series
-MAX_POINTS = 8
+MAX_POINTS = 16
+MAX_LOST = 1 / 3   # more of a series than this failing its check, and what is left is not that series
+MIN_LEFT = 3       # a comparison cut down to two is a different comparison
 _PAGE = re.compile(r"^\[(?P<name>[^|\]]+?)\s*\|\s*(?P<kind>[^\]]*?)\s*p(?P<page>\d+)\]\s*$", re.M)
 _FIGURE = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 _YEAR = re.compile(r"(?:19|20)\d{2}")
@@ -155,7 +157,7 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
         points: list[dict[str, Any]] = []
         proposed = [point for point in (series.get("points") or []) if isinstance(point, dict)]
         if len(proposed) > MAX_POINTS:
-            drop(series, f"超过 {MAX_POINTS} 个值，不截断成一部分")
+            drop(series, f"超过 {MAX_POINTS} 个值，一张图画不下；不截断成一部分")
             continue
         for point in proposed:
             label = str(point.get("label") or "").strip()
@@ -204,10 +206,24 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
                            "quote": quote.strip()[:160], "ref": ref,
                            "projected": bool(point.get("projected")) or bool(_FORECAST.search(_squash(quote))),
                            "_anchor": anchor, "_at": at})
+        omitted: list[str] = []
         if len(points) < len(proposed):
-            # Part of a series is a different claim from the whole of it: all the values stand, or none is drawn.
-            drop(series, "有的值没有通过核对，整条不画")
-            continue
+            # Part of a series is a different claim from the whole of it. What is left may be drawn only when
+            # it is still a fair comparison: not parts of a whole, most of it standing, and neither its largest
+            # nor its smallest value among those lost. The page then names what is missing.
+            lost = [point for point in proposed
+                    if str(point.get("label") or "").strip() not in {kept["label"] for kept in points}]
+            claimed = [float(point["value"]) for point in lost if isinstance(point.get("value"), (int, float))]
+            values = [point["value"] for point in points]
+            fair = (series["kind"] in ("time", "category") and len(points) >= MIN_LEFT
+                    and len(lost) <= MAX_LOST * len(proposed) and len(claimed) == len(lost)
+                    and all(min(values) <= value <= max(values) for value in claimed))
+            if not fair:
+                drop(series, "有的值没有通过核对，剩下的不构成完整的比较，整条不画")
+                continue
+            omitted = [str(point.get("label") or "")[:20] for point in lost]
+            rejected.append({"metric": str(series.get("metric") or "")[:36],
+                             "why": f"{len(lost)} 个值未通过核对，已从图中去掉并在图注注明：" + "、".join(omitted)})
         # Values named in one sentence pair with their labels in reading order.
         by_quote: dict[str, list[dict[str, Any]]] = {}
         for point in points:
@@ -232,7 +248,7 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
             kept.append(DataSeries(
                 metric=str(series.get("metric") or "")[:36], unit=unit[:10], kind=series["kind"],
                 period=(str(series.get("period") or "")[:28] or None),
-                scope=(str(series.get("scope") or "")[:30] or None), points=unique))
+                scope=(str(series.get("scope") or "")[:30] or None), points=unique, omitted=omitted))
         except ValidationError as error:
             drop(series, "不构成一条序列：" + str(error.errors()[0].get("msg", ""))[:60])
     return kept, rejected
