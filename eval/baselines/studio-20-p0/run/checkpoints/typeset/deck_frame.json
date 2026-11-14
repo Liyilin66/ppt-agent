@@ -1,0 +1,79 @@
+{
+  "summary": {
+    "title": "执行摘要",
+    "kicker": null,
+    "lead": null,
+    "takeaway": "决定以成熟场景试点为牵引，同步投入能力平台与全链条治理。",
+    "source": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》",
+    "speaker_notes": null,
+    "archetype": "summary",
+    "rows": [
+      {
+        "tag": "态势",
+        "headline": "全球AI产业规模达6233亿美元",
+        "detail": "2024年产业规模同比增长21.5%；上半年AI融资达316亿美元。"
+      },
+      {
+        "tag": "机会",
+        "headline": "成熟场景可实现80%内容利用率",
+        "detail": "ProductGPT营销内容利用率高达80%；TCL质检准确率超90%。"
+      },
+      {
+        "tag": "风险",
+        "headline": "治理须覆盖五阶段AI活动",
+        "detail": "治理贯穿规划设计至部署上线；GPT-3训练耗电1287兆瓦时。"
+      },
+      {
+        "tag": "建议",
+        "headline": "优先规模化两端快的场景组合",
+        "detail": "先投研发设计与运营服务；实时生产不直接采用大模型决策。"
+      }
+    ]
+  },
+  "roadmap": {
+    "title": "以场景试点牵引AI规模化落地",
+    "kicker": null,
+    "lead": null,
+    "takeaway": "现在决定首批场景、能力平台建设与五阶段治理门禁。",
+    "source": "行动建议为基于报告内容的推断，需结合公司实际调整",
+    "speaker_notes": null,
+    "archetype": "roadmap",
+    "phases": [
+      "试点筛选",
+      "平台建设",
+      "规模推广"
+    ],
+    "rows": [
+      {
+        "label": "选场景",
+        "body": "按数据质量、任务边界与价值筛选试点",
+        "start": 1,
+        "end": 1
+      },
+      {
+        "label": "先落地",
+        "body": "优先研发设计、运营服务与视觉质检",
+        "start": 1,
+        "end": 2
+      },
+      {
+        "label": "建平台",
+        "body": "统一管理算法、数据、计算资源和模型",
+        "start": 1,
+        "end": 3
+      },
+      {
+        "label": "设门禁",
+        "body": "贯穿规划、数据、模型、测试与上线",
+        "start": 1,
+        "end": 3
+      },
+      {
+        "label": "再扩展",
+        "body": "受控拓展制造核心流程应用",
+        "start": 2,
+        "end": 3
+      }
+    ]
+  }
+}

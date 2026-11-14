@@ -1,0 +1,680 @@
+{
+  "page": {
+    "page_number": 10,
+    "role": "content",
+    "section": "场景价值决定投入优先级",
+    "title": "ProductGPT营销内容利用率高达80%",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 39.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "02 · 场景价值决定投入优先级",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 116.67,
+          "w": 746.0,
+          "h": 100.32
+        },
+        "runs": [
+          {
+            "text": "ProductGPT营销内容",
+            "line_break": false,
+            "size_pt": 28.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "",
+            "line_break": true,
+            "size_pt": 12.0,
+            "hex": "000000",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Microsoft YaHei",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "利用率高达80%",
+            "line_break": false,
+            "size_pt": 28.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 37.62
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 270.07,
+          "w": 1196.0,
+          "h": 26.35
+        },
+        "runs": [
+          {
+            "text": "营销内容、知识问答与运营辅助具备跨行业通用性，适合快速验证价值。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 19.76
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 76.0,
+          "y": 346.3,
+          "w": 1196.0,
+          "h": 201.4
+        },
+        "runs": [
+          {
+            "text": "80%",
+            "line_break": false,
+            "size_pt": 142.5,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": -6.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 151.05
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 428.28,
+          "y": 487.7,
+          "w": 843.72,
+          "h": 33.6
+        },
+        "runs": [
+          {
+            "text": "内容利用率",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 25.2
+      },
+      {
+        "type": "box",
+        "id": "e6",
+        "frame": {
+          "x": 76.0,
+          "y": 556.39,
+          "w": 648.0,
+          "h": 26.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "DDD5C3",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e7",
+        "frame": {
+          "x": 76.0,
+          "y": 556.39,
+          "w": 518.39,
+          "h": 26.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 76.0,
+          "y": 590.27,
+          "w": 1196.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "ProductGPT生成营销内容的利用率",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 76.0,
+          "y": 621.34,
+          "w": 1196.0,
+          "h": 25.6
+        },
+        "runs": [
+          {
+            "text": "结合商品特性与热门趋势，几分钟内生成创意营销内容。",
+            "line_break": false,
+            "size_pt": 12.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 19.2
+      },
+      {
+        "type": "box",
+        "id": "e10",
+        "frame": {
+          "x": 844.0,
+          "y": 116.75,
+          "w": 1.0,
+          "h": 537.25
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 867.0,
+          "y": 116.65,
+          "w": 405.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "运营试点优先方向",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 867.0,
+          "y": 142.49,
+          "w": 405.0,
+          "h": 31.9
+        },
+        "runs": [
+          {
+            "text": "内容生成提效",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.92
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 867.0,
+          "y": 182.53,
+          "w": 339.0,
+          "h": 51.2
+        },
+        "runs": [
+          {
+            "text": "ProductGPT可在几分钟内生成结合商品特性与热门趋势的创意营销内容。",
+            "line_break": false,
+            "size_pt": 12.0,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 19.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 867.0,
+          "y": 241.89,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 43 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e15",
+        "frame": {
+          "x": 867.0,
+          "y": 272.82,
+          "w": 405.0,
+          "h": 31.9
+        },
+        "runs": [
+          {
+            "text": "知识问答服务",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.92
+      },
+      {
+        "type": "rich_text",
+        "id": "e16",
+        "frame": {
+          "x": 867.0,
+          "y": 312.86,
+          "w": 339.0,
+          "h": 51.2
+        },
+        "runs": [
+          {
+            "text": "基于自然语言处理的智能聊天与推荐，可替代传统人工客服持续提供咨询、订单跟踪等服务。",
+            "line_break": false,
+            "size_pt": 12.0,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 19.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 867.0,
+          "y": 372.22,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 43 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e18",
+        "frame": {
+          "x": 867.0,
+          "y": 403.14,
+          "w": 405.0,
+          "h": 31.9
+        },
+        "runs": [
+          {
+            "text": "优先落地环节",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.92
+      },
+      {
+        "type": "rich_text",
+        "id": "e19",
+        "frame": {
+          "x": 867.0,
+          "y": 443.18,
+          "w": 339.0,
+          "h": 51.2
+        },
+        "runs": [
+          {
+            "text": "大模型短期重点赋能通用性较强或数据充足的场景，以提升执行效率为主。",
+            "line_break": false,
+            "size_pt": 12.0,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 19.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e20",
+        "frame": {
+          "x": 867.0,
+          "y": 502.55,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 38 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e21",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 43、38–40 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e22",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "10",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "内容生成和运营辅助通常是企业最容易启动的AI试点。它们对实体设备和实时控制依赖较低，也更容易通过采纳率、交付周期和人工投入来评估。关键不只是生成内容，而是把品牌规范、产品知识和审核机制一起嵌入流程。"
+  },
+  "qa": {
+    "page_number": 10,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 10,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

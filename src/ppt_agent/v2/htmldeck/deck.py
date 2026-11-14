@@ -24,6 +24,19 @@ from ppt_agent.v2.htmldeck.pipeline import (
 
 OTHER_FORMS = 2  # other compositions to try before a plain page
 _HIDDEN = {"speaker_notes", "source", "archetype"}
+_OPTIONAL = ("series", "figure")
+ACCEPTED = "html/accepted.json"  # pages a person has signed off: {"pages": [4, 5, ...]}
+
+
+def accept(checkpoints: Any, pages: list[int], note: str = "") -> list[int]:
+    """Mark saved pages as signed off. Later runs replay them as they are: no
+    recheck against newer rules, no repair, no redesign by the deck review.
+    A page whose content changes is a different page and is designed again."""
+
+    saved = checkpoints.load(ACCEPTED) or {}
+    merged = sorted(set(saved.get("pages", [])) | set(pages))
+    checkpoints.save(ACCEPTED, {"pages": merged, "note": note or saved.get("note", "")})
+    return merged
 
 
 def job_for(content: Any, *, page_number: int, section_index: int | None,
@@ -34,10 +47,14 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
     kicker = None
     if section_title:
         kicker = f"{section_index:02d} · {section_title}" if section_index else section_title
+    data = content.model_dump(mode="json", exclude_none=True, exclude=_HIDDEN)
+    for name in _OPTIONAL:
+        if not data.get(name):
+            data.pop(name, None)  # a page without them reads exactly as it did before they existed
     return DesignJob(
         page_number=page_number,
         archetype=archetype,
-        content=content.model_dump(mode="json", exclude_none=True, exclude=_HIDDEN),
+        content=data,
         # A statement page shows its statement, not a heading.
         title=None if archetype == "statement" else content.title,
         kicker=kicker,
@@ -183,6 +200,8 @@ async def design_deck(
     theme = themes.get(theme_name)
     font_css, real_fonts = office_font_css()
     plan: list[layout_plan.Fingerprint] = []
+    accepted = set((checkpoints.load(ACCEPTED) or {}).get("pages", [])) if checkpoints is not None else set()
+    held: set[int] = set()  # accepted pages replayed untouched in this run
     contents = {job.page_number: {**job.content, "archetype": job.archetype} for job in jobs}
     if theme.vocabulary == 2:
         # Compose the whole deck first: every page gets a form and a fingerprint,
@@ -190,7 +209,17 @@ async def design_deck(
         saved = checkpoints.load("html/layout_plan.json") if checkpoints is not None else None
         if saved and [item["page"] for item in saved] == sorted(contents):
             # Keep the saved compositions; re-plan only pages whose form no longer suits the content.
-            plan = layout_plan.repair([layout_plan.Fingerprint(**item) for item in saved], contents)
+            before = [layout_plan.Fingerprint(**item) for item in saved]
+            plan = layout_plan.repair(before, contents)
+            for index, old in enumerate(before):
+                # A signed-off page keeps the composition it was designed to, while its content stands.
+                job = next((job for job in jobs if job.page_number == old.page), None)
+                cached = checkpoints.load(f"html/page_{old.page:03d}.json") if old.page in accepted else None
+                if job is None or not cached or plan[index] == old:
+                    continue
+                _apply(job, old)
+                if cached.get("content") in (_fingerprint(job), _fingerprint(job, cached.get("idea"))):
+                    plan[index] = old
         else:
             plan = await layout_plan.plan_layouts(client, contents)
         if checkpoints is not None:
@@ -232,6 +261,13 @@ async def design_deck(
                         _fingerprint(job), _fingerprint(job, cached.get("idea"))):
                     job.idea = cached.get("idea") or job.idea
                     studio = theme.vocabulary == 2
+                    if job.page_number in accepted:
+                        saved = await _replay(session, theme, font_css, job, cached["html"])
+                        saved.attempts = 0
+                        if saved.ok:
+                            results[job.page_number] = saved
+                            held.add(job.page_number)
+                            return
                     saved = await _replay(session, theme, font_css, job, cached["html"], recheck=studio)
                     saved.attempts = 0
                     if saved.ok and not saved.aesthetic:
@@ -310,6 +346,8 @@ async def design_deck(
                         if number in by_page and result.ok}
 
             async def redo(job: DesignJob, why: str, *, new_form: bool, form: str | None = None) -> None:
+                if job.page_number in held:
+                    return  # signed off: not the review's to change
                 options = _other_forms(job.page_number)
                 if form is not None and form in options:
                     options = [form]  # the reviewer named a form this content can take
@@ -361,6 +399,7 @@ async def design_deck(
         "theme": theme_name,
         "office_fonts": real_fonts,
         "designed_pages": len(designed),
+        "accepted_pages": sorted(held),
         "fell_back_pages": sorted(job.page_number for job in jobs if not results[job.page_number].ok),
         "templated_pages": sorted(job.page_number for job in jobs if results[job.page_number].templated),
         "structural_fell_back": sorted(spec["page_number"] for spec in structural

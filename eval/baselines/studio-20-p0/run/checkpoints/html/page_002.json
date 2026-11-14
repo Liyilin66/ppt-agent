@@ -1,0 +1,7 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r mid\" style=\"grid-column:1/5;grid-row:2/9\">\n    <div class=\"t1\">执行<br>摘要</div>\n    <div class=\"b mut\">决定以成熟场景试点为牵引，同步投入能力平台与全链条治理。</div>\n  </div>\n  <div class=\"r\" style=\"grid-column:5/13;grid-row:2/9\">\n    <div class=\"mx\">\n      <div class=\"q br bb\">\n        <div class=\"k\">态势</div>\n        <div class=\"t3\">全球AI产业规模达6233亿美元</div>\n        <div class=\"s\">2024年产业规模同比增长21.5%；上半年AI融资达316亿美元。</div>\n      </div>\n      <div class=\"q bb\">\n        <div class=\"k\">机会</div>\n        <div class=\"t3\">成熟场景可实现80%内容利用率</div>\n        <div class=\"s\">ProductGPT营销内容利用率高达80%；TCL质检准确率超90%。</div>\n      </div>\n      <div class=\"q br\">\n        <div class=\"k\">风险</div>\n        <div class=\"t3\">治理须覆盖五阶段AI活动</div>\n        <div class=\"s\">治理贯穿规划设计至部署上线；GPT-3训练耗电1287兆瓦时。</div>\n      </div>\n      <div class=\"q\">\n        <div class=\"k red\">建议</div>\n        <div class=\"t3\">优先规模化两端快的场景组合</div>\n        <div class=\"s\">先投研发设计与运营服务；实时生产不直接采用大模型决策。</div>\n      </div>\n    </div>\n  </div>\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》</div><div class=\"pageno\">02</div>\n</div>",
+  "content": "91aeb31ff1f8f571",
+  "attempts": 1,
+  "idea": "matrix——四象限：左侧标题，右侧用十字线分出的 2×2，每格一个要点。主要视觉放在右侧；主要视觉和其余内容大致各占一半。读者第一眼应该看到：四象限执行要点。视线顺序：标题→四项要点→行动结论。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。",
+  "review_problems": []
+}

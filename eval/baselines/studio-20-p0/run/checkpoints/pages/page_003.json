@@ -1,0 +1,111 @@
+{
+  "page": {
+    "page_number": 3,
+    "role": "section_divider",
+    "section": "AI投入窗口已开启",
+    "title": "AI投入窗口已开启",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "box",
+        "id": "e1",
+        "frame": {
+          "x": 0.0,
+          "y": 0.0,
+          "w": 1280.0,
+          "h": 720.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 8.0,
+          "y": 149.5,
+          "w": 1272.0,
+          "h": 462.0
+        },
+        "runs": [
+          {
+            "text": "01",
+            "line_break": false,
+            "size_pt": 315.0,
+            "hex": "F3EEE4",
+            "alpha": 0.22,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": null,
+            "letter_spacing_pt": -10.5,
+            "paint": null
+          }
+        ],
+        "align": "right",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 346.5
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 80.0,
+          "y": 399.9,
+          "w": 1192.0,
+          "h": 83.2
+        },
+        "runs": [
+          {
+            "text": "AI投入窗口已开启",
+            "line_break": false,
+            "size_pt": 48.0,
+            "hex": "F3EEE4",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 62.4
+      }
+    ],
+    "speaker_notes": null
+  },
+  "qa": {
+    "page_number": 3,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 3,
+    "status": "anchor",
+    "model_attempts": 0,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

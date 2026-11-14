@@ -1,0 +1,226 @@
+{
+  "page": {
+    "page_number": 7,
+    "role": "content",
+    "section": "AI投入窗口已开启",
+    "title": "AI投入须以价值与治理同步推进",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 49.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "01 · AI投入窗口已开启",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 125.1,
+          "w": 1196.0,
+          "h": 44.8
+        },
+        "runs": [
+          {
+            "text": "AI投入须以价值与治理同步推进",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 33.6
+      },
+      {
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 201.0,
+          "w": 1128.0,
+          "h": 302.0
+        },
+        "type": "table",
+        "headers": [
+          "投入维度",
+          "管理动作",
+          "落地目标"
+        ],
+        "rows": [
+          [
+            "业务价值",
+            "优先选择匹配场景",
+            "提升生产率与创造力"
+          ],
+          [
+            "工程能力",
+            "统一平台与MLOps",
+            "加速交付和持续运营"
+          ],
+          [
+            "风险治理",
+            "识别、评估、应对",
+            "保障安全合规落地"
+          ]
+        ],
+        "style": "minimal",
+        "font_pt": 12.8,
+        "column_widths": [
+          231.16,
+          426.06,
+          470.78
+        ],
+        "strong_header": false
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 76.0,
+          "y": 626.21,
+          "w": 1196.0,
+          "h": 27.2
+        },
+        "runs": [
+          {
+            "text": "管理层决策原则 ",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "将场景匹配、能力平台、MLOps和全流程风险管理纳入同一投资决策。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 47–50 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e6",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "07",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "管理层现在需要做的，不是一次性押注某个模型或供应商，而是形成可迭代的投资组合。左手抓业务价值和落地速度，右手抓安全、合规和责任边界，才能把技术热度转化为可持续的经营成果。"
+  },
+  "qa": {
+    "page_number": 7,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 7,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

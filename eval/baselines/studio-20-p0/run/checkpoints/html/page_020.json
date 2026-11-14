@@ -1,0 +1,7 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r\" style=\"grid-column:1/12;grid-row:2/3\">\n    <div class=\"t2\">以场景试点牵引AI规模化落地</div>\n  </div>\n\n  <div class=\"r mid\" style=\"grid-column:1/13;grid-row:3/6\">\n    <div class=\"flow\">\n      <div class=\"node\">\n        <div class=\"t3\">试点筛选</div>\n        <div class=\"s\">按数据质量、任务边界与价值筛选试点</div>\n      </div>\n      <div class=\"arrow red\">→</div>\n      <div class=\"node\">\n        <div class=\"t3\">平台建设</div>\n        <div class=\"s\">统一管理算法、数据、计算资源和模型</div>\n      </div>\n      <div class=\"arrow red\">→</div>\n      <div class=\"node end\">\n        <div class=\"t3\">规模推广</div>\n        <div class=\"s\">受控拓展制造核心流程应用</div>\n      </div>\n    </div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/7;grid-row:6/7\">\n    <div class=\"lt\">\n      <div class=\"t3\">先落地</div>\n      <div class=\"s\">优先研发设计、运营服务与视觉质检</div>\n    </div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:7/13;grid-row:6/7\">\n    <div class=\"lt\">\n      <div class=\"t3\">设门禁</div>\n      <div class=\"s\">贯穿规划、数据、模型、测试与上线</div>\n    </div>\n  </div>\n\n  <div class=\"r bot\" style=\"grid-column:1/13;grid-row:8/9\">\n    <div class=\"call\">现在决定首批场景、能力平台建设与五阶段治理门禁。</div>\n  </div>\n\n  <div class=\"source\">行动建议为基于报告内容的推断，需结合公司实际调整</div><div class=\"pageno\">20</div>\n</div>",
+  "content": "4898b1a04840533f",
+  "attempts": 1,
+  "idea": "table——表格：通栏原生表格，下面一句共同结论。主要视觉放在左侧；主要视觉和其余内容大致各占一半。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。审稿意见（请据此调整）：与p9版式高度雷同且右侧过空；改为闭环图或分阶段卡片。",
+  "review_problems": []
+}

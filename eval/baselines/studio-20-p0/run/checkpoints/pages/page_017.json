@@ -1,0 +1,675 @@
+{
+  "page": {
+    "page_number": 17,
+    "role": "content",
+    "section": "治理同步，形成决策闭环",
+    "title": "AI风险已延伸至个人、组织与社会",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 49.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "03 · 治理同步，形成决策闭环",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 124.96,
+          "w": 362.0,
+          "h": 116.16
+        },
+        "runs": [
+          {
+            "text": "AI风险已延伸至个人、组织与社会",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 43.56
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 253.48,
+          "w": 362.0,
+          "h": 62.7
+        },
+        "runs": [
+          {
+            "text": "风险分为自身安全与衍生安全两层，后者可直接侵害组织切身利益。",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 23.51
+      },
+      {
+        "type": "box",
+        "id": "e4",
+        "frame": {
+          "x": 460.0,
+          "y": 125.5,
+          "w": 744.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 460.0,
+          "y": 138.5,
+          "w": 812.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "01",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e6",
+        "frame": {
+          "x": 540.0,
+          "y": 148.32,
+          "w": 732.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "自身安全：模型与数据",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 540.0,
+          "y": 179.72,
+          "w": 666.0,
+          "h": 46.5
+        },
+        "runs": [
+          {
+            "text": "模型幻觉会造成生成内容不可信；可解释性不足、框架漏洞及数据标注不规范均会威胁技术系统安全。第 52 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e8",
+        "frame": {
+          "x": 460.0,
+          "y": 238.34,
+          "w": 744.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 460.0,
+          "y": 251.34,
+          "w": 812.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "超10亿美元",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e10",
+        "frame": {
+          "x": 724.0,
+          "y": 261.17,
+          "w": 548.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "框架漏洞可造成算力损失",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 724.0,
+          "y": 292.56,
+          "w": 482.0,
+          "h": 46.5
+        },
+        "runs": [
+          {
+            "text": "黑客利用开源人工智能框架 Ray 的安全漏洞，导致数千家网络服务器遭攻击。第 52 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e12",
+        "frame": {
+          "x": 460.0,
+          "y": 351.19,
+          "w": 744.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 460.0,
+          "y": 364.19,
+          "w": 812.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "02",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 540.0,
+          "y": 374.01,
+          "w": 732.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "衍生安全直击组织利益",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e15",
+        "frame": {
+          "x": 540.0,
+          "y": 405.41,
+          "w": 666.0,
+          "h": 46.5
+        },
+        "runs": [
+          {
+            "text": "技术系统管控不当、被滥用误用或遭外部攻击，可对个人和组织带来隐私、生命、财产与伦理风险。第 52 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e16",
+        "frame": {
+          "x": 460.0,
+          "y": 464.03,
+          "w": 744.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 460.0,
+          "y": 477.03,
+          "w": 812.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "03",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e18",
+        "frame": {
+          "x": 540.0,
+          "y": 486.86,
+          "w": 732.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "社会层面风险外溢",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e19",
+        "frame": {
+          "x": 540.0,
+          "y": 518.25,
+          "w": 732.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "人工智能还可能对国家社会造成政治、文化、经济、军事和网络空间等方面风险。第 53 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e20",
+        "frame": {
+          "x": 76.0,
+          "y": 517.0,
+          "w": 360.0,
+          "h": 2.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e21",
+        "frame": {
+          "x": 76.0,
+          "y": 533.0,
+          "w": 362.0,
+          "h": 108.0
+        },
+        "runs": [
+          {
+            "text": "管理层应将模型、数据与基础设施安全纳入经营风险治理，并管控滥用、误用和外部攻击。",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 27.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e22",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 51–53 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e23",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "17",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "首先要明确，人工智能风险不只发生在模型层。模型输出不可信、数据质量失控或底层框架存在漏洞，都会在业务环节转化为客户、财务和声誉风险。管理层需要用经营风险的视角来决定哪些场景可以先行、哪些必须设限。"
+  },
+  "qa": {
+    "page_number": 17,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 17,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

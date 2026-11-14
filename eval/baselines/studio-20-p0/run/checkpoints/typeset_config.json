@@ -1,0 +1,14 @@
+{
+  "layout_engine": "typeset",
+  "profile": "consulting",
+  "html_theme": "studio",
+  "source_references": [
+    "caict_ai_2024.pdf"
+  ],
+  "source_page_counts": {
+    "caict_ai_2024.pdf": 64
+  },
+  "source_display_names": {
+    "caict_ai_2024.pdf": "中国信息通信研究院《人工智能发展报告（2024年）》"
+  }
+}

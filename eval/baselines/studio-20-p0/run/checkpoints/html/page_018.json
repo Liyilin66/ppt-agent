@@ -1,0 +1,9 @@
+{
+  "html": "<div class=\"page compact\">\n  <div class=\"r\" style=\"grid-column:1/9;grid-row:1/2\"><div class=\"kicker\">03 · 治理同步，形成决策闭环</div></div>\n  <div class=\"r\" style=\"grid-column:1/10;grid-row:2/3\"><div class=\"t2\">1750亿参数GPT-3训练耗电1287兆瓦时</div></div>\n  <div class=\"r mid\" style=\"grid-column:1/8;grid-row:3/7\">\n    <div class=\"c\">1750亿参数GPT-3训练能耗</div>\n    <div class=\"d1\">1287</div>\n    <div class=\"unit\">兆瓦时</div>\n  </div>\n  <div class=\"r mid ll\" style=\"grid-column:8/13;grid-row:3/7\">\n    <div class=\"t3\">同一训练案例</div>\n    <div class=\"d3 red\">552</div>\n    <div class=\"unit\">吨二氧化碳</div>\n    <div class=\"c\">该GPT-3训练案例还产生552吨二氧化碳。</div>\n  </div>\n  <div class=\"r lt\" style=\"grid-column:1/5;grid-row:7/9\">\n    <div class=\"t3\">模型规模</div>\n    <div class=\"c\">报告以GPT-3为例，说明该模型的参数规模。</div>\n    <div class=\"b\">1750亿参数</div>\n  </div>\n  <div class=\"r lt\" style=\"grid-column:5/13;grid-row:7/9\">\n    <div class=\"call\">企业应将算力、能耗与碳排约束纳入模型投入和场景选择决策。</div>\n  </div>\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 53 页</div><div class=\"pageno\">18</div>\n</div>",
+  "content": "2870915784f7af13",
+  "attempts": 5,
+  "idea": "poster——数据海报：一个巨大的数字就是画面，旁边细线分出单位和变化，底部一行三条小字事实。主要视觉放在左侧；主要视觉和其余内容大致各占一半。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。审稿意见：页面过空，仅少量数据分散在上方；放大核心指标并重组为单一视觉焦点",
+  "review_problems": [
+    "页面过空，仅少量数据分散在上方；放大核心指标并重组为单一视觉焦点"
+  ]
+}

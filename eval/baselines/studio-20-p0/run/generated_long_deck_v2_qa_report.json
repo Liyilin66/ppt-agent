@@ -1,0 +1,110 @@
+{
+  "total_pages": 20,
+  "pages_with_errors": 0,
+  "pages_with_warnings": 0,
+  "auto_fix_count": 0,
+  "repaired_pages": [],
+  "fallback_pages": [],
+  "results": [
+    {
+      "page_number": 1,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 2,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 3,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 4,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 5,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 6,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 7,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 8,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 9,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 10,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 11,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 12,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 13,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 14,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 15,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 16,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 17,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 18,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 19,
+      "issues": [],
+      "auto_fixes": []
+    },
+    {
+      "page_number": 20,
+      "issues": [],
+      "auto_fixes": []
+    }
+  ]
+}

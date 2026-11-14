@@ -1,0 +1,9 @@
+{
+  "html": "<div class=\"page compact\">\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:1/2\"><div class=\"kicker\">02 · 场景价值决定投入优先级</div></div>\n\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:2/3\">\n    <div class=\"t2\">场景匹配度决定AI投入回报</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:3/4\">\n    <div class=\"b\">优先选择数据可用、边界清晰且效果可验证的业务任务。</div>\n  </div>\n\n  <div class=\"r sand pad\" style=\"grid-column:1/7;grid-row:4/8\">\n    <div class=\"k\">高匹配度</div>\n    <div class=\"t3\">优先匹配数据与逻辑</div>\n    <div class=\"b\">数据规模与质量，以及场景核心业务逻辑同大模型创意生成和交互能力的匹配度，是场景选择的重要考虑因素。</div>\n    <div class=\"lt\"></div>\n    <div class=\"t3\">语料丰富领域更适配</div>\n    <div class=\"s\">产品设计、技术研发、知识管理和仿真验证等语料丰富、问题边界清晰领域，可显著提升生产效率和创造力。</div>\n  </div>\n\n  <div class=\"r pad ll\" style=\"grid-column:7/13;grid-row:4/8\">\n    <div class=\"k\">低匹配度</div>\n    <div class=\"t3\">高要求场景仍待探索</div>\n    <div class=\"b\">可解释、确定性、实时性要求高，场景动态性高或样本数据不易获取时，大模型有效应用仍需进一步探索。</div>\n    <div class=\"lt\"></div>\n    <div class=\"t3\">生产现场不宜直接控制</div>\n    <div class=\"s\">实时生产对质量管理和流程精度要求高且专业数据难获取，不能直接以大模型生成的弱解释性结果指导现场。</div>\n  </div>\n\n  <div class=\"r call\" style=\"grid-column:1/13;grid-row:8/9\">管理层应按数据基础、任务边界和可量化价值筛选试点，并避免让生成结果直接控制高确定性生产。</div>\n\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 40–41 页</div><div class=\"pageno\">09</div>\n</div>",
+  "content": "33b788f7abcb6198",
+  "attempts": 4,
+  "idea": "split——左右对开：两个方案各占一半，一半是深色色域并出血到页边。主要视觉放在右侧；主要视觉和其余内容大致各占一半。读者第一眼应该看到：高低匹配度对比。视线顺序：标题→两侧方案→回报差异。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。审稿意见（请据此调整，形式不变）：左侧黑色大块过重，远看失衡且压缩内容；改用双栏浅底",
+  "review_problems": [
+    "左侧黑色大块过重，远看失衡且压缩内容；改用双栏浅底"
+  ]
+}

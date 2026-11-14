@@ -1,0 +1,755 @@
+{
+  "page": {
+    "page_number": 5,
+    "role": "content",
+    "section": "AI投入窗口已开启",
+    "title": "2024年上半年AI融资达316亿美元",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 49.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "01 · AI投入窗口已开启",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 124.96,
+          "w": 458.0,
+          "h": 116.16
+        },
+        "runs": [
+          {
+            "text": "2024年上半年",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "",
+            "line_break": true,
+            "size_pt": 12.0,
+            "hex": "000000",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Microsoft YaHei",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "AI融资达316亿美元",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 43.56
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 253.48,
+          "w": 1196.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "全球AI投融资金额同比上升84%。",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 76.0,
+          "y": 296.88,
+          "w": 1196.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "2024年上半年全球AI投融资金额",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e5",
+        "frame": {
+          "x": 556.0,
+          "y": 125.5,
+          "w": 648.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e6",
+        "frame": {
+          "x": 556.0,
+          "y": 138.5,
+          "w": 716.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "84%",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 730.0,
+          "y": 148.32,
+          "w": 542.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "融资同比增长",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 730.0,
+          "y": 179.72,
+          "w": 542.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "2024年上半年，全球人工智能投融资金额同比上升84%。",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 730.0,
+          "y": 202.97,
+          "w": 542.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 12 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e10",
+        "frame": {
+          "x": 556.0,
+          "y": 238.34,
+          "w": 648.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 556.0,
+          "y": 251.34,
+          "w": 716.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "6笔",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 730.0,
+          "y": 261.17,
+          "w": 542.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "大模型占头部融资",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 730.0,
+          "y": 292.56,
+          "w": 542.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "全球金额最大的10笔融资中，6笔为大模型企业融资，合计135亿美元。",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 730.0,
+          "y": 315.81,
+          "w": 542.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 13 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e15",
+        "frame": {
+          "x": 556.0,
+          "y": 351.19,
+          "w": 648.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e16",
+        "frame": {
+          "x": 556.0,
+          "y": 364.19,
+          "w": 716.0,
+          "h": 40.0
+        },
+        "runs": [
+          {
+            "text": "12.1%",
+            "line_break": false,
+            "size_pt": 24.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 30.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 730.0,
+          "y": 374.01,
+          "w": 542.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "融资占比持续提高",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e18",
+        "frame": {
+          "x": 730.0,
+          "y": 405.41,
+          "w": 476.0,
+          "h": 46.5
+        },
+        "runs": [
+          {
+            "text": "人工智能领域融资占全行业融资比例由2022年的4.5%升至2024年上半年12.1%。",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e19",
+        "frame": {
+          "x": 730.0,
+          "y": 452.03,
+          "w": 474.0,
+          "h": 26.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "DDD5C3",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e20",
+        "frame": {
+          "x": 730.0,
+          "y": 452.03,
+          "w": 57.34,
+          "h": 26.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e21",
+        "frame": {
+          "x": 730.0,
+          "y": 477.91,
+          "w": 542.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "第 12 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e22",
+        "frame": {
+          "x": 76.0,
+          "y": 441.5,
+          "w": 456.0,
+          "h": 2.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e23",
+        "frame": {
+          "x": 76.0,
+          "y": 457.5,
+          "w": 458.0,
+          "h": 72.0
+        },
+        "runs": [
+          {
+            "text": "资本、技术与产品供给正加速汇聚，企业应把握能力获取与场景落地窗口。",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 27.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e24",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 12–13 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e25",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "05",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "资本并不等同于业务价值，但它反映了技术、人才和产品供给正在快速汇聚。生成式AI已成为融资重心，意味着企业可以更快获取成熟能力，也面临更快的竞争扩散。"
+  },
+  "qa": {
+    "page_number": 5,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 5,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

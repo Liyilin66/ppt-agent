@@ -1,0 +1,655 @@
+{
+  "page": {
+    "page_number": 4,
+    "role": "content",
+    "section": "AI投入窗口已开启",
+    "title": "2024年全球AI产业将达6233亿美元",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 49.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "01 · AI投入窗口已开启",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 124.96,
+          "w": 650.0,
+          "h": 116.16
+        },
+        "runs": [
+          {
+            "text": "2024年全球AI产业",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "",
+            "line_break": true,
+            "size_pt": 12.0,
+            "hex": "000000",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Microsoft YaHei",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "将达6233亿美元",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 43.56
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 276.32,
+          "w": 1196.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "全球人工智能产业保持高速增长，生成式AI正加速产业化。",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 76.0,
+          "y": 351.88,
+          "w": 1196.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "IDC预测的2024年全球AI产业规模",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 76.0,
+          "y": 392.99,
+          "w": 1196.0,
+          "h": 107.52
+        },
+        "runs": [
+          {
+            "text": "6233亿美元",
+            "line_break": false,
+            "size_pt": 72.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": -1.5,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 80.64
+      },
+      {
+        "type": "box",
+        "id": "e6",
+        "frame": {
+          "x": 844.0,
+          "y": 125.5,
+          "w": 1.0,
+          "h": 528.5
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 867.0,
+          "y": 125.4,
+          "w": 405.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "增长信号",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 867.0,
+          "y": 155.29,
+          "w": 405.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "产业规模增速",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 867.0,
+          "y": 190.08,
+          "w": 405.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "21.5%",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e10",
+        "frame": {
+          "x": 867.0,
+          "y": 224.68,
+          "w": 339.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "IDC预测，2024年全球人工智能产业规模将同比增长21.5%。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 867.0,
+          "y": 279.53,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "2024年 · 第 11 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 867.0,
+          "y": 314.51,
+          "w": 405.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "大模型驱动增长",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 867.0,
+          "y": 349.1,
+          "w": 339.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "自2023年起全球基础模型数量快速增加，相较2022年增长数量翻倍。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 867.0,
+          "y": 403.95,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "2023年起 · 第 12 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e15",
+        "frame": {
+          "x": 867.0,
+          "y": 438.93,
+          "w": 405.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "模型迭代活跃",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e16",
+        "frame": {
+          "x": 867.0,
+          "y": 473.52,
+          "w": 339.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "2024年以来，全球基础模型新增或迭代近百个，保持较强创新态势。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 867.0,
+          "y": 528.38,
+          "w": 405.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "2024年以来 · 第 12 页",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e18",
+        "frame": {
+          "x": 76.0,
+          "y": 517.0,
+          "w": 744.0,
+          "h": 2.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e19",
+        "frame": {
+          "x": 76.0,
+          "y": 533.0,
+          "w": 746.0,
+          "h": 72.0
+        },
+        "runs": [
+          {
+            "text": "管理层应将AI视为战略投入，优先配置资源到可规模化落地的业务场景。",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 27.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e20",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 11–12 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e21",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "04",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "市场信号已经很清晰：AI不是边缘技术投入，而是在形成新的产业基础设施。对管理层而言，关键不再是是否关注AI，而是要判断哪些业务环节应当优先获得资源。"
+  },
+  "qa": {
+    "page_number": 4,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 4,
+    "status": "model",
+    "model_attempts": 3,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 2 call(s)"
+  }
+}

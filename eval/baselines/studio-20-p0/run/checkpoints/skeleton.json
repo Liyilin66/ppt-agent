@@ -1,0 +1,191 @@
+{
+  "deck_title": "AI投入决策：机会与治理",
+  "subtitle": "基于中国信通院《人工智能发展报告（2024年）》",
+  "language": "zh-CN",
+  "total_pages": 20,
+  "outline": {
+    "deck_title": "AI投入决策：机会与治理",
+    "subtitle": "基于中国信通院《人工智能发展报告（2024年）》",
+    "sections": [
+      {
+        "title": "AI投入窗口已开启",
+        "goal": "明确管理层为何现在决策",
+        "content_pages": 4,
+        "talking_points": [
+          "2024年规模6233亿美元",
+          "同比增长21.5%",
+          "上半年融资316亿美元",
+          "生成式AI成为驱动",
+          "2026年超80%企业采用"
+        ]
+      },
+      {
+        "title": "场景价值决定投入优先级",
+        "goal": "聚焦可验证的业务应用机会",
+        "content_pages": 7,
+        "talking_points": [
+          "内容生成与辅助运营",
+          "研发设计优化路径",
+          "制造产线与视觉质检",
+          "供应链全链路优化",
+          "客服营销降本增效"
+        ]
+      },
+      {
+        "title": "治理同步，形成决策闭环",
+        "goal": "以分阶段投入平衡机会风险",
+        "content_pages": 3,
+        "talking_points": [
+          "幻觉与训练成本挑战",
+          "数据与模型安全",
+          "内容风险与网络攻击",
+          "全链条风险管理",
+          "资源投入待决策事项"
+        ]
+      }
+    ]
+  },
+  "slots": [
+    {
+      "page_number": 1,
+      "kind": "cover",
+      "section_index": null,
+      "section_title": null,
+      "brief": null
+    },
+    {
+      "page_number": 2,
+      "kind": "toc",
+      "section_index": null,
+      "section_title": null,
+      "brief": null
+    },
+    {
+      "page_number": 3,
+      "kind": "section_divider",
+      "section_index": 1,
+      "section_title": "AI投入窗口已开启",
+      "brief": null
+    },
+    {
+      "page_number": 4,
+      "kind": "content",
+      "section_index": 1,
+      "section_title": "AI投入窗口已开启",
+      "brief": null
+    },
+    {
+      "page_number": 5,
+      "kind": "content",
+      "section_index": 1,
+      "section_title": "AI投入窗口已开启",
+      "brief": null
+    },
+    {
+      "page_number": 6,
+      "kind": "content",
+      "section_index": 1,
+      "section_title": "AI投入窗口已开启",
+      "brief": null
+    },
+    {
+      "page_number": 7,
+      "kind": "content",
+      "section_index": 1,
+      "section_title": "AI投入窗口已开启",
+      "brief": null
+    },
+    {
+      "page_number": 8,
+      "kind": "section_divider",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 9,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 10,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 11,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 12,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 13,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 14,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 15,
+      "kind": "content",
+      "section_index": 2,
+      "section_title": "场景价值决定投入优先级",
+      "brief": null
+    },
+    {
+      "page_number": 16,
+      "kind": "section_divider",
+      "section_index": 3,
+      "section_title": "治理同步，形成决策闭环",
+      "brief": null
+    },
+    {
+      "page_number": 17,
+      "kind": "content",
+      "section_index": 3,
+      "section_title": "治理同步，形成决策闭环",
+      "brief": null
+    },
+    {
+      "page_number": 18,
+      "kind": "content",
+      "section_index": 3,
+      "section_title": "治理同步，形成决策闭环",
+      "brief": null
+    },
+    {
+      "page_number": 19,
+      "kind": "content",
+      "section_index": 3,
+      "section_title": "治理同步，形成决策闭环",
+      "brief": null
+    },
+    {
+      "page_number": 20,
+      "kind": "closing",
+      "section_index": null,
+      "section_title": null,
+      "brief": null
+    }
+  ],
+  "planning_events": []
+}

@@ -1,0 +1,396 @@
+{
+  "page": {
+    "page_number": 15,
+    "role": "content",
+    "section": "场景价值决定投入优先级",
+    "title": "优先规模化两端快的AI场景组合",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 49.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "02 · 场景价值决定投入优先级",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 124.96,
+          "w": 1196.0,
+          "h": 58.08
+        },
+        "runs": [
+          {
+            "text": "优先规模化两端快的AI场景组合",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 43.56
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 8.0,
+          "y": 124.19,
+          "w": 1196.0,
+          "h": 107.52
+        },
+        "runs": [
+          {
+            "text": "超90%",
+            "line_break": false,
+            "size_pt": 72.0,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": -1.5,
+            "paint": null
+          }
+        ],
+        "align": "right",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 80.64
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 8.0,
+          "y": 243.67,
+          "w": 1196.0,
+          "h": 33.6
+        },
+        "runs": [
+          {
+            "text": "缺陷检测准确率",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "right",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 25.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 76.0,
+          "y": 276.32,
+          "w": 554.0,
+          "h": 62.7
+        },
+        "runs": [
+          {
+            "text": "研发设计与运营服务落地较快，实时生产不宜直接采用大模型决策。",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 23.51
+      },
+      {
+        "type": "box",
+        "id": "e6",
+        "frame": {
+          "x": 748.0,
+          "y": 276.5,
+          "w": 1.0,
+          "h": 75.5
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 771.0,
+          "y": 276.1,
+          "w": 501.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "制造视觉可受控验证",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 771.0,
+          "y": 322.7,
+          "w": 501.0,
+          "h": 27.2
+        },
+        "runs": [
+          {
+            "text": "TCL液晶面板缺陷检测，生产周期缩短60%。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 20.4
+      },
+      {
+        "id": "e9",
+        "frame": {
+          "x": 76.0,
+          "y": 352.0,
+          "w": 1128.0,
+          "h": 226.5
+        },
+        "type": "table",
+        "headers": [
+          "投入层级",
+          "适用场景",
+          "管理要求"
+        ],
+        "rows": [
+          [
+            "优先规模化",
+            "研发设计、运营服务",
+            "数据基础好、边界清晰"
+          ],
+          [
+            "受控试点",
+            "视觉检测、供应链",
+            "以成熟模式验证价值"
+          ],
+          [
+            "暂缓直连",
+            "实时生产控制",
+            "不得直接采用弱解释性结果"
+          ]
+        ],
+        "style": "minimal",
+        "font_pt": 12.8,
+        "column_widths": [
+          230.72,
+          389.2,
+          508.08
+        ],
+        "strong_header": false
+      },
+      {
+        "type": "rich_text",
+        "id": "e10",
+        "frame": {
+          "x": 76.0,
+          "y": 626.21,
+          "w": 1196.0,
+          "h": 27.2
+        },
+        "runs": [
+          {
+            "text": "共同结论 ",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "以数据质量、问题边界和人机责任为门槛，先规模化成熟场景，再受控拓展制造核心流程。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 38–43 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "15",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "本节的结论不是投入更多模型，而是优先投入能证明价值的场景组合。研发设计和运营服务通常具备更好的数据基础与清晰的产出衡量方式，适合率先规模化。制造现场则应坚持受控切入，先采用视觉质检等成熟能力，再逐步扩大到更核心的流程决策。"
+  },
+  "qa": {
+    "page_number": 15,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 15,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

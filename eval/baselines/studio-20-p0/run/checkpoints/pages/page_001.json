@@ -1,0 +1,465 @@
+{
+  "page": {
+    "page_number": 1,
+    "role": "cover",
+    "section": null,
+    "title": "AI投入决策：机会与治理",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "box",
+        "id": "e1",
+        "frame": {
+          "x": 80.0,
+          "y": 150.0,
+          "w": 18.0,
+          "h": 18.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e2",
+        "frame": {
+          "x": 888.0,
+          "y": 150.0,
+          "w": 1.0,
+          "h": 420.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e3",
+        "frame": {
+          "x": 80.0,
+          "y": 628.0,
+          "w": 1120.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 80.0,
+          "y": 195.92,
+          "w": 772.0,
+          "h": 166.32
+        },
+        "runs": [
+          {
+            "text": "AI投入决策：",
+            "line_break": false,
+            "size_pt": 49.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "",
+            "line_break": true,
+            "size_pt": 12.0,
+            "hex": "000000",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Microsoft YaHei",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "机会与治理",
+            "line_break": false,
+            "size_pt": 49.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 62.37
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 80.0,
+          "y": 392.01,
+          "w": 1192.0,
+          "h": 25.6
+        },
+        "runs": [
+          {
+            "text": "基于中国信通院《人工智能发展报告（2024年）》",
+            "line_break": false,
+            "size_pt": 12.0,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 19.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e6",
+        "frame": {
+          "x": 918.0,
+          "y": 145.5,
+          "w": 354.0,
+          "h": 21.0
+        },
+        "runs": [
+          {
+            "text": "本次汇报",
+            "line_break": false,
+            "size_pt": 10.5,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 15.75
+      },
+      {
+        "type": "box",
+        "id": "e7",
+        "frame": {
+          "x": 918.0,
+          "y": 237.34,
+          "w": 282.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "CDC5B3",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 918.0,
+          "y": 192.1,
+          "w": 354.0,
+          "h": 30.8
+        },
+        "runs": [
+          {
+            "text": "01",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 958.0,
+          "y": 193.82,
+          "w": 314.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "AI投入窗口已开启",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "box",
+        "id": "e10",
+        "frame": {
+          "x": 918.0,
+          "y": 294.69,
+          "w": 282.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "CDC5B3",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 918.0,
+          "y": 249.44,
+          "w": 354.0,
+          "h": 30.8
+        },
+        "runs": [
+          {
+            "text": "02",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 958.0,
+          "y": 251.17,
+          "w": 314.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "场景价值决定投入优先级",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      },
+      {
+        "type": "box",
+        "id": "e13",
+        "frame": {
+          "x": 918.0,
+          "y": 352.03,
+          "w": 282.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "CDC5B3",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 918.0,
+          "y": 306.79,
+          "w": 354.0,
+          "h": 30.8
+        },
+        "runs": [
+          {
+            "text": "03",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e15",
+        "frame": {
+          "x": 958.0,
+          "y": 308.51,
+          "w": 314.0,
+          "h": 31.35
+        },
+        "runs": [
+          {
+            "text": "治理同步，形成决策闭环",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.51
+      }
+    ],
+    "speaker_notes": null
+  },
+  "qa": {
+    "page_number": 1,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 1,
+    "status": "anchor",
+    "model_attempts": 0,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

@@ -1,0 +1,618 @@
+{
+  "page": {
+    "page_number": 2,
+    "role": "content",
+    "section": null,
+    "title": "执行摘要",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 293.79,
+          "w": 362.0,
+          "h": 116.16
+        },
+        "runs": [
+          {
+            "text": "执行",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "",
+            "line_break": true,
+            "size_pt": 12.0,
+            "hex": "000000",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Microsoft YaHei",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          },
+          {
+            "text": "摘要",
+            "line_break": false,
+            "size_pt": 33.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 43.56
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 422.31,
+          "w": 362.0,
+          "h": 62.7
+        },
+        "runs": [
+          {
+            "text": "决定以成熟场景试点为牵引，同步投入能力平台与全链条治理。",
+            "line_break": false,
+            "size_pt": 14.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 23.51
+      },
+      {
+        "type": "box",
+        "id": "e3",
+        "frame": {
+          "x": 831.0,
+          "y": 125.5,
+          "w": 1.0,
+          "h": 264.25
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e4",
+        "frame": {
+          "x": 460.0,
+          "y": 388.75,
+          "w": 372.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 486.0,
+          "y": 145.4,
+          "w": 786.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "态势",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e6",
+        "frame": {
+          "x": 486.0,
+          "y": 171.29,
+          "w": 786.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "全球AI产业规模达6233亿美元",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 486.0,
+          "y": 213.88,
+          "w": 321.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "2024年产业规模同比增长21.5%；上半年AI融资达316亿美元。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "box",
+        "id": "e8",
+        "frame": {
+          "x": 832.0,
+          "y": 388.75,
+          "w": 372.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 858.0,
+          "y": 145.4,
+          "w": 414.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "机会",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e10",
+        "frame": {
+          "x": 858.0,
+          "y": 171.29,
+          "w": 322.0,
+          "h": 69.6
+        },
+        "runs": [
+          {
+            "text": "成熟场景可实现80%内容利用率",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e11",
+        "frame": {
+          "x": 858.0,
+          "y": 248.68,
+          "w": 322.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "ProductGPT营销内容利用率高达80%；TCL质检准确率超90%。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "box",
+        "id": "e12",
+        "frame": {
+          "x": 831.0,
+          "y": 389.75,
+          "w": 1.0,
+          "h": 264.25
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 486.0,
+          "y": 409.65,
+          "w": 786.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "风险",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 486.0,
+          "y": 435.54,
+          "w": 786.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "治理须覆盖五阶段AI活动",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e15",
+        "frame": {
+          "x": 486.0,
+          "y": 478.13,
+          "w": 321.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "治理贯穿规划设计至部署上线；GPT-3训练耗电1287兆瓦时。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e16",
+        "frame": {
+          "x": 858.0,
+          "y": 409.65,
+          "w": 414.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "建议",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 858.0,
+          "y": 435.54,
+          "w": 414.0,
+          "h": 34.8
+        },
+        "runs": [
+          {
+            "text": "优先规模化两端快的场景组合",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 26.1
+      },
+      {
+        "type": "rich_text",
+        "id": "e18",
+        "frame": {
+          "x": 858.0,
+          "y": 478.13,
+          "w": 322.0,
+          "h": 54.4
+        },
+        "runs": [
+          {
+            "text": "先投研发设计与运营服务；实时生产不直接采用大模型决策。",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "top",
+        "wrap": true,
+        "line_pt": 20.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e19",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e20",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "02",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": null
+  },
+  "qa": {
+    "page_number": 2,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 2,
+    "status": "anchor",
+    "model_attempts": 0,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

@@ -1,0 +1,563 @@
+{
+  "page": {
+    "page_number": 18,
+    "role": "content",
+    "section": "治理同步，形成决策闭环",
+    "title": "1750亿参数GPT-3训练耗电1287兆瓦时",
+    "background": "background",
+    "background_gradient": null,
+    "background_hex": "F3EEE4",
+    "show_chrome": false,
+    "elements": [
+      {
+        "type": "rich_text",
+        "id": "e1",
+        "frame": {
+          "x": 76.0,
+          "y": 39.9,
+          "w": 1196.0,
+          "h": 18.2
+        },
+        "runs": [
+          {
+            "text": "03 · 治理同步，形成决策闭环",
+            "line_break": false,
+            "size_pt": 9.75,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 3.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 13.65
+      },
+      {
+        "type": "rich_text",
+        "id": "e2",
+        "frame": {
+          "x": 76.0,
+          "y": 116.65,
+          "w": 1196.0,
+          "h": 39.2
+        },
+        "runs": [
+          {
+            "text": "1750亿参数GPT-3训练耗电1287兆瓦时",
+            "line_break": false,
+            "size_pt": 21.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 29.4
+      },
+      {
+        "type": "rich_text",
+        "id": "e3",
+        "frame": {
+          "x": 76.0,
+          "y": 206.75,
+          "w": 1196.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "1750亿参数GPT-3训练能耗",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e4",
+        "frame": {
+          "x": 76.0,
+          "y": 243.43,
+          "w": 1196.0,
+          "h": 201.4
+        },
+        "runs": [
+          {
+            "text": "1287",
+            "line_break": false,
+            "size_pt": 142.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": -6.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 151.05
+      },
+      {
+        "type": "rich_text",
+        "id": "e5",
+        "frame": {
+          "x": 76.0,
+          "y": 453.22,
+          "w": 1196.0,
+          "h": 33.6
+        },
+        "runs": [
+          {
+            "text": "兆瓦时",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 25.2
+      },
+      {
+        "type": "box",
+        "id": "e6",
+        "frame": {
+          "x": 748.0,
+          "y": 193.5,
+          "w": 1.0,
+          "h": 307.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e7",
+        "frame": {
+          "x": 771.0,
+          "y": 241.27,
+          "w": 501.0,
+          "h": 31.9
+        },
+        "runs": [
+          {
+            "text": "同一训练案例",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.92
+      },
+      {
+        "type": "rich_text",
+        "id": "e8",
+        "frame": {
+          "x": 771.0,
+          "y": 287.19,
+          "w": 501.0,
+          "h": 91.84
+        },
+        "runs": [
+          {
+            "text": "552",
+            "line_break": false,
+            "size_pt": 61.5,
+            "hex": "C5341C",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": -1.5,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 68.88
+      },
+      {
+        "type": "rich_text",
+        "id": "e9",
+        "frame": {
+          "x": 771.0,
+          "y": 387.14,
+          "w": 501.0,
+          "h": 33.6
+        },
+        "runs": [
+          {
+            "text": "吨二氧化碳",
+            "line_break": false,
+            "size_pt": 18.0,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": true,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 25.2
+      },
+      {
+        "type": "rich_text",
+        "id": "e10",
+        "frame": {
+          "x": 771.0,
+          "y": 428.91,
+          "w": 501.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "该GPT-3训练案例还产生552吨二氧化碳。",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "box",
+        "id": "e11",
+        "frame": {
+          "x": 76.0,
+          "y": 500.5,
+          "w": 360.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e12",
+        "frame": {
+          "x": 76.0,
+          "y": 515.05,
+          "w": 1196.0,
+          "h": 31.9
+        },
+        "runs": [
+          {
+            "text": "模型规模",
+            "line_break": false,
+            "size_pt": 16.5,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.92
+      },
+      {
+        "type": "rich_text",
+        "id": "e13",
+        "frame": {
+          "x": 76.0,
+          "y": 555.27,
+          "w": 1196.0,
+          "h": 23.25
+        },
+        "runs": [
+          {
+            "text": "报告以GPT-3为例，说明该模型的参数规模。",
+            "line_break": false,
+            "size_pt": 11.25,
+            "hex": "6F6A5E",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 17.44
+      },
+      {
+        "type": "rich_text",
+        "id": "e14",
+        "frame": {
+          "x": 76.0,
+          "y": 586.47,
+          "w": 1196.0,
+          "h": 26.35
+        },
+        "runs": [
+          {
+            "text": "1750亿参数",
+            "line_break": false,
+            "size_pt": 12.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 19.76
+      },
+      {
+        "type": "box",
+        "id": "e15",
+        "frame": {
+          "x": 460.0,
+          "y": 500.5,
+          "w": 744.0,
+          "h": 1.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "1A1916",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "box",
+        "id": "e16",
+        "frame": {
+          "x": 460.0,
+          "y": 529.5,
+          "w": 744.0,
+          "h": 2.0
+        },
+        "shape": "rect",
+        "radius": 0.0,
+        "fill": {
+          "kind": "solid",
+          "hex": "C5341C",
+          "alpha": 1.0,
+          "stops": null,
+          "angle_deg": 0.0
+        },
+        "stroke_hex": null,
+        "stroke_alpha": 1.0,
+        "stroke_width": 0.0,
+        "glow_hex": null,
+        "glow_alpha": 1.0,
+        "glow_radius": 0.0
+      },
+      {
+        "type": "rich_text",
+        "id": "e17",
+        "frame": {
+          "x": 460.0,
+          "y": 540.75,
+          "w": 812.0,
+          "h": 31.5
+        },
+        "runs": [
+          {
+            "text": "企业应将算力、能耗与碳排约束纳入模型投入和场景选择决策。",
+            "line_break": false,
+            "size_pt": 15.75,
+            "hex": "1A1916",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "Times New Roman",
+            "ea_font": "SimSun",
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 23.62
+      },
+      {
+        "type": "rich_text",
+        "id": "e18",
+        "frame": {
+          "x": 76.0,
+          "y": 679.1,
+          "w": 1196.0,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 53 页",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      },
+      {
+        "type": "rich_text",
+        "id": "e19",
+        "frame": {
+          "x": 1191.34,
+          "y": 679.1,
+          "w": 80.66,
+          "h": 16.8
+        },
+        "runs": [
+          {
+            "text": "18",
+            "line_break": false,
+            "size_pt": 9.0,
+            "hex": "8A8475",
+            "alpha": 1.0,
+            "bold": false,
+            "italic": false,
+            "font": "DengXian",
+            "ea_font": null,
+            "letter_spacing_pt": 0.0,
+            "paint": null
+          }
+        ],
+        "align": "left",
+        "valign": "middle",
+        "wrap": false,
+        "line_pt": 12.6
+      }
+    ],
+    "speaker_notes": "算力不是无限可得的资源，训练和部署都伴随显著的成本与能耗约束。报告中的GPT-3案例提醒我们，大模型规模增长并不自动等于投入合理。对企业而言，更可行的路线是优先复用成熟能力，以高价值场景验证收益，再决定是否追加专属训练投入。"
+  },
+  "qa": {
+    "page_number": 18,
+    "issues": [],
+    "auto_fixes": []
+  },
+  "outcome": {
+    "page_number": 18,
+    "status": "model",
+    "model_attempts": 1,
+    "error_issues": 0,
+    "warning_issues": 0,
+    "note": "html design, 0 call(s)"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "topic": "人工智能发展态势：企业应用机会与治理风险（基于中国信通院 2024 人工智能发展报告）",
+  "audience": "管理层",
+  "slide_count": 20,
+  "language": "zh-CN",
+  "deck_type": "visual_design_v2",
+  "user_requirements": "目的：促成管理层拍板 AI 投入方向：给出优先落地场景和治理措施建议，请管理层决策资源投入。重点内容：企业应用机会、治理风险。资料使用：只使用提供的资料，不联网。",
+  "batch_size": 2,
+  "max_batch_attempts": 1,
+  "interview_id": null,
+  "attachment_ids": [],
+  "layout_engine": "typeset",
+  "style_profile": "consulting",
+  "enable_search": false
+}

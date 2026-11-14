@@ -1,0 +1,7 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r\" style=\"grid-column:1/9;grid-row:1/2\"><div class=\"kicker\">01 · AI投入窗口已开启</div></div>\n  <div class=\"r\" style=\"grid-column:1/12;grid-row:2/3\"><div class=\"t2\">AI投入须以价值与治理同步推进</div></div>\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:3/7\">\n    <table>\n      <tr><th>投入维度</th><th>管理动作</th><th>落地目标</th></tr>\n      <tr><td>业务价值</td><td>优先选择匹配场景</td><td>提升生产率与创造力</td></tr>\n      <tr><td>工程能力</td><td>统一平台与MLOps</td><td>加速交付和持续运营</td></tr>\n      <tr><td>风险治理</td><td>识别、评估、应对</td><td>保障安全合规落地</td></tr>\n    </table>\n  </div>\n  <div class=\"r bot\" style=\"grid-column:1/11;grid-row:7/9\">\n    <div class=\"s\"><span class=\"red bold\">管理层决策原则　</span>将场景匹配、能力平台、MLOps和全流程风险管理纳入同一投资决策。</div>\n  </div>\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 47–50 页</div><div class=\"pageno\">07</div>\n</div>",
+  "content": "3c4e71bf8b6dfd5c",
+  "attempts": 2,
+  "idea": "table——表格：通栏原生表格，下面一句共同结论。主要视觉放在左侧；主要视觉和其余内容大致各占一半。读者第一眼应该看到：价值与治理对照表。视线顺序：表头→七项内容→底部结论。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。",
+  "review_problems": []
+}

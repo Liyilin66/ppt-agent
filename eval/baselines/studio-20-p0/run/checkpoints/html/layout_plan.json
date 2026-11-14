@@ -1,0 +1,146 @@
+[
+  {
+    "page": 2,
+    "form": "matrix",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "四象限执行要点",
+    "reading_path": "标题→四项要点→行动结论",
+    "reason": "四项摘要适合并列归纳，便于快速建立全局。"
+  },
+  {
+    "page": 4,
+    "form": "margin",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 5,
+    "form": "ledger",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 6,
+    "form": "flow",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "能力平台驱动闭环",
+    "reading_path": "标题→能力节点→箭头→结果",
+    "reason": "因果链清晰呈现为何需要先建能力平台。"
+  },
+  {
+    "page": 7,
+    "form": "table",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "价值与治理对照表",
+    "reading_path": "表头→七项内容→底部结论",
+    "reason": "七项结构化内容适合表格，完整呈现双线推进。"
+  },
+  {
+    "page": 9,
+    "form": "split",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "高低匹配度对比",
+    "reading_path": "标题→两侧方案→回报差异",
+    "reason": "场景匹配的优劣需要并置比较，凸显回报分化。"
+  },
+  {
+    "page": 10,
+    "form": "margin",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "80%内容利用率",
+    "reading_path": "大数字→案例说明→边栏证据",
+    "reason": "以核心成效领读，再用边注补足案例细节。"
+  },
+  {
+    "page": 11,
+    "form": "ledger",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 12,
+    "form": "units",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 13,
+    "form": "flow",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "跨环节数据打通链",
+    "reading_path": "数据源→打通→协同→价值",
+    "reason": "供应链价值依赖数据流动，因果链最能说明前提。"
+  },
+  {
+    "page": 14,
+    "form": "margin",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 15,
+    "form": "table",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 17,
+    "form": "ledger",
+    "focus": "right",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 18,
+    "form": "poster",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  },
+  {
+    "page": 19,
+    "form": "stairs",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "五阶段治理阶梯",
+    "reading_path": "起点→五级阶梯→红线终点",
+    "reason": "治理活动有明确阶段递进，阶梯表达全链条覆盖。"
+  },
+  {
+    "page": 20,
+    "form": "table",
+    "focus": "left",
+    "ratio": "even",
+    "core_visual": "",
+    "reading_path": "",
+    "reason": ""
+  }
+]

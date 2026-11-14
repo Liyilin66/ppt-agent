@@ -1,0 +1,9 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:1/2\">\n    <div class=\"kicker\">01 · AI投入窗口已开启</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/6;grid-row:2/6\">\n    <div class=\"t1\">2024年上半年<br>AI融资达316亿美元</div>\n    <div class=\"b mut\">全球AI投融资金额同比上升84%。</div>\n    <div class=\"c\">2024年上半年全球AI投融资金额</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:6/13;grid-row:2/8\">\n    <div class=\"ledger\">\n      <div class=\"li\">\n        <div class=\"fig red\">84%</div>\n        <div class=\"r gap0\">\n          <div class=\"b bold\">融资同比增长</div>\n          <div class=\"c\">2024年上半年，全球人工智能投融资金额同比上升84%。</div>\n          <div class=\"c\">第 12 页</div>\n        </div>\n      </div>\n      <div class=\"li\">\n        <div class=\"fig\">6笔</div>\n        <div class=\"r gap0\">\n          <div class=\"b bold\">大模型占头部融资</div>\n          <div class=\"c\">全球金额最大的10笔融资中，6笔为大模型企业融资，合计135亿美元。</div>\n          <div class=\"c\">第 13 页</div>\n        </div>\n      </div>\n      <div class=\"li\">\n        <div class=\"fig\">12.1%</div>\n        <div class=\"r gap0\">\n          <div class=\"b bold\">融资占比持续提高</div>\n          <div class=\"c\">人工智能领域融资占全行业融资比例由2022年的4.5%升至2024年上半年12.1%。</div>\n          <div class=\"strip\"><div class=\"fill red\" style=\"width:12.1%\"></div></div>\n          <div class=\"c\">第 12 页</div>\n        </div>\n      </div>\n    </div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/6;grid-row:6/9\">\n    <div class=\"call\">资本、技术与产品供给正加速汇聚，企业应把握能力获取与场景落地窗口。</div>\n  </div>\n\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 12–13 页</div><div class=\"pageno\">05</div>\n</div>",
+  "content": "498a15c8b573dca4",
+  "attempts": 3,
+  "idea": "ledger——账本：左侧大标题，右侧一行一条「数字 + 它衡量什么」，用细线隔开。主要视觉放在右侧；主要视觉和其余内容大致各占一半。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。审稿意见：巨型数字占比过高、下方过空，与p12指标页轮廓相近；补足信息层级",
+  "review_problems": [
+    "巨型数字占比过高、下方过空，与p12指标页轮廓相近；补足信息层级"
+  ]
+}

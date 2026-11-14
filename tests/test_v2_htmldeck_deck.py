@@ -165,3 +165,31 @@ def test_saved_pages_are_rechecked_and_only_the_flawed_one_is_repaired():
     assert len(second.prompts) == 1 and "你上一次写的 HTML" in second.prompts[0] and 'class="q1"' in second.prompts[0]
     assert results[4].ok and results[5].ok and summary["aesthetic_left"] == {}
     assert 'class="q1"' not in store.saved["html/page_005.json"]["html"]
+
+
+@needs_browser
+def test_a_signed_off_page_is_replayed_untouched_until_its_content_changes():
+    loud = page_html(5, '<div class="q1">管理层应将AI视为战略投入，优先配置资源到可规模化落地的业务场景。</div>'
+                        '<div class="b">IDC预测，2024年全球人工智能产业规模将同比增长21.5%。</div>'
+                        '<div class="t3">模型迭代活跃</div><div class="b">2024年以来新增或迭代近百个。</div>')
+    store = Store()
+    asyncio.run(deck.design_deck(Pages({5: [loud]}), "studio", [job(5)], [], checkpoints=store, look=False))
+    assert deck.accept(store, [5], note="P0") == [5]
+
+    again = Pages({5: [fits(5)]})
+    results, summary = asyncio.run(deck.design_deck(again, "studio", [job(5)], [], checkpoints=store, look=False))
+    assert again.prompts == [] and results[5].ok and summary["accepted_pages"] == [5]
+    assert 'class="q1"' in store.saved["html/page_005.json"]["html"]
+
+    changed = job(5)
+    changed.content["takeaway"] = "另一句结论。"
+    results, summary = asyncio.run(deck.design_deck(again, "studio", [changed], [], checkpoints=store, look=False))
+    assert len(again.prompts) >= 1 and summary["accepted_pages"] == []
+
+
+def test_a_page_without_series_keeps_the_content_it_had():
+    from ppt_agent.v2.visual.content import RichContent
+
+    content = RichContent.model_validate({"title": TITLE, "items": CONTENT["items"]})
+    made = deck.job_for(content, page_number=4, section_index=1, section_title="AI投入窗口已开启")
+    assert "series" not in made.content and "figure" not in made.content

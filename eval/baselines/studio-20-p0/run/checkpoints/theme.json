@@ -1,0 +1,39 @@
+{
+  "name": "html-studio",
+  "mood": "editorial, restrained",
+  "palette": {
+    "background": "#F4EFE6",
+    "surface": "#F4EFE6",
+    "surface_alt": "#CDC5B3",
+    "primary": "#1B1A17",
+    "primary_soft": "#EAE3D4",
+    "secondary": "#CDC5B3",
+    "accent": "#C8371F",
+    "text": "#1B1A17",
+    "muted": "#6A655A",
+    "on_primary": "#F4EFE6",
+    "success": "#2E9E6B",
+    "warning": "#D9822B",
+    "danger": "#C94F4F"
+  },
+  "fonts": {
+    "heading_latin": "Times New Roman",
+    "heading_east_asian": "SimSun",
+    "body_latin": "DengXian",
+    "body_east_asian": "DengXian"
+  },
+  "motif": "none",
+  "dark_cover": true,
+  "corner_radius": 0.0,
+  "style": {
+    "composition": "",
+    "decor": "",
+    "shape_language": "",
+    "cover_concept": ""
+  },
+  "chrome": {
+    "show_page_number": false,
+    "show_footer": false,
+    "show_section_kicker": false
+  }
+}

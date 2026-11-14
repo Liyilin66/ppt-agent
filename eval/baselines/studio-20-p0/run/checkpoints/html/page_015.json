@@ -1,0 +1,9 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r\" style=\"grid-column:1/10;grid-row:1/2\"><div class=\"kicker\">02 · 场景价值决定投入优先级</div></div>\n\n  <div class=\"r\" style=\"grid-column:1/8;grid-row:2/4\">\n    <div class=\"t1\">优先规模化两端快的AI场景组合</div>\n  </div>\n\n  <div class=\"r mid right\" style=\"grid-column:8/13;grid-row:2/4\">\n    <div class=\"d3 red\">超90%</div>\n    <div class=\"unit\">缺陷检测准确率</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/7;grid-row:4/5\">\n    <div class=\"b\">研发设计与运营服务落地较快，实时生产不宜直接采用大模型决策。</div>\n  </div>\n\n  <div class=\"r ll\" style=\"grid-column:8/13;grid-row:4/5\">\n    <div class=\"t3\">制造视觉可受控验证</div>\n    <div class=\"s\">TCL液晶面板缺陷检测，生产周期缩短60%。</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:5/8\">\n    <table>\n      <tr><th>投入层级</th><th>适用场景</th><th>管理要求</th></tr>\n      <tr><td><span class=\"red bold\">优先规模化</span></td><td>研发设计、运营服务</td><td>数据基础好、边界清晰</td></tr>\n      <tr><td>受控试点</td><td>视觉检测、供应链</td><td>以成熟模式验证价值</td></tr>\n      <tr><td>暂缓直连</td><td>实时生产控制</td><td>不得直接采用弱解释性结果</td></tr>\n    </table>\n  </div>\n\n  <div class=\"r bot\" style=\"grid-column:1/11;grid-row:8/9\">\n    <div class=\"s\"><span class=\"red bold\">共同结论　</span>以数据质量、问题边界和人机责任为门槛，先规模化成熟场景，再受控拓展制造核心流程。</div>\n  </div>\n\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 38–43 页</div><div class=\"pageno\">15</div>\n</div>",
+  "content": "4d82f34db71a6335",
+  "attempts": 4,
+  "idea": "table——表格：通栏原生表格，下面一句共同结论。主要视觉放在右侧；主要视觉和其余内容大致各占一半。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。",
+  "review_problems": [
+    "和另一页的版面轮廓几乎相同"
+  ]
+}

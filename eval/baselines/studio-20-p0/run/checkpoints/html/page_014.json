@@ -1,0 +1,9 @@
+{
+  "html": "<div class=\"page\">\n  <div class=\"r\" style=\"grid-column:1/13;grid-row:1/2\"><div class=\"kicker\">02 · 场景价值决定投入优先级</div></div>\n\n  <div class=\"r\" style=\"grid-column:1/8;grid-row:2/4\">\n    <div class=\"t1\">智能客服是行业大模型基础功能</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/8;grid-row:4/7\">\n    <div class=\"b\">行业大模型应用将在基础功能之上进一步深入生产流程优化。</div>\n    <div class=\"flow\">\n      <div class=\"node\">智能客服<br>标准化交互</div>\n      <div class=\"arrow\">→</div>\n      <div class=\"node end\">生产流程优化<br>核心环节</div>\n    </div>\n    <div class=\"c\">基础功能定位 → 深入核心流程</div>\n  </div>\n\n  <div class=\"r\" style=\"grid-column:1/8;grid-row:7/9\">\n    <div class=\"call\">应优先以智能客服承接标准化交互，并配套持续的安全风险识别、评估与技术治理。</div>\n  </div>\n\n  <div class=\"r ll\" style=\"grid-column:9/13;grid-row:2/9\">\n    <div class=\"k\">延伸路径</div>\n    <div class=\"r gap0\">\n      <div class=\"t3\">基础功能定位</div>\n      <div class=\"s mut\">报告将智能客服与文档检索、操作指导、设计图生成并列为行业大模型应用的基础功能。</div>\n      <div class=\"c\">第 62 页</div>\n    </div>\n    <div class=\"r gap0\">\n      <div class=\"t3\">多模态数据驱动决策</div>\n      <div class=\"s mut\">综合分析业务和生产环节中的多模态数据，可优化决策过程并推动更高层次智能化。</div>\n      <div class=\"c\">第 62 页</div>\n    </div>\n    <div class=\"r gap0\">\n      <div class=\"t3\">治理需动态迭代</div>\n      <div class=\"s mut\">形成切实有效、动态迭代的人工智能风险识别与应对策略。</div>\n      <div class=\"c\">第 63 页</div>\n    </div>\n  </div>\n\n  <div class=\"source\">资料来源：中国信息通信研究院《人工智能发展报告（2024年）》第 62–63 页</div><div class=\"pageno\">14</div>\n</div>",
+  "content": "102316922040b591",
+  "attempts": 1,
+  "idea": "margin——正文加边栏：左侧大标题和一组前后对比的数字，右侧细线后面三条边注。主要视觉放在左侧；主要视觉和其余内容大致各占一半。示范页是同一种形式，但左右和比例可能不同：学它的写法，按上面的要求重新安排网格。审稿意见：和另一页的版面轮廓几乎相同",
+  "review_problems": [
+    "和另一页的版面轮廓几乎相同"
+  ]
+}
