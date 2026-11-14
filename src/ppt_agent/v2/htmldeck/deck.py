@@ -282,6 +282,9 @@ async def design_deck(
                     template.attempts, template.defects = result.attempts, failed.defects
                     template.templated = True
                     result = template
+                    if checkpoints is not None and cached:
+                        # The saved design no longer stands; do not start the next run from it.
+                        checkpoints.save(name, {"html": "", "content": "", "idea": job.idea})
             results[job.page_number] = result
             if checkpoints is not None and result.ok and not result.templated:
                 checkpoints.save(name, {"html": result.html, "content": _fingerprint(job),

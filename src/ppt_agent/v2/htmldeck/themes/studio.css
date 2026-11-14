@@ -22,7 +22,7 @@
 .t3{font-size:24px;line-height:1.45}
 .q1{font-size:54px;line-height:1.42}
 /* the page's conclusion, when the page already has a title: a ruled line of serif, never display type */
-.call{font-family:'Times New Roman','SimSun',serif;font-size:24px;line-height:1.5;border-top:2px solid #c5341c;padding-top:14px;max-width:30em}
+.call{font-family:'Times New Roman','SimSun',serif;font-size:24px;line-height:1.5;border-top:2px solid #c5341c;padding-top:14px;max-width:46em}
 /* rows of the grid touch: a conclusion that opens a region keeps clear of the row above */
 .r>.call:first-child{margin-top:14px}
 /* display type keeps its distance from whatever sits above it */
