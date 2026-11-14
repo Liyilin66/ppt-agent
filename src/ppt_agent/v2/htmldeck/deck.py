@@ -51,6 +51,9 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
     for name in _OPTIONAL:
         if not data.get(name):
             data.pop(name, None)  # a page without them reads exactly as it did before they existed
+    for series in data.get("series") or []:
+        for point in series["points"]:
+            point.pop("quote", None)  # the proof stays with the content; the page shows the value
     return DesignJob(
         page_number=page_number,
         archetype=archetype,

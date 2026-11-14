@@ -443,10 +443,12 @@ RICH_SYSTEM = (
     '(only when it has one; a figure with its unit, like 12.1% or 316亿美元), body says what the figure measures, '
     'whose it is and when. Items are ordered by importance. Do not pad: fewer real facts beat filler, and never '
     'restate the title as an item. Do not repeat what other_page_titles cover. '
-    'Fill categories + values + unit_format + chart_title ONLY for one measure in one unit across categories or years '
-    '(2-8 values); never put different measures in one series. For raw percentages like 47.1 use unit_format 0.0"%". '
-    'Whenever the evidence gives the same measure at two or more points - 4.5% in 2022 and 12.1% in 2024, or one '
-    'rate for several companies - fill the series: a drawn comparison is worth more than the same numbers in prose. '
+    'Never fill categories, values, chart_title, unit_format, series or figure: charts are drawn by code from data '
+    'checked against the source. diversity.available_series lists that data when the evidence has it, and '
+    'diversity.available_figures lists figures of the source document. When the claim of this page is about one of '
+    'them, say so with its exact values in highlight or items (a series is then drawn as a chart on this page; a '
+    'figure is then shown beside the text) - a drawn comparison is worth more than the same numbers in prose. '
+    'Do not bend the claim toward data that does not bear on it. '
     'The source field uses exactly the form "<filename> 第N页" or "<filename> 第N-M页"; several pages are separated '
     'by "；". Item ref is optional and uses the same form. '
     'Fill headers + rows when several cases share the same attributes; cells are short. '
@@ -559,7 +561,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 trims.extend(trimmed)
             parsed = adapter.validate_python(payload)
             if rich_tier:
-                update = {'tier': rich_tier}
+                # Data to draw is attached by code after it is checked, never taken from the author.
+                update = {'tier': rich_tier, 'series': [], 'figure': None, 'categories': None, 'values': None,
+                          'chart_title': None, 'unit_format': None}
                 if parsed.highlight is not None and not re.search(r'\d', parsed.highlight.value or ''):
                     update['highlight'] = None  # the focal fact is a figure, or there is none
                 parsed = parsed.model_copy(update=update)
@@ -918,6 +922,23 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     if rich:
         checkpoints.save('typeset/tier_plan.json', {str(k): v for k, v in tiers.items()})
 
+    # What the source offers to draw, read and checked before any page is written.
+    series_found, series_read = {}, []
+    if rich and evidence_store is not None:
+        from ppt_agent.v2 import data_series
+        from ppt_agent.v2.visual.content import DataSeries
+
+        async def read_series(slot):
+            async with semaphore:
+                return slot.page_number, await data_series.extract(client, checkpoints, packets[slot.page_number].text)
+
+        extracted = dict(await asyncio.gather(*(read_series(slot) for slot in content_slots)))
+        series_read = list(extracted.values())
+        series_found = {number: [DataSeries.model_validate(item) for item in result['series']]
+                        for number, result in extracted.items() if result['series']}
+        progress(f'[data] {len({data_series.signature(s) for found in series_found.values() for s in found})} '
+                 'series verified against the source')
+
     async def produce(slot):
         assigned = plan[slot.page_number]
         diversity = {'assigned_archetype': assigned,
@@ -937,6 +958,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         async with semaphore:
             if rich:
                 diversity = {'other_page_titles': diversity['other_page_titles']}
+                if series_found.get(slot.page_number):
+                    diversity['available_series'] = [
+                        {'metric': item.metric, 'scope': item.scope, 'period': item.period,
+                         'values': {point.label: point.display for point in item.points}}
+                        for item in series_found[slot.page_number]]
             content, record = await generate_content(client, checkpoints, slot, brief, profile,
                                                     diversity=diversity, source_references=references,
                                                     source_page_counts=page_counts, evidence=packet,
@@ -982,6 +1008,22 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         return slot.page_number, (content, record)
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
+    series_summary = None
+    if rich and evidence_store is not None:
+        # Each series is drawn once, on the page whose own words are about it.
+        placed = data_series.assign(series_found, {number: content.model_dump(mode='json', exclude_none=True)
+                                                   for number, (content, _) in results.items()})
+        for number, (content, record) in list(results.items()):
+            results[number] = (content.model_copy(update={'series': placed.get(number, [])}), record)
+        series_summary = data_series.summary(series_read, placed)
+        checkpoints.save('typeset/series_plan.json', {
+            'summary': series_summary,
+            'placed': {str(number): [item.model_dump(mode='json') for item in items] for number, items in placed.items()},
+            'verified_not_placed': [item.model_dump(mode='json') for item in {
+                data_series.signature(s): s for found in series_found.values() for s in found
+                if data_series.signature(s) not in {data_series.signature(p) for items in placed.values() for p in items}
+            }.values()],
+            'rejected': [entry for result in series_read for entry in result['rejected']]})
     frame = None
     if profile.name == 'consulting' and len(content_slots) >= 4:
         frame = await generate_deck_frame(client, checkpoints, skeleton, brief, results, document_names)
@@ -1148,7 +1190,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     content_numbers = {slot.page_number for slot in content_slots}
     layouts = layout_signature.conflicts(
         [layout_signature.of(page) for page in pages if page.page_number in content_numbers])
-    run = {'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    run = {'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,

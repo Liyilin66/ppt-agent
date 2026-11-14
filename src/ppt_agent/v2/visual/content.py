@@ -179,6 +179,42 @@ class RichItem(StrictModel):
     ref: str | None = Field(default=None, max_length=40)
 
 
+class DataPoint(StrictModel):
+    """One value of a series, with the words of the source it was read from."""
+
+    label: str = Field(..., min_length=1, max_length=20)    # a category or a point in time: "2022年"
+    value: float
+    display: str = Field(..., min_length=1, max_length=16)  # as the source writes it: "4.5%"
+    quote: str = Field(..., min_length=1, max_length=160)   # the source's own words around the value
+    ref: str = Field(..., min_length=1, max_length=60)      # "<filename> 第N页"
+    projected: bool = False                                 # a forecast or a plan, not an observation
+
+
+SeriesKind = Literal["time", "category", "share", "distribution"]
+
+
+class DataSeries(StrictModel):
+    """One measure in one unit at several points: the only thing a chart may draw."""
+
+    metric: str = Field(..., min_length=1, max_length=36)   # what is measured
+    unit: str = Field(default="", max_length=10)            # "%", "亿美元"
+    kind: SeriesKind
+    period: str | None = Field(default=None, max_length=28)  # "2022年—2024年上半年"
+    scope: str | None = Field(default=None, max_length=30)   # whose it is: "全球"
+    points: list[DataPoint] = Field(..., min_length=2, max_length=8)
+
+    @model_validator(mode="after")
+    def _points_are_one_series(self) -> "DataSeries":
+        labels = [point.label for point in self.points]
+        if len(set(labels)) != len(labels):
+            raise ValueError("a series cannot have two points with one label")
+        if self.kind == "share":
+            values = [point.value for point in self.points]
+            if any(not 0 <= value <= 100 for value in values) or sum(values) > 100.5:
+                raise ValueError("shares lie between 0 and 100 and cannot add up to more than the whole")
+        return self
+
+
 class RichContent(PageCopy):
     """A page for the model-designed (HTML) engine: one claim, one focal fact,
     supporting facts, and how they relate. Deliberately not part of
@@ -197,6 +233,10 @@ class RichContent(PageCopy):
     # A grid of short cells, when rows share the same attributes (becomes a native table).
     headers: list[Annotated[str, Field(min_length=1, max_length=12)]] | None = Field(default=None, max_length=6)
     rows: list[list[Annotated[str, Field(min_length=1, max_length=40)]]] | None = Field(default=None, max_length=8)
+    # Series checked against the source by code (v2.data_series), never written by the page's author.
+    series: list[DataSeries] = Field(default_factory=list, max_length=2)
+    # A figure reproduced from the source document: {"id", "caption", "ref", "path", "width", "height"}.
+    figure: dict | None = None
 
     @model_validator(mode="after")
     def _data_is_consistent(self) -> "RichContent":

@@ -110,6 +110,10 @@ class MockLLMClient:
             return {"problems": []}
         if task in ("layout_plan", "html_matrix_review"):
             return {"pages": []}
+        if task == "data_series":
+            return {"series": []}  # the mock source has no series; an empty answer is a valid one
+        if task == "series_audit":
+            return {"verdicts": []}
         if task == "page_content":
             return self._page_content(context)
         if task == "deck_frame":
