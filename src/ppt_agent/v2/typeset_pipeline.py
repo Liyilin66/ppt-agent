@@ -436,6 +436,8 @@ RICH_SYSTEM = (
     'actually supports: single (one figure carries it), comparison (things set against each other), '
     'trend (one measure over time), proportion (part of a whole), ranking (one measure across several things), '
     'sequence (steps in order), timeline (dated events: fill date on each item), structure (parts of a whole), '
+    'hierarchy (levels where each rests on the one below, such as infrastructure / model / application: list the '
+    'top level first and the foundation last; only when the source itself describes levels), '
     'cause (one thing leading to another), cases (named examples for one claim). '
     'highlight is the focal fact {{value, text}}: the figure a reader should see first and the words that say what it measures. '
     'It must be the same figure the title carries. '

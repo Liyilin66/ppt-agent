@@ -52,6 +52,7 @@ ink（墨色底）、redf（朱红底）、sand（浅褐底），配 pad（内�
 - 时间轴：<div class="tl"><div class="axis"></div> 后面每个事件是 <div class="ev up">（或 down，交替）<div class="stem"></div><div class="dot"></div><div class="txt">日期和说明</div></div>，3 到 5 个事件。
 - 阶梯：<div class="stairs"> 里每步是 <div class="st" style="margin-left:21%">，逐步加大 margin-left；最后一步加 last。
 - 因果链：<div class="flow"> 里 <div class="node">…</div><div class="arrow">→</div><div class="node end">…</div>。
+- 层级图：<div class="layers"> 里每层是 <div class="ly" style="width:58%"><div class="nm">层名</div><div class="s">说明</div></div>，自上而下 3 到 5 层，宽度逐层加大，最底层写 width:100% 并加 base。只用于真正有上下层级（上层建立在下层之上）的内容。
 - 四象限：<div class="mx"> 里 4 个 <div class="q">，用 br / bb 画出十字线。
 - 账本：<div class="ledger"> 里每行 <div class="li"><div class="fig">数字</div><div class="r gap0">名称和说明</div></div>；fig 加 w 放更宽的数字，加 n 当序号。
 - 图表（会变成可编辑的原生图表）：只有内容里给了核对过的数据序列时才能画。提示里会给出完整的一行 <div class="chart" data-chart='…'></div> 和它的图注，原样放进页面，data-chart 里一个字符都不要改，也不要自己写图表数据。图表区域至少占 6 列、4 行；图注（类名 c）写在图表正上方。图表旁边的文字只解释含义，不逐个重复图里的数。

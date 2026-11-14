@@ -165,6 +165,7 @@ Relation = Literal[
     "sequence",    # steps that follow one another
     "timeline",    # dated events
     "structure",   # parts of a whole and how they relate
+    "hierarchy",   # levels that rest on one another, the top one first
     "cause",       # one thing leading to another
     "cases",       # named examples supporting one claim
 ]

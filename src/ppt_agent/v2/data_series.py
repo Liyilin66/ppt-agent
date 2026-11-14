@@ -337,7 +337,7 @@ def assign(found: dict[int, list[DataSeries]], contents: dict[int, dict[str, Any
 
 
 def summary(by_packet: list[dict[str, Any]], placed: dict[int, list[DataSeries]]) -> dict[str, Any]:
-    distinct = {json.dumps(item, ensure_ascii=False, sort_keys=True) for result in by_packet for item in result["series"]}
+    distinct = {signature(DataSeries.model_validate(item)) for result in by_packet for item in result["series"]}
     return {"packets_read": sum(bool(result.get("called")) for result in by_packet),
             "series_proposed": sum(result.get("proposed", 0) for result in by_packet),
             "series_verified": len(distinct),

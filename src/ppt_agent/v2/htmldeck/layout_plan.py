@@ -33,12 +33,13 @@ FORMS_FOR: dict[str, tuple[str, ...]] = {
     "sequence": ("stairs", "flow"),
     "timeline": ("timeline", "ledger"),
     "structure": ("matrix", "columns", "ledger"),
+    "hierarchy": ("layers", "stairs", "ledger"),
     "cause": ("flow", "margin", "split"),
     "cases": ("ledger", "table", "margin", "columns"),
 }
 TIER_FORMS = {
     "visual": {"poster", "units", "statement", "strip", "columns", "split"},
-    "deep": {"ledger", "table", "chart", "matrix", "margin", "timeline", "flow"},
+    "deep": {"ledger", "table", "chart", "matrix", "margin", "timeline", "flow", "layers"},
 }
 SYMMETRIC = {"timeline", "columns", "table", "stairs"}  # no left/right version
 
@@ -106,7 +107,7 @@ def candidates(content: dict[str, Any]) -> list[str]:
             return dated >= 3 and len(items) <= 5
         if form == "statement":
             return not highlight and len(items) <= 3
-        if form in ("stairs", "flow"):
+        if form in ("stairs", "flow", "layers"):
             return 3 <= len(items) <= 5
         if form == "matrix":
             return len(items) == 4
