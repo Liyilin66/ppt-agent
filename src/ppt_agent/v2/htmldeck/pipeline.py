@@ -91,6 +91,14 @@ def _required(job: DesignJob, measured: Measured) -> list[Defect]:
         missing.append(Defect("missing", f"页面上没有原样写出标题「{job.title}」。"))
     if job.source and _plain(job.source) not in text:
         missing.append(Defect("missing", "页脚的资料来源没有原样写出，请一字不差地放进 source。"))
+    from ppt_agent.v2.htmldeck import charts
+
+    series = charts.chartable(job.content) if job.form == "chart" else None
+    drawn = any(item["kind"] == "chart" for item in measured.items)
+    if series is not None and not drawn:
+        missing.append(Defect("missing", "这一页的形式是图表，但页面上没有图表。请把给你的 data-chart 原样放进一个 chart 元件。"))
+    if series is not None and drawn and _plain(charts.caption(series)) not in text:
+        missing.append(Defect("missing", f"图表上方要有一行图注（类名 c），原样写：{charts.caption(series)}"))
     return missing
 
 

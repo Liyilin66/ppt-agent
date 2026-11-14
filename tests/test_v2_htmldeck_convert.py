@@ -110,3 +110,27 @@ def test_bad_chart_data_is_rejected(spec):
 def test_an_empty_page_is_rejected():
     with pytest.raises(ConvertError):
         page(box(x=5000))
+
+
+def test_a_studio_chart_is_native_editable_and_marks_its_focus_and_forecast(tmp_path):
+    from pptx import Presentation
+
+    from ppt_agent.v2.htmldeck import themes
+    from ppt_agent.v2.ir import ChartItem, ChartSeries, DeckDesign, Frame, PageDesign
+    from ppt_agent.v2.render import render_deck
+
+    chart = ChartItem(id="c1", frame=Frame(x=80, y=160, w=560, h=380), chart="column",
+                      categories=["2023年", "2024年"], series=[ChartSeries(name="规模", values=[5132, 6233])],
+                      show_legend=False, show_data_labels=True, font_pt=12, show_value_axis=False,
+                      show_gridlines=False, number_format='#,##0"亿美元"', highlight=1, projected=[1])
+    deck = DeckDesign(deck_title="t", language="zh-CN", theme=themes.get("studio").spec,
+                      pages=[PageDesign(page_number=1, role="content", title="t", elements=[chart])])
+    path = render_deck(deck, tmp_path / "c.pptx", assets_dir=tmp_path)
+    shape = next(shape for shape in Presentation(path).slides[0].shapes if shape.has_chart)
+    plot = shape.chart.plots[0]
+    assert list(plot.categories) == ["2023年", "2024年"] and list(plot.series[0].values) == [5132, 6233]
+    assert shape.chart.part.chart_workbook.xlsx_part is not None  # the data opens in PowerPoint's own editor
+    first, forecast = plot.series[0].points[0].format, plot.series[0].points[1].format
+    assert str(first.fill.fore_color.rgb) == "B9B2A3"
+    assert forecast.fill.type is None or forecast.fill.type != 1  # hollow
+    assert str(forecast.line.color.rgb) == "C8371F"

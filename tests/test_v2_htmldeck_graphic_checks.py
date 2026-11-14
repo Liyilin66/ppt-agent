@@ -65,6 +65,9 @@ def test_the_hand_written_samples_obey_the_rules():
         "strip": {"items": [{"heading": "融资占比", "body": "AI 融资占全行业融资比例 4.5%", "value": "4.5%"},
                             {"heading": "融资占比", "body": "AI 融资占全行业融资比例 12.1%", "value": "12.1%"}]},
         "units": {"highlight": {"value": "90%", "text": "面板缺陷检测准确率"}},
+        "chart": {"series": [{"metric": "参数规模", "unit": "亿", "kind": "category", "points": [
+            {"label": "GPT-3（2020）", "value": 1750, "display": "1750亿", "ref": "a.pdf 第15页"},
+            {"label": "MiniCPM-2.4B（2024）", "value": 24, "display": "24亿", "ref": "a.pdf 第15页"}]}]},
     }
     for form in themes.STUDIO_FORMS:
         found = graphic_checks.find(sanitize.clean(themes.studio_example(form))[0], samples.get(form, {}))

@@ -14,7 +14,7 @@ from lxml import etree
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION, XL_MARKER_STYLE
 from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
@@ -356,6 +356,88 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
             chart.category_axis.reverse_order = True
         except ValueError:
             pass
+    if theme.name == "html-studio":
+        _editorial_chart(chart, item, theme)
+
+
+_QUIET, _AXIS_TEXT = "B9B2A3", "6F6A5E"  # the bars a page is not about; what labels them
+
+
+def _editorial_chart(chart, item: ChartItem, theme: ThemeSpec) -> None:
+    """The studio theme's chart: one accent on the point the page is about,
+    everything else quiet, no frame, no grid, forecasts drawn hollow."""
+
+    accent, quiet = _rgb(theme.palette.accent), RGBColor.from_string(_QUIET)
+    plot = chart.plots[0]
+    series = plot.series[0]
+    count = len(item.categories)
+    focus = item.highlight if item.highlight is not None and item.highlight < count else None
+    labels = plot.data_labels
+    labels.font.size = Pt(item.font_pt or 12)
+    labels.font.name = theme.fonts.body_latin
+    labels.font.color.rgb = _rgb(theme.palette.text)
+    if item.chart in ("bar", "column"):
+        plot.gap_width = 90 if count <= 3 else 60
+        labels.position = XL_LABEL_POSITION.OUTSIDE_END
+        series.format.fill.solid()
+        series.format.fill.fore_color.rgb = quiet
+        for index in range(count):
+            fill, line = series.points[index].format.fill, series.points[index].format.line
+            colour = accent if index == focus else quiet
+            if index in item.projected:
+                # A forecast is an outline: the shape of a value nobody has measured yet.
+                fill.background()
+                line.color.rgb = colour
+                line.width = Pt(1.5)
+                line.dash_style = MSO_LINE_DASH_STYLE.DASH
+            else:
+                fill.solid()
+                fill.fore_color.rgb = colour
+                line.fill.background()
+    elif item.chart == "line":
+        labels.position = XL_LABEL_POSITION.ABOVE
+        series.smooth = False
+        series.format.line.color.rgb = accent
+        series.format.line.width = Pt(2.25)
+        series.marker.style = XL_MARKER_STYLE.CIRCLE
+        series.marker.size = 8
+        series.marker.format.fill.solid()
+        series.marker.format.fill.fore_color.rgb = accent
+        series.marker.format.line.color.rgb = accent
+        for index in item.projected:
+            marker = series.points[index].marker
+            marker.style = XL_MARKER_STYLE.CIRCLE
+            marker.size = 8
+            marker.format.fill.solid()
+            marker.format.fill.fore_color.rgb = _rgb(theme.palette.background)
+            marker.format.line.color.rgb = accent
+            if index:
+                # The stretch that leads to a forecast is dashed, in the line's own colour.
+                segment = series.points[index].format.line
+                segment.color.rgb = accent
+                segment.width = Pt(2.25)
+                segment.dash_style = MSO_LINE_DASH_STYLE.DASH
+    elif item.chart in ("pie", "doughnut"):
+        chart.has_legend = False
+        labels.show_category_name = True
+        labels.show_value = True
+        labels.show_percentage = False
+        if item.chart == "pie":
+            labels.position = XL_LABEL_POSITION.OUTSIDE_END  # a ring has no outside; its labels sit on the colour
+        tones = ["8C8577", _QUIET, "D8D1C2", "A39C8D", "C9C2B2", "E4DED0", "97907F"]
+        for index in range(count):
+            fill = series.points[index].format.fill
+            fill.solid()
+            fill.fore_color.rgb = accent if index == focus else RGBColor.from_string(tones[index % len(tones)])
+            series.points[index].format.line.color.rgb = _rgb(theme.palette.background)
+    for axis_name in ("category_axis", "value_axis"):
+        try:
+            axis = getattr(chart, axis_name)
+        except ValueError:
+            continue
+        axis.tick_labels.font.color.rgb = RGBColor.from_string(_AXIS_TEXT)
+        axis.format.line.color.rgb = RGBColor.from_string(_QUIET)
+        axis.has_major_gridlines = False
 
 
 def _set_axis_fonts(axis, theme: ThemeSpec) -> None:

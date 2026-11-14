@@ -14,6 +14,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from ppt_agent.v2.htmldeck.charts import chartable
 from ppt_agent.v2.htmldeck.themes import STUDIO_FORMS
 
 FOCUS = ("left", "right")
@@ -80,7 +81,7 @@ def candidates(content: dict[str, Any]) -> list[str]:
     relation, tier = content.get("relation", "cases"), content.get("tier", "standard")
     items = content.get("items") or []
     highlight = (content.get("highlight") or {}).get("value")
-    series = content.get("categories") or []
+    series = chartable(content)
     rows = content.get("rows") or []
     dated = sum(bool(item.get("date")) for item in items)
 
@@ -91,7 +92,7 @@ def candidates(content: dict[str, Any]) -> list[str]:
 
     def usable(form: str) -> bool:
         if form == "chart":
-            return len(series) >= 2
+            return series is not None
         if form == "table":
             return len(rows) >= 2
         if form == "poster":
@@ -121,6 +122,8 @@ def candidates(content: dict[str, Any]) -> list[str]:
     preferred = TIER_FORMS.get(tier)
     if preferred:
         ordered.sort(key=lambda form: form not in preferred)
+    if series:
+        ordered.sort(key=lambda form: form != "chart")  # whatever the density, data that can be drawn is drawn
     for fallback in ("ledger", "margin"):
         if fallback not in ordered:
             ordered.append(fallback)
@@ -136,12 +139,13 @@ def conflict(candidate: Fingerprint, earlier: list[Fingerprint], total: int, *, 
 
     for other in earlier:
         gap = candidate.page - other.page
-        if other.form == candidate.form and gap <= SAME_FORM_GAP:
+        # A chart is drawn wherever the data is; two in a row differ in their data, and must differ in structure.
+        if other.form == candidate.form and gap <= SAME_FORM_GAP and candidate.form != "chart":
             return f"第 {other.page} 页刚用过同一种形式"
         if strictness >= 1 and other.structure == candidate.structure and gap <= SAME_STRUCTURE_GAP:
             return f"和第 {other.page} 页的空间结构相同"
     used = sum(other.form == candidate.form for other in earlier)
-    if strictness >= 2 and total >= 8 and (used + 1) / total > MAX_FORM_SHARE:
+    if strictness >= 2 and total >= 8 and candidate.form != "chart" and (used + 1) / total > MAX_FORM_SHARE:
         return "这种形式在整套里用得太多"
     return None
 
@@ -195,6 +199,13 @@ def repair(saved: list[Fingerprint], contents: dict[int, dict[str, Any]]) -> lis
     plan = list(saved)
     for index, item in enumerate(plan):
         allowed = candidates(contents[item.page])
+        if allowed[0] == "chart" and item.form != "chart":
+            # The page has gained data a chart can draw: draw it, on the side the last chart did not use.
+            last = next((other for other in reversed(plan[:index]) if other.form == "chart"), None)
+            plan[index] = Fingerprint(page=item.page, form="chart",
+                                      focus="right" if last is not None and last.focus == "left" else "left",
+                                      ratio="wide")
+            continue
         if item.form in allowed:
             continue
         nearby = {other.form for other in plan if 0 < abs(other.page - item.page) <= SAME_FORM_GAP}
@@ -222,7 +233,7 @@ async def plan_layouts(client: Any, contents: dict[int, dict[str, Any]]) -> list
         {"page": page, "title": content.get("title"), "relation": content.get("relation", content.get("archetype")),
          "tier": content.get("tier", "standard"), "items": len(content.get("items") or content.get("rows") or []),
          "focal_figure": (content.get("highlight") or {}).get("value"),
-         "has_series": bool(content.get("categories")), "has_table": bool(content.get("headers")),
+         "has_series": chartable(content) is not None, "has_table": bool(content.get("headers")),
          "allowed": candidates(content)}
         for page, content in sorted(contents.items())
     ]

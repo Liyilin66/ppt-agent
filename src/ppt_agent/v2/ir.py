@@ -155,6 +155,7 @@ class ChartItem(BaseElement):
     show_gridlines: bool = True
     number_format: str | None = Field(default=None, max_length=40)
     highlight: int | None = Field(default=None, ge=0)  # the category the page is about
+    projected: list[int] = Field(default_factory=list)  # categories that are forecasts, drawn hollow
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:

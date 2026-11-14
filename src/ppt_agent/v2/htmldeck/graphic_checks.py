@@ -9,6 +9,7 @@ invented heights, are defects however well the page fits.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -152,8 +153,26 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                     f"以「{_label(first)}」开头的区域（列 {a[0]}/{a[1]}、行 {a[2]}/{a[3]}）和以「{_label(second)}」开头的区域"
                     f"（列 {b[0]}/{b[1]}、行 {b[2]}/{b[3]}）占了同一块格子，内容会叠在一起。请改行号让它们上下错开。"))
     allowed, known = shares(content), _percentages(content)
+    from ppt_agent.v2.htmldeck import charts
+
+    drawable = [series for series in content.get("series") or [] if charts.kind_for(series)]
 
     for node in tree.root.walk():
+        # A chart says what a verified series says, value for value, or it is not drawn.
+        if node.has("chart") and "data-chart" in node.attrs:
+            try:
+                drawn = json.loads(node.attrs["data-chart"])
+            except ValueError:
+                drawn = None
+            if not drawable:
+                defects.append(Defect(
+                    "bad_chart", "这一页没有核对过的数据序列，不能画图表。请删掉图表，用文字和数字表达。"))
+            elif not isinstance(drawn, dict) or not any(charts.same(drawn, series) for series in drawable):
+                defects.append(Defect(
+                    "bad_chart",
+                    "图表的数据被改动了。data-chart 必须原样使用给你的这一段，一个字符都不要改："
+                    + charts.attr(drawable[0])))
+
         # A region inside a region has no cell of its own; its grid placement is ignored.
         if node.has("r") and re.search(r"grid-(?:column|row)", node.style):
             ancestor = node.parent

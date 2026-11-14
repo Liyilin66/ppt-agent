@@ -133,7 +133,10 @@ def test_a_form_is_offered_only_when_the_content_can_fill_it():
     assert candidates(_rich("single", "visual", 2, "90%"))[:2] == ["poster", "units"]
     assert "units" not in candidates(_rich("single", "visual", 2, "316亿美元"))
     assert "chart" not in candidates(_rich("ranking"))
-    assert candidates(_rich("ranking", categories=["a", "b"], values=[1, 2]))[0] == "chart"
+    ranked = [{"metric": "m", "unit": "%", "kind": "category", "points": [
+        {"label": "a", "value": 1, "display": "1%", "ref": "r"}, {"label": "b", "value": 2, "display": "2%", "ref": "r"}]}]
+    assert candidates(_rich("ranking", series=ranked))[0] == "chart"
+    assert "chart" not in candidates(_rich("ranking", categories=["a", "b"], values=[1, 2]))  # unchecked numbers are not drawn
     assert candidates(_rich("timeline", items=4, date="2024年"))[0] == "timeline"
     assert candidates(_rich("timeline", items=4))[0] == "ledger"  # no dates, no axis
     assert candidates(_rich("structure", items=4))[0] == "matrix"

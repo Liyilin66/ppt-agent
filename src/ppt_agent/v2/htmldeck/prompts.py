@@ -97,6 +97,23 @@ def layout_idea(archetype: str, occurrence: int) -> str:
     return ideas[occurrence % len(ideas)]
 
 
+def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
+    """The chart this page draws, written out so the model only has to place it."""
+
+    from ppt_agent.v2.htmldeck import charts
+
+    series = charts.chartable(content)
+    if series is None or not idea.startswith("chart"):
+        return []
+    return [
+        "这一页要画的图表（数据已逐个核对过原文）。把下面两行原样放进页面，data-chart 里一个字符都不要改，"
+        "图注用类名 c，写在图表的正上方；图表区域至少占 6 列、4 行：\n"
+        f'<div class="c">{charts.caption(series)}</div>\n'
+        f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
+        "图表已经画出了每个数值，旁边的文字不要再逐个重复这些数，只写它说明了什么。"
+    ]
+
+
 def user_prompt(
     *,
     content: dict[str, Any],
@@ -116,6 +133,7 @@ def user_prompt(
         + (source or "（无，source 留空）"),
         "这一页的内容（已核对，数字和事实不能改，可以删减措辞，不能新增）：\n"
         + json.dumps(content, ensure_ascii=False, indent=1),
+        *_chart_brief(content, idea),
         f"建议的排布：{idea}",
         "同一套类名写出的示范页（只学写法，内容不要照抄）：\n"
         + (example_html or themes.example(EXAMPLE_FOR.get(archetype, "columns"))),
