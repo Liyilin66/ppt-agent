@@ -76,3 +76,23 @@ def test_a_clean_page_has_no_defects():
 def test_each_kind_of_defect_is_found(body, kind):  # noqa: D103
     found = _defects(body, allowed=numbers_in("70%"))
     assert kind in found, found
+
+
+def _line(words, *, size, y, cls):
+    return {"kind": "text", "runs": [{"t": words, "size": size, "color": "rgb(26, 25, 22)"}], "lines": 1, "cls": cls,
+            "linePx": size * 1.2, "text": {"x": 700, "y": y, "w": 300, "h": size * 1.2},
+            "box": {"x": 700, "w": 300}, "parent": {"x": 0, "y": 0, "w": 1280, "h": 720}}
+
+
+def test_half_a_unit_under_its_figure_is_a_mistake_and_a_whole_one_is_a_choice():
+    from ppt_agent.v2.htmldeck.browser import Measured
+    from ppt_agent.v2.htmldeck.checks import find_defects
+
+    def kinds(figure, unit, gap=4):
+        items = [_line(figure, size=58, y=200, cls="d4"), _line(unit, size=24, y=200 + 70 + gap, cls="unit")]
+        return [d.kind for d in find_defects(Measured(background="", items=items), None, require_fill=False)]
+
+    assert "split_unit" in kinds("6233亿", "美元")
+    assert "split_unit" not in kinds("1287", "兆瓦时")      # the whole unit under the figure
+    beside = [_line("6233", size=58, y=200, cls="d4"), {**_line("亿美元", size=24, y=230, cls="unit")}]
+    assert "split_unit" not in [d.kind for d in find_defects(Measured(background="", items=beside), None, require_fill=False)]

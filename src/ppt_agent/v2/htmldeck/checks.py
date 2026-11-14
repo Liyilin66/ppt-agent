@@ -283,6 +283,24 @@ def find_defects(
                     continue
                 if value not in allowed:
                     defects.append(Defect("extra_number", f"数字「{token}」不在给定内容里，请删除或改用给定的数字。", text))
+    # A unit cut in two - "6233亿" with "美元" on the line below - reads as two things. (A whole unit set
+    # under its figure is a choice some pages make; half of one is a mistake.)
+    for unit in (item for item in texts if "unit" in str(item.get("cls", "")).split()):
+        own = _line_rect(unit)
+        middle = own["y"] + own["h"] / 2
+        figures = [item for item in texts if item is not unit and any(
+            run["size"] >= 48 for run in item["runs"] if run.get("t", "").strip())]
+        if any(_line_rect(item)["y"] <= middle <= _line_rect(item)["y"] + _line_rect(item)["h"] for item in figures):
+            continue
+        above = [item for item in figures
+                 if 0 <= own["y"] - (_line_rect(item)["y"] + _line_rect(item)["h"]) < 40
+                 and min(own["x"] + own["w"], _line_rect(item)["x"] + _line_rect(item)["w"]) > max(own["x"], _line_rect(item)["x"])]
+        if above and re.search(r"[^\d\s.,%％+\-→~约超近]$", _item_text(above[0])):
+            defects.append(Defect(
+                "split_unit",
+                f"「{_short(_item_text(above[0]))}」和「{_short(_item_text(unit))}」是一个单位被拆成了两行。数字和完整的单位必须在同一行："
+                '把它们放进同一个 <div class="rowx base">，放不下就把数字换小一号或给这个区域多几列。',
+                _item_text(unit)))
     if tier is not None:
         from ppt_agent.v2.htmldeck import aesthetics
 

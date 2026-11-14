@@ -154,7 +154,8 @@ def _fingerprint(job: DesignJob, idea: str | None = None) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
-async def _replay(session, theme, font_css, job: DesignJob, html: str, *, recheck: bool = False) -> PageResult:
+async def _replay(session, theme, font_css, job: DesignJob, html: str, *, recheck: bool = False,
+                  trusted: bool = False) -> PageResult:
     """Rebuild a page from HTML saved by an earlier run; no model call.
 
     A page that no longer fits comes back not ok with what is wrong in
@@ -170,7 +171,7 @@ async def _replay(session, theme, font_css, job: DesignJob, html: str, *, rechec
     tier = str(job.content.get("tier") or "standard") if recheck else None
     found = find_defects(measured, None, tier=tier) + (graphic_checks.find(body, job.content) if recheck else [])
     hard = [defect.message for defect in found if defect.kind not in SOFT]
-    if hard:
+    if hard and not trusted:  # a signed-off page is not judged by rules written after it was signed
         result.defects = hard
         return result
     try:
@@ -266,7 +267,7 @@ async def design_deck(
                     job.idea = cached.get("idea") or job.idea
                     studio = theme.vocabulary == 2
                     if job.page_number in accepted:
-                        saved = await _replay(session, theme, font_css, job, cached["html"])
+                        saved = await _replay(session, theme, font_css, job, cached["html"], trusted=True)
                         saved.attempts = 0
                         if saved.ok:
                             results[job.page_number] = saved

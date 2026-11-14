@@ -46,10 +46,15 @@ RICH = {"archetype": "rich", "relation": "single", "tier": "visual", "highlight"
         "items": [{"heading": "占比"}], "series": [SERIES]}
 
 
-def test_a_supporting_chart_does_not_take_over_the_page():
-    assert layout_plan.candidates({**RICH, "visual": {"role": "primary"}})[0] == "chart"
-    supporting = layout_plan.candidates({**RICH, "visual": {"role": "supporting"}})
-    assert "chart" not in supporting and supporting[0] == "poster"
+def test_a_supporting_chart_is_drawn_small_beside_the_pages_own_figure():
+    from ppt_agent.v2.htmldeck import prompts
+
+    saved = [layout_plan.Fingerprint(page=5, form="ledger")]
+    lead = layout_plan.repair(saved, {5: {**RICH, "visual": {"role": "primary"}}})[0]
+    second = layout_plan.repair(saved, {5: {**RICH, "visual": {"role": "supporting"}}})[0]
+    assert (lead.form, lead.ratio) == ("chart", "wide") and (second.form, second.ratio) == ("chart", "narrow")
+    brief = prompts._chart_brief({**RICH, "visual": {"role": "supporting"}}, "chart——…")[0]
+    assert "不是主角" in brief and "data-chart" in brief
 
 
 def levels(extra=None, groups=None):

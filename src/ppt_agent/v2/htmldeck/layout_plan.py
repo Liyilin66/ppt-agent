@@ -123,12 +123,10 @@ def candidates(content: dict[str, Any]) -> list[str]:
     preferred = TIER_FORMS.get(tier)
     if preferred:
         ordered.sort(key=lambda form: form not in preferred)
-    supporting = (content.get("visual") or {}).get("role") == "supporting"
-    if series and not supporting:
-        ordered.sort(key=lambda form: form != "chart")  # the chart is what the page claims: it leads
-    elif series:
-        # The chart is evidence for a claim about another measure: the page keeps its own form and carries it.
-        ordered = [form for form in ordered if form != "chart"]
+    if series:
+        # Chart beside a figure and notes: the chart leads when it is the claim, and stands
+        # second to the page's own figure when it is evidence for it (see ``repair``).
+        ordered.sort(key=lambda form: form != "chart")
     elif content.get("diagram"):
         ordered.insert(0, "layers")  # a figure of the source, redrawn level for level
     elif content.get("figure"):
@@ -212,9 +210,10 @@ def repair(saved: list[Fingerprint], contents: dict[int, dict[str, Any]]) -> lis
                 and item.form != allowed[0]:
             # The page has gained something to show: show it, on the side the last such page did not use.
             last = next((other for other in reversed(plan[:index]) if other.form == allowed[0]), None)
+            supporting = (contents[item.page].get("visual") or {}).get("role") == "supporting"
             plan[index] = Fingerprint(page=item.page, form=allowed[0],
                                       focus="right" if last is not None and last.focus == "left" else "left",
-                                      ratio="wide")
+                                      ratio="narrow" if supporting and allowed[0] == "chart" else "wide")
             continue
         if item.form in allowed:
             continue

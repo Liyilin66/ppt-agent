@@ -106,16 +106,19 @@ def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
     series = charts.chartable(content)
     if series is None:
         return []
-    if not idea.startswith("chart"):
+    if (content.get("visual") or {}).get("role") == "supporting":
         # Evidence for a claim about another measure: present, and second to the page's own figure.
         return [
-            "这一页还要放一张小图表作为论据（数据已逐个核对过原文）。它不是主角：页面第一眼仍然是上面说的焦点，"
-            "图表放在次要位置，占 4 到 5 列、3 到 4 行。把下面两行原样放进同一个区域，data-chart 里一个字符都不要改，"
+            "这一页要放一张图表作为论据（数据已逐个核对过原文）。它不是主角：页面第一眼是上面说的焦点数字，"
+            "把焦点数字放大（d2 或 d3）并放在图表旁边那一栏的最上面；图表占 5 到 6 列、4 到 5 行，不要更大。"
+            "其余条目最多再写两条，每条一句话，放不下就删。把下面两行原样放进同一个区域，data-chart 里一个字符都不要改，"
             "图注用类名 c，写在图表的正上方：\n"
             f'<div class="c">{charts.caption(series)}</div>\n'
             f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
             "图表已经画出了每个数值，文字不要再逐个重复。"
         ]
+    if not idea.startswith("chart"):
+        return []
     return [
         "这一页要画的图表（数据已逐个核对过原文）。把下面两行原样放进页面，data-chart 里一个字符都不要改，"
         "图注用类名 c，写在图表的正上方；图表区域至少占 6 列、4 行：\n"
