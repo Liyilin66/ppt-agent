@@ -1,0 +1,343 @@
+{
+ "4": {
+  "review": {
+   "looks": 3,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0"
+     ],
+     "scores": {
+      "hierarchy": 5.0,
+      "polish": 5.0,
+      "fit": 4.0,
+      "legibility": 4.0,
+      "composition": 4.67,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.67,
+     "wins": 2,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右栏文字偏小且密集，投影阅读压力较大。",
+      "缺少资料原图，增长论据的视觉支撑弱于A、B。",
+      "右栏第三项“模型迭代活跃”未突出“近百个”这一关键数值，信息表达不完整。",
+      "缺少资料原图，产业规模增长的视觉证据弱于文字表述。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.67,
+      "polish": 3.67,
+      "fit": 5.0,
+      "legibility": 4.33,
+      "composition": 4.0,
+      "consistency": 4.33,
+      "accuracy": 5.0
+     },
+     "overall": 4.43,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右下“生成式AI加速产业化”与左侧增速说明的对应关系不够直观。",
+      "右侧大标题与左侧图表信息密度略失衡，标题区可再压缩以增强图表与论点的联动。",
+      "底部结论行字号偏小且横向过长，投影时阅读效率略低。",
+      "信息密度集中在下半部，图表、说明、两项补充结论和行动建议略显拥挤。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 3.33,
+      "fit": 4.67,
+      "legibility": 3.67,
+      "composition": 3.33,
+      "consistency": 3.33,
+      "accuracy": 5.0
+     },
+     "overall": 3.9,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧信息块较多，底部结论与上方说明的层次可再拉开。",
+      "右栏文字块过窄，标题、结论和正文多处生硬换行，投影可读性较差。",
+      "图表与右侧信息区比例失衡，右下结论拥挤且页面重心偏左。",
+      "右侧结论区的正文与底部行动建议字号偏小，投影时阅读压力较大。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "why": "原版本就是得分最高的合格版本"
+  }
+ },
+ "5": {
+  "review": {
+   "looks": 3,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.33,
+      "polish": 4.33,
+      "fit": 4.0,
+      "legibility": 4.0,
+      "composition": 4.33,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.43,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧第三项的12.1%条形仅表现单一比例，未呈现与2022年4.5%的对比关系。",
+      "左侧主标题与右侧信息块之间留白偏大，叙事连接稍弱。",
+      "右侧第三条说明与进度条文字偏小，远距离投影阅读略吃力。",
+      "右侧第三项的比例条未体现12.1%的比较语境，视觉解释力较弱。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.33,
+      "polish": 4.33,
+      "fit": 4.0,
+      "legibility": 4.0,
+      "composition": 4.33,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.43,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧第三项的12.1%条形仅表现单一比例，未呈现与2022年4.5%的对比关系。",
+      "左侧主标题与右侧信息块之间留白偏大，叙事连接稍弱。",
+      "右侧第三条说明与进度条文字偏小，远距离投影阅读略吃力。",
+      "右侧第三项的比例条未体现12.1%的比较语境，视觉解释力较弱。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.67,
+      "polish": 4.67,
+      "fit": 4.67,
+      "legibility": 4.67,
+      "composition": 4.67,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.76,
+     "wins": 2,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧说明文字略小且偏浅，会议室远距离投影时对比度可再提高。",
+      "右侧84%结论与左侧柱状图之间的关联较弱，且“6笔”信息未呈现。",
+      "右下说明文字偏小，投影时可读性一般。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "lead": 0.33,
+   "why": "最高分版本只领先 0.33 分；差距不足以换掉原版本"
+  }
+ },
+ "7": {
+  "review": {
+   "looks": 3,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.0,
+      "legibility": 4.67,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.38,
+     "wins": 3,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "表格仅概括三条主线，未呈现“全流程风险管理”等关键论据的展开关系。",
+      "表格将复杂论点压缩为短语，未充分呈现场景匹配、MLOps与风险闭环的具体逻辑。",
+      "中下部留白较大，表格可适度放大或增加简洁的关系提示。",
+      "表格仅概括三条路径，未呈现场景匹配、MLOps与风险闭环之间的关联逻辑。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.0,
+      "legibility": 4.67,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.38,
+     "wins": 3,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "表格仅概括三条主线，未呈现“全流程风险管理”等关键论据的展开关系。",
+      "表格将复杂论点压缩为短语，未充分呈现场景匹配、MLOps与风险闭环的具体逻辑。",
+      "中下部留白较大，表格可适度放大或增加简洁的关系提示。",
+      "表格仅概括三条路径，未呈现场景匹配、MLOps与风险闭环之间的关联逻辑。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 3.33,
+      "polish": 3.0,
+      "fit": 4.33,
+      "legibility": 2.0,
+      "composition": 3.0,
+      "consistency": 3.33,
+      "accuracy": 5.0
+     },
+     "overall": 3.43,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧资料原图文字极小且图形复杂，投影下难以辨识。",
+      "左侧与右侧信息密度和视觉重量不均，底部结论区域略显拥挤。",
+      "右侧风险管理原图字号和细节过小，投影难以辨识。",
+      "左侧原则与右侧图解、底部结论的信息密度不均，右上区域略显拥挤。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "why": "原版本就是得分最高的合格版本"
+  }
+ },
+ "17": {
+  "review": {
+   "looks": 3,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.0,
+      "legibility": 3.33,
+      "composition": 3.67,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.14,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧四条风险信息字号偏小、行距紧，投影阅读负担较大。",
+      "“超10亿美元”与框架漏洞说明的对应关系需更紧密，避免被看作独立结论。",
+      "右侧三项风险说明字号偏小且灰度偏低，投影时不够醒目。",
+      "左侧结论段与右侧信息区的关联较弱，信息密度分布不均。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.33,
+      "polish": 3.67,
+      "fit": 5.0,
+      "legibility": 4.0,
+      "composition": 4.33,
+      "consistency": 3.67,
+      "accuracy": 5.0
+     },
+     "overall": 4.29,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "左侧原图分辨率偏低，图内文字在投影上不易辨认。",
+      "右侧文案被拆成多个短区块，未完整呈现社会层面风险外溢信息。",
+      "右栏将四类风险压缩成三段，遗漏“社会层面风险外溢”的明确表达。",
+      "标题在右上分行断裂生硬；原图色彩与整套视觉语言仍有割裂。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.67,
+      "polish": 4.0,
+      "fit": 5.0,
+      "legibility": 4.0,
+      "composition": 4.0,
+      "consistency": 3.67,
+      "accuracy": 5.0
+     },
+     "overall": 4.33,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "原图内文字仍偏小，且图注灰度较低。",
+      "“超10亿美元”对应说明表述过于简化，未交代框架漏洞和数千服务器遭攻击的事实。",
+      "资料原图的蓝绿色与整套红黑米白语言割裂，图像边框也偏像外嵌素材。",
+      "左侧“超10亿美元”过大，压缩了风险逻辑和结论文字的呼吸空间。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "lead": 0.19,
+   "why": "最高分版本只领先 0.19 分，且没有在多数评审中胜出；差距不足以换掉原版本"
+  }
+ }
+}

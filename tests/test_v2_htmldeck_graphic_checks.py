@@ -65,6 +65,8 @@ def test_the_hand_written_samples_obey_the_rules():
         "strip": {"items": [{"heading": "融资占比", "body": "AI 融资占全行业融资比例 4.5%", "value": "4.5%"},
                             {"heading": "融资占比", "body": "AI 融资占全行业融资比例 12.1%", "value": "12.1%"}]},
         "units": {"highlight": {"value": "90%", "text": "面板缺陷检测准确率"}},
+        "margin": {"series": [{"metric": "正确率", "unit": "%", "kind": "category", "points": [
+            {"label": "GPT-3.5", "value": 48, "display": "48%", "ref": "r"}, {"label": "GPT-4", "value": 67, "display": "67%", "ref": "r"}]}]},
         "figure": {"figure": {"id": "sample.png", "caption": "图 1", "ratio": 1.7}},
         "chart": {"series": [{"metric": "参数规模", "unit": "亿", "kind": "category", "points": [
             {"label": "GPT-3（2020）", "value": 1750, "display": "1750亿", "ref": "a.pdf 第15页"},
@@ -91,3 +93,14 @@ def test_regions_may_not_share_cells():
     assert "unsupported" in kinds(page("8/9"), {}) and kinds(page("9/10"), {}) == []
     assert "unsupported" not in kinds('<div class="page"><div class="r" style="grid-column:1/7;grid-row:2/9">左</div>'
                                       '<div class="r" style="grid-column:7/13;grid-row:2/9">右</div></div>', {})
+
+
+def test_an_arrow_between_two_figures_needs_them_to_be_one_measure():
+    row = ('<div class="page"><div class="r" style="grid-column:1/8;grid-row:4/7"><div class="rowx base">'
+           '<div class="d3">{}</div><div class="t3 red">→</div><div class="d2 red">{}</div></div></div></div>')
+    series = [{"metric": "普及率", "unit": "%", "kind": "time", "points": [
+        {"label": "2024年12月", "value": 17.7, "display": "17.7%", "ref": "r"},
+        {"label": "2025年6月", "value": 36.5, "display": "36.5%", "ref": "r"}]}]
+    assert kinds(row.format("17.7%", "36.5%"), {"series": series}) == []
+    assert kinds(row.format("2.66亿", "5.15亿"), {"series": series}) == ["unbound_graphic"]   # an increase is not a starting point
+    assert kinds(row.format("2.66亿", "5.15亿"), {}) == ["unbound_graphic"]

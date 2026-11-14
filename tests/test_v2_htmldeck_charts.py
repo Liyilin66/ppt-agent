@@ -74,3 +74,11 @@ def test_a_page_with_a_series_is_planned_as_a_chart_and_charts_may_follow_each_o
     assert layout_plan.repair(saved, {4: RICH, 5: RICH}) == saved
     after = layout_plan.Fingerprint(page=6, form="chart", focus="left", ratio="even")  # same form, another structure
     assert layout_plan.conflict(after, plan, total=20) is None
+
+
+def test_a_page_given_a_chart_is_planned_as_one_whatever_was_proposed():
+    contents = {4: {**RICH, "series": [SHARE], "visual": {"role": "primary"}},
+                5: {**RICH, "series": [SHARE], "visual": {"role": "supporting"}}, 6: RICH}
+    plan = layout_plan.resolve({4: {"form": "ledger"}, 5: {"form": "poster"}, 6: {"form": "poster"}}, contents)
+    assert [item.form for item in plan] == ["chart", "chart", "poster"]
+    assert plan[0].structure != plan[1].structure

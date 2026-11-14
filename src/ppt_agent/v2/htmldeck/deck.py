@@ -382,7 +382,10 @@ async def design_deck(
 
             # Pages whose outlines nearly coincide, anywhere in the deck: recompose the later one.
             pairs = signature.lookalikes(outlines())
-            later_pages = sorted({later for _, later, _ in pairs})[: max(2, len(jobs) // 5)]
+            # A page built around its chart or figure looks like other such pages, and should: what it
+            # shows was decided by its content, and is not recomposed for looking like another.
+            later_pages = sorted({later for _, later, _ in pairs
+                                  if not by_page[later].content.get("visual")})[: max(2, len(jobs) // 5)]
             await asyncio.gather(*(redo(by_page[number], "和另一页的版面轮廓几乎相同", new_form=True)
                                    for number in later_pages))
             if look:

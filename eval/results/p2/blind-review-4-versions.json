@@ -1,0 +1,444 @@
+{
+ "4": {
+  "review": {
+   "looks": 5,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0"
+     ],
+     "scores": {
+      "hierarchy": 5.0,
+      "polish": 4.8,
+      "fit": 3.8,
+      "legibility": 4.6,
+      "composition": 5.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.74,
+     "wins": 3,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "未展示资料原图，产业规模的时间走势证据不如含图表版本直观。",
+      "未呈现资料原图，产业规模增长的量化趋势支撑较弱。",
+      "右栏三段说明字号偏小、灰度偏浅，投影下辨识度一般。",
+      "缺少资料原图，产业规模增长的趋势证据不如图表版本直观。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.2,
+      "polish": 3.8,
+      "fit": 4.8,
+      "legibility": 4.4,
+      "composition": 3.8,
+      "consistency": 4.2,
+      "accuracy": 5.0
+     },
+     "overall": 4.31,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "左下“产业规模增速”说明与图表距离较近，信息块略显拥挤。",
+      "右侧“生成式AI加速产业化”与主数字的关联层级不够清晰。",
+      "底部增长说明与行动结论横跨全页，区域关系较松散。",
+      "右侧“生成式AI加速产业化”说明过短，和左侧图表的信息权重不平衡。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 3.4,
+      "fit": 4.2,
+      "legibility": 3.8,
+      "composition": 3.4,
+      "consistency": 3.8,
+      "accuracy": 5.0
+     },
+     "overall": 3.94,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧结论区文字层级较多，底部管理层建议字号偏小且行距略紧。",
+      "图表与右栏之间留白偏大，视觉连接稍弱。",
+      "右侧正文与结论段落偏密，信息层级略混杂。",
+      "图表占比偏大，挤压了右侧分析区的呼吸空间。"
+     ]
+    },
+    "P2候选": {
+     "same_picture_as": [
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.6,
+      "legibility": 4.0,
+      "composition": 4.0,
+      "consistency": 4.4,
+      "accuracy": 5.0
+     },
+     "overall": 4.29,
+     "wins": 1,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧正文与补充数据较密，尤其底部两行说明在投影时偏小。",
+      "底部横跨全页的建议句与上方图文区间距较紧。",
+      "右侧末段正文较小且行距紧，会议投影下可读性略弱。",
+      "主标题与大数字均较强，首屏焦点存在轻微竞争。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "why": "原版本就是得分最高的合格版本"
+  }
+ },
+ "5": {
+  "review": {
+   "looks": 5,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 3.8,
+      "polish": 4.0,
+      "fit": 4.0,
+      "legibility": 4.0,
+      "composition": 3.8,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.23,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧第三项说明文字与进度条字号偏小，投影阅读偏吃力。",
+      "316亿美元未作为最大视觉重点，标题与右栏信息存在轻微竞争。",
+      "右侧三项信息与左侧标题联系较弱，首屏焦点分散。",
+      "12.1%进度条未直观表达4.5%至12.1%的对比关系。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P0",
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 3.8,
+      "polish": 4.0,
+      "fit": 4.0,
+      "legibility": 4.0,
+      "composition": 3.8,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.23,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧第三项说明文字与进度条字号偏小，投影阅读偏吃力。",
+      "316亿美元未作为最大视觉重点，标题与右栏信息存在轻微竞争。",
+      "右侧三项信息与左侧标题联系较弱，首屏焦点分散。",
+      "12.1%进度条未直观表达4.5%至12.1%的对比关系。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.6,
+      "polish": 4.6,
+      "fit": 4.8,
+      "legibility": 4.2,
+      "composition": 4.6,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.69,
+     "wins": 3,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "图表说明行和页脚来源字号较小。",
+      "右侧关于6笔及135亿美元的信息仅在小段文字中呈现，重点不够突出。",
+      "右侧84%与说明文字的层级略松散，且小段灰字投影下偏弱。",
+      "右侧说明文字偏小，远距离投影时阅读压力较大。"
+     ]
+    },
+    "P2候选": {
+     "same_picture_as": [
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.8,
+      "polish": 4.0,
+      "fit": 4.6,
+      "legibility": 4.2,
+      "composition": 4.6,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.6,
+     "wins": 2,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧“316亿美元”过大，压过同比84%和占比提升这一关键证据。",
+      "顶部图表说明发生换行，左侧上方留白较多，版面密度略失衡。",
+      "右侧316亿美元字号过大，挤压了说明信息；副标题换行显得不够利落。",
+      "“316亿美元”视觉权重过强，压缩了右侧其余两项事实的阅读层级。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P1",
+   "changed": true,
+   "lead": 0.46,
+   "why": "高出原版本 0.46 分；5 次评审中它被选为最好 3 次，原版本 0 次"
+  }
+ },
+ "7": {
+  "review": {
+   "looks": 5,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0",
+      "P1.5",
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.2,
+      "legibility": 4.6,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.4,
+     "wins": 5,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "表格信息较平，三列之间缺少更强的视觉区分。",
+      "底部结论字号偏小，投影时强调力不足。",
+      "表格仅概括三项行动，未呈现风险治理闭环等关键结构，论点支撑不如图示版本直接。",
+      "表格下方留白较大，内容区略显稀疏。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P0",
+      "P1.5",
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.2,
+      "legibility": 4.6,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.4,
+     "wins": 5,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "表格信息较平，三列之间缺少更强的视觉区分。",
+      "底部结论字号偏小，投影时强调力不足。",
+      "表格仅概括三项行动，未呈现风险治理闭环等关键结构，论点支撑不如图示版本直接。",
+      "表格下方留白较大，内容区略显稀疏。"
+     ]
+    },
+    "P2候选": {
+     "same_picture_as": [
+      "P0",
+      "P1.5",
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 4.2,
+      "legibility": 4.6,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 5.0
+     },
+     "overall": 4.4,
+     "wins": 5,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "表格信息较平，三列之间缺少更强的视觉区分。",
+      "底部结论字号偏小，投影时强调力不足。",
+      "表格仅概括三项行动，未呈现风险治理闭环等关键结构，论点支撑不如图示版本直接。",
+      "表格下方留白较大，内容区略显稀疏。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 3.4,
+      "polish": 3.0,
+      "fit": 4.2,
+      "legibility": 2.2,
+      "composition": 3.2,
+      "consistency": 3.8,
+      "accuracy": 5.0
+     },
+     "overall": 3.54,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右上资料原图及图注过小，会议室投影难以辨读。",
+      "左右内容密度不均，右下结论与左侧文字区争夺注意力，主线不够清晰。",
+      "右侧资料原图内文字过小，投影场景难以辨读。",
+      "左侧原则与底部结论、右侧图示的信息密度不均，视觉重心略偏右。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P0",
+   "changed": false,
+   "why": "原版本就是得分最高的合格版本"
+  }
+ },
+ "17": {
+  "review": {
+   "looks": 5,
+   "versions": {
+    "P0": {
+     "same_picture_as": [
+      "P0"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 4.0,
+      "fit": 3.4,
+      "legibility": 3.4,
+      "composition": 4.0,
+      "consistency": 5.0,
+      "accuracy": 4.8
+     },
+     "overall": 4.09,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右侧四条风险信息的正文偏小偏灰，投影时层次会减弱。",
+      "右侧三条风险说明文字过小且偏灰，会议室投影可读性不足。",
+      "右侧信息区横线密集、内容拥挤，左侧则留白偏多，构图失衡。",
+      "删除资料原图后，社会、组织、技术系统的层级关系失去直观支撑。"
+     ]
+    },
+    "P1": {
+     "same_picture_as": [
+      "P1"
+     ],
+     "scores": {
+      "hierarchy": 4.0,
+      "polish": 3.6,
+      "fit": 4.6,
+      "legibility": 4.0,
+      "composition": 4.0,
+      "consistency": 4.4,
+      "accuracy": 4.8
+     },
+     "overall": 4.2,
+     "wins": 0,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "右栏只呈现部分风险论据，社会层面风险外溢未被明确表达。",
+      "底部结论横跨全页但字号较小，视觉收束力度不足。",
+      "右侧多条横线分割较密，视觉节奏偏碎。",
+      "“超10亿美元”抢占强焦点，但与右侧图示的逻辑连接不够明确。"
+     ]
+    },
+    "P1.5": {
+     "same_picture_as": [
+      "P1.5"
+     ],
+     "scores": {
+      "hierarchy": 4.8,
+      "polish": 4.0,
+      "fit": 4.8,
+      "legibility": 4.4,
+      "composition": 4.0,
+      "consistency": 4.6,
+      "accuracy": 4.8
+     },
+     "overall": 4.49,
+     "wins": 2,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "图表白底与整套米色底的语言割裂，像资料截图直接嵌入。",
+      "左侧信息块与右侧图表权重接近，结论区略显拥挤。",
+      "图中原始文字在远距离投影时仍会偏小，但作为原样资料图可接受。",
+      "左侧底部结论文字行长较长，且与红线距离偏近。"
+     ]
+    },
+    "P2候选": {
+     "same_picture_as": [
+      "P2候选"
+     ],
+     "scores": {
+      "hierarchy": 4.6,
+      "polish": 4.6,
+      "fit": 5.0,
+      "legibility": 4.2,
+      "composition": 4.4,
+      "consistency": 5.0,
+      "accuracy": 4.8
+     },
+     "overall": 4.66,
+     "wins": 3,
+     "vetoes": [],
+     "flagged_once": [],
+     "issues": [
+      "未明确呈现“超10亿美元”及Ray漏洞案例，证据点有所缺失。",
+      "左侧正文与结论段字号偏小、行距偏紧，投影阅读压力较大。",
+      "图源信息与页脚均较淡，辨识度不足。",
+      "标题被生硬拆成两行，左栏视觉重心过高且不够精致。"
+     ]
+    }
+   }
+  },
+  "choice": {
+   "keep": "P2候选",
+   "changed": true,
+   "lead": 0.57,
+   "why": "高出原版本 0.57 分；5 次评审中它被选为最好 3 次，原版本 0 次"
+  }
+ }
+}

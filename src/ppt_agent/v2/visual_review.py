@@ -41,7 +41,8 @@ REVIEW_SYSTEM = (
     "对每个版本按下面七项各打 1 到 5 分（5 最好），分数要拉开差距，不要都给 4：\n"
     + "\n".join(f"- {key}：{text}" for key, text in CRITERIA.items()) + "\n"
     "否决项（veto）：只有三种情况——页面上的数字与给出的事实相矛盾（同一个指标写了另一个数）；"
-    "图表里图形的长短高低明显与它自己标出的数值不成比例；结构关系与给出的事实相矛盾（层级、归属、先后画反了）。"
+    "图表里图形的长短高低明显与它自己标出的数值不成比例；结构关系与给出的事实相矛盾（层级、归属、先后画反了；"
+    "或者用箭头把两个不是同一指标前后取值的数连起来，例如把增量指向总量）。"
     "把它写进这个版本的 veto 列表并写清是哪里。事实清单没有列出的内容不是错误：source_figures 里列出的资料原图是原样照排的，"
     "图里有清单之外的数据是正常的，不要因此否决；读图估出来的数值与清单有细微出入也不算矛盾。没有就留空。\n"
     "issues 写这个版本最需要修的一两处具体问题（哪里、怎么不好），没有就留空。\n"
@@ -86,7 +87,7 @@ async def review_page(client: Any, *, facts: dict[str, Any], versions: list[Vers
     rng = random.Random(seed)
     labels = [chr(ord("A") + index) for index in range(len(groups))]
     records, orders = [], []
-    for look in range(looks if len(groups) > 1 else 1):
+    for look in range(looks):
         order = list(range(len(groups)))
         rng.shuffle(order)
         if look and order == orders[-1]:

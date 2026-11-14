@@ -167,6 +167,10 @@ def resolve(proposed: dict[int, dict[str, Any]], contents: dict[int, dict[str, A
         wish = proposed.get(page) or {}
         first = wish.get("form") if wish.get("form") in allowed else allowed[0]
         forms = [first] + [form for form in allowed if form != first]
+        content = contents[page]
+        if content.get("visual") and (content.get("series") or content.get("figure") or content.get("diagram")):
+            # The page has been given something to show; only the form that shows it will do.
+            first, forms = allowed[0], [allowed[0]]
         usage = Counter(item.form for item in plan)
         forms[1:] = sorted(forms[1:], key=lambda form: usage[form])
         def options():

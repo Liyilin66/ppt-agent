@@ -158,6 +158,21 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
     drawable = [series for series in content.get("series") or [] if charts.kind_for(series)]
 
     for node in tree.root.walk():
+        # An arrow between two figures says the first became the second. That is true only of two
+        # values of one measure; an increase pointing at a total (2.66亿 → 5.15亿) says something false.
+        if node.has("rowx"):
+            big = [child for child in node.children if {"d1", "d2", "d3", "d4"} & set(child.classes)]
+            arrow = any("→" in child.text and child not in big for child in node.children)
+            values = [float(match.group(1)) for child in big
+                      for match in [re.search(r"(\d+(?:\.\d+)?)", child.text.replace(",", ""))] if match]
+            if arrow and len(big) == 2 and len(values) == 2:
+                together = any({point["value"] for point in series.get("points") or []} >= set(values)
+                               for series in content.get("series") or [])
+                if not together:
+                    defects.append(Defect(
+                        "unbound_graphic",
+                        f"「{big[0].text.strip()} → {big[1].text.strip()}」的箭头表示前一个数变成了后一个数，但内容里没有核对过的序列说明"
+                        "它们是同一个指标的前后取值。请去掉箭头，把两个数分开写，各自标明它衡量的是什么。"))
         if node.has("plate") and "data-figure" in node.attrs:
             figure = content.get("figure") or {}
             if node.attrs["data-figure"] != figure.get("id"):

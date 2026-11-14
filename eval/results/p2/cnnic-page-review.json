@@ -1,0 +1,166 @@
+{
+ "3": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 5.0,
+   "polish": 4.5,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 4.5,
+   "consistency": 4.0,
+   "accuracy": 5.0
+  },
+  "overall": 4.57,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右侧边注正文颜色偏浅、字号较小，投影时可适度加深或放大。",
+   "右侧“增长边注”的正文与页码字号偏小、灰度偏低，投影阅读吃力。",
+   "右栏信息密度较高，与左侧核心数字的视觉重量略不均衡。"
+  ]
+ },
+ "4": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 5.0,
+   "polish": 5.0,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 5.0,
+   "consistency": 5.0,
+   "accuracy": 5.0
+  },
+  "overall": 4.86,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "左侧图表说明文字和底部来源字较小，会议室远距离投影可读性偏弱。",
+   "右侧说明文字偏小且灰度较低，投影环境下可适度放大、加深。"
+  ]
+ },
+ "5": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 5.0,
+   "polish": 4.0,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 4.0,
+   "consistency": 3.0,
+   "accuracy": 5.0
+  },
+  "overall": 4.29,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右侧第三条的“豆包、DeepSeek”与标题、说明文字的字号层级接近，信息主次略混。",
+   "页脚来源及右侧灰色说明文字偏小，投影环境下可读性稍弱。",
+   "右侧前三条的说明文字偏浅偏小，投影环境下信息层级会弱于数字。",
+   "左侧超大“36.5%”与上方标题距离较远，局部留白略显松散。"
+  ]
+ },
+ "6": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 4.5,
+   "polish": 4.0,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 4.0,
+   "consistency": 3.5,
+   "accuracy": 5.0
+  },
+  "overall": 4.29,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右侧“47.1%”信息与左侧饼图重复，且右栏下半部留白偏大，可补入DeepSeek第二的对比信息。",
+   "页底总结与上方红线距离较近，底部来源文字偏小，投影可读性一般。",
+   "右侧说明文字的行距与底部灰色注释偏小，投影环境下可读性略弱。",
+   "饼图标签与右侧数据洞察之间的信息略有重复，可进一步压缩。"
+  ]
+ },
+ "7": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 5.0,
+   "polish": 4.5,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 4.5,
+   "consistency": 3.5,
+   "accuracy": 5.0
+  },
+  "overall": 4.5,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右侧说明文字与底部资料来源字号偏小，会议室投影下可读性略弱。",
+   "右侧说明文字与底部资料来源字号偏小，投影远看可读性偏弱。",
+   "右侧三条信息间留白较大，底部区域略显松散。"
+  ]
+ },
+ "8": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 4.0,
+   "polish": 4.0,
+   "fit": 4.0,
+   "legibility": 4.0,
+   "composition": 4.0,
+   "consistency": 3.5,
+   "accuracy": 4.5
+  },
+  "overall": 4.0,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右侧说明文字未呈现“学习课外知识占15.2%”这一首要目的，论点支撑不完整。",
+   "右侧大数字与图表重复强调，且右下留白略多，可用来补充治理要点或首要使用目的。",
+   "右侧说明文字未呈现“学习课外知识占15.2%”这一首要目的事实。",
+   "右侧大数字与左侧图表重复占据较多空间，可压缩以放大治理建议或补充关键行为目的。"
+  ]
+ },
+ "9": {
+  "same_picture_as": [
+   "deck"
+  ],
+  "scores": {
+   "hierarchy": 5.0,
+   "polish": 4.0,
+   "fit": 5.0,
+   "legibility": 4.0,
+   "composition": 4.0,
+   "consistency": 3.5,
+   "accuracy": 5.0
+  },
+  "overall": 4.36,
+  "wins": 2,
+  "vetoes": [],
+  "flagged_once": [],
+  "issues": [
+   "右下角管理建议段落字号偏小且行长较长，投影阅读压力较大。",
+   "饼图标签与图形距离略松，左侧整体视觉密度偏低。",
+   "页脚资料来源和上方说明文字偏小、偏浅，投影环境下可读性不足。",
+   "右下管理建议段落行宽较窄且字号略小，可适度放大以增强收束力。"
+  ]
+ }
+}
