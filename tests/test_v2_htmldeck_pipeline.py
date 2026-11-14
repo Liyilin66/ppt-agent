@@ -184,3 +184,13 @@ def test_an_existing_page_can_be_repaired_in_place():
     result = run_studio(client, seed_html=LOUD, seed_problems=["结论的字太大"])
     assert result.ok and result.attempts == 1
     assert "你上一次写的 HTML" in client.prompts[0] and "结论的字太大" in client.prompts[0]
+
+
+def test_the_last_rewrite_of_a_page_that_will_not_fit_is_told_to_cut():
+    from ppt_agent.v2.htmldeck.pipeline import PRUNE
+
+    tall = studio_page('<div class="b">' + "放不下的一段话。" * 300 + "</div>")
+    client = Scripted([tall, tall, CALM])
+    result = run_studio(client)
+    assert result.ok and result.attempts == 3
+    assert PRUNE not in client.prompts[1] and PRUNE in client.prompts[2]

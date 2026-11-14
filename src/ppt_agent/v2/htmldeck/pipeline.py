@@ -26,6 +26,8 @@ MAX_POLISH = 2    # further tries once only soft defects are left
 SOFT = frozenset({"sparse", "small_text"}) | AESTHETIC
 FIT = frozenset({"overflow", "off_canvas", "overlap"})  # too much for the space
 DESIGN_TOKENS = 2600
+PRUNE = ("这一页的内容比版面装得下的多，换排法已经试过了。这一次请删减：只保留标题、焦点和最重要的三条事实"
+         "（每条一句话），其余条目和次要说明整条删掉；结论只留一句。不要缩小字号。")
 
 
 @dataclass
@@ -186,6 +188,9 @@ async def design_page(
             polish -= 1
         previous_html, problems = body, [defect.message for defect in defects][:6]
         result.defects = list(problems)
+        if hard and not rewrites and any(defect.kind in FIT for defect in hard):
+            # Last try, and it still does not fit: rearranging has failed, so cut.
+            problems.insert(0, PRUNE)
 
     if best is None:
         result.html = previous_html or ""  # kept for diagnosis; the page itself is not used
