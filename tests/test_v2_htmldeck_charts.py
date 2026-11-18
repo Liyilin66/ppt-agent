@@ -82,3 +82,20 @@ def test_a_page_given_a_chart_is_planned_as_one_whatever_was_proposed():
     plan = layout_plan.resolve({4: {"form": "ledger"}, 5: {"form": "poster"}, 6: {"form": "poster"}}, contents)
     assert [item.form for item in plan] == ["chart", "chart", "poster"]
     assert plan[0].structure != plan[1].structure
+
+
+def test_bars_start_at_zero_in_the_rendered_chart(tmp_path):
+    from pptx import Presentation
+
+    from ppt_agent.v2.ir import DeckDesign
+    from ppt_agent.v2.render import render_deck
+
+    deck = DeckDesign.model_validate_json(open("data/html-pages/p3/scale/caict/deck_design.json").read()) \
+        if __import__("pathlib").Path("data/html-pages/p3/scale/caict/deck_design.json").is_file() else None
+    if deck is None:
+        import pytest
+        pytest.skip("P3 run not present")
+    path = render_deck(deck, tmp_path / "d.pptx")
+    charts = [shape.chart for slide in Presentation(path).slides for shape in slide.shapes if shape.has_chart]
+    bars = [chart for chart in charts if chart.chart_type is not None and "BAR" in str(chart.chart_type) or "COLUMN" in str(chart.chart_type)]
+    assert bars and all(chart.value_axis.minimum_scale == 0 for chart in bars)
