@@ -23,7 +23,7 @@ import json
 import re
 from typing import Any
 
-STATUSES = ("CONTENT_VALID", "CONTENT_RECOVERED", "NEEDS_CONTENT_REVIEW")
+STATUSES = ("CONTENT_VALID", "CONTENT_RECOVERED", "NEEDS_CONTENT_REVIEW", "PAGE_REMOVED")
 
 
 def _squash(text: str) -> str:

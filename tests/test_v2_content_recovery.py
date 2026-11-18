@@ -64,4 +64,4 @@ def test_renumber_changes_only_the_footer_number():
         {'type': 'rich_text', 'id': 'a', 'frame': {'x': 76, 'y': 300, 'w': 300, 'h': 40}, 'runs': [{'text': '18'}]},
         {'type': 'rich_text', 'id': 'b', 'frame': {'x': 1191, 'y': 679, 'w': 80, 'h': 17}, 'runs': [{'text': '18'}]}]})
     out = renumber(page, 17)
-    assert [e.runs[0].text for e in out.elements] == ['18', '17']
+    assert [e.runs[0].text for e in out.elements] == ['18', '17'] and out.page_number == 17

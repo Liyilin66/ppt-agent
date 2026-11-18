@@ -618,4 +618,4 @@ def renumber(page: Any, shown: int) -> Any:
             runs = [element.runs[0].model_copy(update={"text": f"{shown:02d}"})]
             element = element.model_copy(update={"runs": runs})
         elements.append(element)
-    return page.model_copy(update={"elements": elements})
+    return page.model_copy(update={"elements": elements, "page_number": shown})

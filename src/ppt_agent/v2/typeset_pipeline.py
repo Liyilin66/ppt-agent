@@ -1563,11 +1563,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         checkpoints.save(f'pages/page_{slot.page_number:03d}.json', {'page': page.model_dump(mode='json'),
                         'qa': qa.model_dump(mode='json'), 'outcome': outcome.model_dump(mode='json')})
         progress(f'[typeset] page {slot.page_number} done')
-    shown = {page.page_number: index + 1 for index, page in enumerate(sorted(pages, key=lambda page: page.page_number))}
-    if any(old != new for old, new in shown.items()):
+    shown_number = {page.page_number: index + 1 for index, page in enumerate(sorted(pages, key=lambda page: page.page_number))}
+    if any(old != new for old, new in shown_number.items()):
         # A removed page leaves no gap in the numbers the slides show.
         from ppt_agent.v2.htmldeck.deck import renumber
-        pages = [renumber(page, shown[page.page_number]) for page in pages]
+        pages = [renumber(page, shown_number[page.page_number]) for page in pages]
     deck = DeckDesign(deck_title=skeleton.deck_title, subtitle=skeleton.subtitle,
                       language=brief.language, theme=theme, pages=pages)
     fallbacks = [item.page_number for item in outcomes if item.status == 'fallback']
@@ -1614,11 +1614,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     ledger = FactLedger()
     for slot, content in zip(content_slots, final_contents):
         ledger.register(slot.page_number, content.model_dump(mode='json', exclude_none=True))
-    content_numbers = {slot.page_number for slot in content_slots}
+    content_numbers = {shown_number.get(slot.page_number, slot.page_number) for slot in content_slots}  # as numbered now
     layouts = layout_signature.conflicts(
         [layout_signature.of(page) for page in pages if page.page_number in content_numbers])
     from ppt_agent.v2 import content_recovery as _recovery
-    content_states = _recovery.summary({record.get('page_number', i): record for i, record in enumerate(records)})
+    content_states = _recovery.summary({**{record.get('page_number', i): record for i, record in enumerate(records)},
+                                        **{number: record for number, (_, record) in results.items()
+                                           if record.get('content_status') == 'PAGE_REMOVED'}})
+    content_states['shown_numbers'] = {str(old): new for old, new in shown_number.items() if old != new}
     run = {'content_recovery': content_states, 'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
