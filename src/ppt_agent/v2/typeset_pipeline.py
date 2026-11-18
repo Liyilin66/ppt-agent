@@ -1144,9 +1144,36 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 client, checkpoints, {number: content.model_dump(mode='json', exclude_none=True)
                                       for number, (content, _) in results.items()}, page_plans, signed,
                 rewritten=overlap)
+        left = overlap.get('left') or []
+        if left and evidence_store is not None and type_roles:
+            # Rewriting did not part them: the later page moves to source material no page has used, or the
+            # repeat is reported - it is never just retitled again.
+            from ppt_agent.v2 import page_budget
+            spare = page_budget.uncovered(evidence_store, packets)
+            by_id = {chunk['chunk_id']: chunk for chunk in evidence_store.chunks}
+            moved = {}
+            for pair in left:
+                page = max(pair)
+                if page in signed or page in moved or not spare:
+                    continue
+                chunk = spare.pop(0)
+                packets[page] = evidence_store.packet_of([by_id[chunk['chunk_id']]])
+                moved[page] = chunk['chunk_id']
+            if moved:
+                renewed = await asyncio.gather(*(
+                    produce(by_number[page], revision=(
+                        f'本页和别页讲的是同一件事，已改用资料里还没有任何一页用过的段落（{moved[page]}）作为证据。'
+                        '按这份证据重新写一页：观点、焦点数字和条目都来自它，不要再讲原来的主题。'),
+                        current=None) for page in sorted(moved)))
+                results.update(dict(renewed))
+                overlap = await deck_content.review(
+                    client, checkpoints, {number: content.model_dump(mode='json', exclude_none=True)
+                                          for number, (content, _) in results.items()}, page_plans, signed,
+                    rewritten=overlap)
+                overlap['retargeted'] = moved
         checkpoints.save('typeset/content_overlap.json', overlap)
         progress(f"[content] {len(overlap['repeated'])} repeated pair(s) found, {len(rewrites)} page(s) rewritten, "
-                 f"{len(overlap.get('left', []))} left")
+                 f"{len(overlap.get('retargeted', {}))} moved to uncovered material, {len(overlap.get('left', []))} left")
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
@@ -1169,8 +1196,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         approved_redraws = set((checkpoints.load('figures/approved.json') or {}).get('ids', []))
 
         def series_id(item):
+            # A series is its data: the same values under another metric wording are the same chart, used once.
             import hashlib
-            return 'series:' + hashlib.sha1(repr(data_series.signature(item)).encode('utf-8')).hexdigest()[:8]
+            identity = sorted((point.label, point.display, point.ref) for point in item.points)
+            return 'series:' + hashlib.sha1(repr(identity).encode('utf-8')).hexdigest()[:8]
 
         async def brief_page(number):
             content = dumps[number]

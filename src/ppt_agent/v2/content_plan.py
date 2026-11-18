@@ -241,11 +241,14 @@ def suspects(contents: dict[int, dict[str, Any]], *, window: int = WINDOW) -> li
             if later - earlier > window:
                 # Far apart, only the plain signs: the same focal figure, title figures or title.
                 focal = [figures((content.get("highlight") or {}).get("value")) for content in (first, second)]
-                same = (focal[0] and focal[0] == focal[1]) or (figures(first.get("title")) & figures(second.get("title"))) \
+                crossed = any(bool(focal[a]) and focal[a] <= figures(content.get("title"))
+                              for a, content in ((0, second), (1, first)))
+                same = (focal[0] and focal[0] == focal[1]) or crossed \
+                    or (figures(first.get("title")) & figures(second.get("title"))) \
                     or (first.get("title") or "").strip() == (second.get("title") or "").strip()
                 if same:
                     found.append({"pages": [earlier, later], "shared": sorted(figures(_text(first)) & figures(_text(second))),
-                                  "why": "焦点数字相同" if focal[0] and focal[0] == focal[1] else "标题相同或标题数字相同",
+                                  "why": "焦点数字相同" if (focal[0] and focal[0] == focal[1]) or crossed else "标题相同或标题数字相同",
                                   "nothing_new": False, "far": True})
                 continue
             focal = [(content.get("highlight") or {}).get("value") for content in (first, second)]
@@ -256,12 +259,16 @@ def suspects(contents: dict[int, dict[str, Any]], *, window: int = WINDOW) -> li
                                  if 0 < later - page <= window))
             own = figures(_text(second))
             focal_shown = bool(figures(focal[1])) and figures(focal[1]) <= figures(_text(first))
+            # One page's focal figure in the other's title: the two lead with one fact (CNNIC 57: p14 "外卖增3748万人",
+            # p15 "外卖用户达6.30亿人，增长3748万").
+            crossed = any(bool(figures(focal[a])) and figures(focal[a]) <= figures(content.get("title"))
+                          for a, content in ((0, second), (1, first)))
             # A page whose every figure is already on the pages just before it adds nothing new, even
             # when it carries one figure only (CNNIC: four pages, one figure each, one story).
             nothing_new = bool(own) and own <= seen and (len(own) >= SHARED_FIGURES or focal_shown)
-            if same_focal or titles or len(shared) >= SHARED_FIGURES or (nothing_new and shared) or focal_shown:
+            if same_focal or crossed or titles or len(shared) >= SHARED_FIGURES or (nothing_new and shared) or focal_shown:
                 found.append({"pages": [earlier, later], "shared": sorted(shared),
-                              "why": "焦点数字相同" if same_focal else "标题数字相同" if titles
+                              "why": "焦点数字相同" if same_focal or crossed else "标题数字相同" if titles
                               else "后页没有新数字" if nothing_new
                               else "后页的焦点数字前页已经讲过" if focal_shown else "共用多个数字",
                               "nothing_new": nothing_new})

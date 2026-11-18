@@ -146,3 +146,9 @@ def test_a_truncated_batch_is_retried_then_stops_the_run_with_its_error():
         assert "15" in str(error) and "truncated" in str(error)
     else:
         raise AssertionError("an unplanned deck must not go on")
+
+
+def test_a_focal_figure_in_another_page_title_is_a_repeat_by_rule():
+    contents = {14: _page("外卖增3748万人，竞争延展至场景价值", "3748万人"), 15: _page("外卖用户达6.30亿人，增长3748万", "6.30亿人")}
+    pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
+    assert pairs[(14, 15)]["why"] == "焦点数字相同"
