@@ -1403,6 +1403,25 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             progress(f"[content] claim audit: {len(failing)} page(s) rewritten {failing}; still failing {audit_summary['still_failing']}; "
                      f"items moved to notes {audit_summary['items_moved']}; "
                      f"audit errors {audit_summary['error']}")
+    if type_roles and evidence_store is not None:
+        # A figure printed verbatim is only as good as the source's agreement with itself (CNNIC 57
+        # says "1717万人" on p9 and "17179万人" on p19 for the same growth); such a page goes to a person.
+        from ppt_agent.v2 import source_conflicts
+        held = {}
+        for number, (content, record) in results.items():
+            if record.get('content_status') == 'PAGE_REMOVED':
+                continue
+            found = source_conflicts.conflicts(content.model_dump(mode='json', exclude_none=True), evidence_store)
+            if found:
+                held[number] = found
+                record = {**record, 'source_conflicts': found, 'content_status': 'NEEDS_CONTENT_REVIEW'}
+                results[number] = (content, record)
+                checkpoints.save(f'typeset/final/content_{number:03d}.json',
+                                 {'content': content.model_dump(mode='json'), 'record': record})
+        if held:
+            progress(f"[content] source states a figure two ways on page(s) {sorted(held)}: "
+                     + '; '.join(f"{f['figure']} (p{f['page']}) vs {f['other']} (p{f['other_page']})"
+                                 for found in held.values() for f in found))
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
@@ -1766,6 +1785,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             'design_checkpoint': f'html/page_{slot.page_number:03d}.json',
             'evidence_chunks': list(getattr(packet, 'chunk_ids', []) or []) if slot.kind == 'content' else [],
             'claim_audit': (record.get('claim_audit') or {}).get('verdict'),
+            'source_conflicts': record.get('source_conflicts') or [],
             'content_version': record.get('checkpoint')})
     content_states['slides'] = slide_map
     claim_audit_summary = checkpoints.load('typeset/claim_audit.json')

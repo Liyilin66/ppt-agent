@@ -63,6 +63,7 @@ class PageResult:
     reduced: bool = False  # designed with fewer items after its full content would not fit
     screenshot_png: bytes = b""
     templated: bool = False  # built from the plain template after the designed page failed
+    repaired: bool = False  # repaired once from a saved version (not tried again on resume)
 
     @property
     def ok(self) -> bool:

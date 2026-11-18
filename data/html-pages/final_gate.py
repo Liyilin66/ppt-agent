@@ -47,6 +47,8 @@ for slide in slides:
         else:
             problems.append(f"collision: {' / '.join(found['lines'])}")
     problems += [f"chart: {verdict}" for verdict in charts.get(final, []) if verdict != "matches the verified series"]
+    for found in slide.get("source_conflicts") or []:
+        problems.append(f"P0 source conflict: {found['figure']} (p{found['page']}) vs {found['other']} (p{found['other_page']})")
     if slide.get("status") == "NEEDS_CONTENT_REVIEW":
         problems.append("content: needs review (claim audit or recovery)")
     rows.append({**slide, "problems": problems, "charts": len(charts.get(final, [])),

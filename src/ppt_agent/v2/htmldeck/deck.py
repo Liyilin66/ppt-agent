@@ -339,13 +339,24 @@ async def design_deck(
                         return
                     if studio and (saved.aesthetic or saved.defects):
                         # The saved page fails rules written since: repair it where it stands
-                        # rather than design the page again from nothing.
+                        # rather than design the page again from nothing - once. A page already repaired,
+                        # or whose repair was no better for these same findings, is not tried again on
+                        # every resume (P4 stage A: each replay of one snapshot redrew page 34 differently).
+                        problems = (saved.defects or saved.aesthetic)[:6]
+                        tried = hashlib.sha1(json.dumps([cached["html"], problems], ensure_ascii=False)
+                                             .encode("utf-8")).hexdigest()[:16]
+                        if saved.ok and cached.get("repair_tried") in (tried, "repaired"):
+                            results[job.page_number] = saved
+                            return
                         result = await design_page(
                             client, session, theme, font_css, job, look=False, seed_html=cached["html"],
-                            seed_problems=(saved.defects or saved.aesthetic)[:6])
+                            seed_problems=problems)
                         if saved.ok and not (result.ok and len(result.aesthetic) < len(saved.aesthetic)):
                             results[job.page_number] = saved  # the repair was no better: keep what was there
+                            if checkpoints is not None:
+                                checkpoints.save(name, {**cached, "repair_tried": tried})
                             return
+                        result.repaired = True
                         progress(f"[design] page {job.page_number} repaired from its saved version")
                     elif saved.ok:
                         results[job.page_number] = saved
@@ -430,7 +441,8 @@ async def design_deck(
             if checkpoints is not None and result.ok and not result.templated:
                 checkpoints.save(name, {"html": result.html, "content": _fingerprint(job),
                                         "attempts": result.attempts, "idea": job.idea,
-                                        "review_problems": result.review_problems, "trace": result.trace})
+                                        "review_problems": result.review_problems, "trace": result.trace,
+                                        **({"repair_tried": "repaired"} if result.repaired else {})})
             if checkpoints is not None and not result.ok:
                 checkpoints.save(f"html/failed_{job.page_number:03d}.json",
                                  {"html": result.html, "defects": result.defects, "idea": job.idea})
@@ -443,7 +455,19 @@ async def design_deck(
         await asyncio.gather(*(one(job) for job in jobs), *(fixed(spec) for spec in structural))
 
         redesigned: list[dict[str, Any]] = []
-        if theme.vocabulary == 2:
+
+        def deck_state() -> str:
+            # What the deck-level review judged: every page as drawn. A resume that replays exactly the
+            # pages a review left behind reuses that review's decision instead of judging them again
+            # (P4 stage A: three replays of one snapshot redesigned four pages each, differently).
+            drawn = sorted((job.page_number, results[job.page_number].html or "") for job in jobs)
+            return hashlib.sha1(json.dumps(drawn, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+        reviewed = checkpoints.load("html/deck_review.json") if checkpoints is not None else None
+        if reviewed and reviewed.get("final") == deck_state():
+            redesigned = list(reviewed.get("redesigned") or [])
+            progress("[design] deck review reused: every page is as the last review left it")
+        elif theme.vocabulary == 2:
             by_page = {job.page_number: job for job in jobs}
 
             def outlines() -> dict[int, str]:
@@ -579,6 +603,7 @@ async def design_deck(
                         await redo(job, entry["problem"], new_form=False, form=entry.get("form"))
             if checkpoints is not None:
                 checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
+                checkpoints.save("html/deck_review.json", {"final": deck_state(), "redesigned": redesigned})
 
     remade = sorted(accepted & {job.page_number for job in jobs} - held)
     if remade and checkpoints is not None:
