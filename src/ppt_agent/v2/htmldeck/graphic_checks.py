@@ -179,6 +179,21 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                 defects.append(Defect(
                     "unsupported", "页面引用了一张不属于这一页的图。只能使用给你的那一个 plate 元件；没有给就不要放图。"))
         # A chart says what a verified series says, value for value, or it is not drawn.
+        # The same holds for an arrow written into any line of text the designer added.
+        if not node.has("rowx") and "→" in node.own_text:
+            line = re.sub(r"\s+", "", node.own_text)
+            unit = r"(?:%|％|个百分点|亿|万|倍|元|美元|人|家|个|项|款|笔|起)"  # figures, not model names like GPT-3.5
+            for match in re.finditer(r"(?<![A-Za-z\-.\d])(\d+(?:\.\d+)?)" + unit + r"[^\d→]{0,4}→[^\d]{0,4}(\d+(?:\.\d+)?)" + unit, line):
+                pair = {float(match.group(1)), float(match.group(2))}
+                together = any({point["value"] for point in series.get("points") or []} >= pair
+                               for series in content.get("series") or [])
+                written = match.group(0) in re.sub(r"\s+", "", json.dumps(content, ensure_ascii=False))
+                if not together and not written:
+                    defects.append(Defect(
+                        "unbound_graphic",
+                        f"「{match.group(0)}」用箭头把两个数连起来，但它们不是同一条核对过的序列里的两个值，"
+                        "也不是内容里原有的写法；箭头会读成前者变成了后者。改成两个并列的数字，各自写清楚它是什么。"))
+
         if node.has("chart") and "data-chart" in node.attrs:
             try:
                 drawn = json.loads(node.attrs["data-chart"])
