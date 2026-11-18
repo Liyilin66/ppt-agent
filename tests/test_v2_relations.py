@@ -99,3 +99,14 @@ def test_part_of_a_unit_left_behind_is_a_split():
     together = '<div class="page"><div class="r"><div class="rowx"><div class="d1">483.8万</div><div class="unit">个</div></div></div></div>'
     assert "split_unit" in [d.kind for d in find_graphic(apart, content)]
     assert "split_unit" not in [d.kind for d in find_graphic(together, content)]
+
+
+def test_an_arrow_inside_wrappers_between_different_units_is_caught():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+    page = ('<div class="page"><div class="r"><div class="rowx base">'
+            '<div class="g2"><div class="rowx base"><div class="d4">4198亿</div><div class="unit">个</div></div></div>'
+            '<div class="g1"><div class="t3 red">→</div></div>'
+            '<div class="g2"><div class="rowx base"><div class="d4 red">3958亿</div><div class="unit">GB</div></div></div>'
+            '</div></div></div>')
+    content = {"items": [{"value": "4198亿个"}, {"value": "3958亿GB"}]}
+    assert "unbound_graphic" in [d.kind for d in find_graphic(page, content)]

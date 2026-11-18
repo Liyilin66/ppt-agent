@@ -115,6 +115,13 @@ class _Tree(HTMLParser):
         self._open.own_text += data
 
 
+def _ancestors(node: "_Node"):
+    parent = node.parent
+    while parent is not None:
+        yield parent
+        parent = parent.parent
+
+
 def _numbers(text: str) -> set[float]:
     return {float(match.replace(",", "")) for match in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", text or "")}
 
@@ -197,9 +204,18 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
     for node in tree.root.walk():
         # An arrow between two figures says the first became the second. That is true only of two
         # values of one measure; an increase pointing at a total (2.66亿 → 5.15亿) says something false.
-        if node.has("rowx"):
-            big = [child for child in node.children if {"d1", "d2", "d3", "d4"} & set(child.classes)]
-            arrow = any("→" in child.text and child not in big for child in node.children)
+        if node.has("rowx") and (node.parent is None or not any(a.has("rowx") for a in _ancestors(node))):
+            # The figures may sit in wrappers (g2 > rowx > d4): look through the whole row.
+            big = [child for child in node.walk() if child is not node and {"d1", "d2", "d3", "d4"} & set(child.classes)]
+            arrow = any("→" in child.own_text for child in node.walk()
+                        if child is not node and not ({"d1", "d2", "d3", "d4"} & set(child.classes)))
+            if arrow and len(big) == 2:
+                # Different units on the two ends: the arrow joins two different things, whatever the series.
+                units = [re.sub(r"[\d.,\s约超近]", "", (b.parent.text if b.parent is not None else b.text)) for b in big]
+                if units[0] and units[1] and units[0] != units[1]:
+                    defects.append(Defect(
+                        "unbound_graphic",
+                        f"箭头连接的两个数单位不同（{units[0]} 与 {units[1]}），不是同一指标的前后取值。改成两个并列的数字，各自写清楚它是什么。"))
             values = [float(match.group(1)) for child in big
                       for match in [re.search(r"(\d+(?:\.\d+)?)", child.text.replace(",", ""))] if match]
             if arrow and len(big) == 2 and len(values) == 2:

@@ -3,3 +3,5 @@
 .page .k,.page .kicker{font-size:14px}
 .compact .b{font-size:19px;line-height:1.55}
 .compact .s{font-size:17px;line-height:1.5}
+/* The proportion bar's .fill is black; the plain ledger's "ledger fill" (grow to fill) must not be. */
+.ledger.fill{background:none}
