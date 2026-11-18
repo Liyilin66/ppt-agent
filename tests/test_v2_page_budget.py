@@ -52,3 +52,17 @@ def test_pages_owning_one_figure_each_are_thin():
             4: {"lead": "36.5%", "owns": ["普及率达到36.5%"]},
             5: {"lead": "18.8个百分点", "owns": [], "role": "thin"}}
     assert content_plan.thin(plan, packets) == [4, 5]
+
+
+def test_a_judgement_or_visual_page_earns_its_place_without_figures_of_its_own():
+    from ppt_agent.v2 import content_plan
+
+    packets = {n: _packet(FACTS + "图 2 普及率变化", ["c1"]) for n in (3, 4, 5, 6, 7)}
+    plan = {3: {"claim": "规模过五亿", "owns": ["用户规模达5.15亿人", "较2024年12月增长2.66亿人"]},
+            4: {"claim": "普及率翻倍", "owns": ["普及率达到36.5%", "提升18.8个百分点"]},
+            5: {"claim": "竞争转向留存", "role": "judgement", "draws_on": [3, 4]},
+            6: {"claim": "又一个判断", "role": "judgement", "draws_on": [3, 4]},   # right after another: thin
+            7: {"claim": "普及率曲线", "role": "visual", "visual": "图 2 普及率变化"}}
+    assert content_plan.thin(plan, packets) == [6]
+    plan[7]["visual"] = "图 9 不存在"
+    assert content_plan.thin(plan, packets) == [6, 7]

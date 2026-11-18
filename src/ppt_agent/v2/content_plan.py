@@ -37,9 +37,13 @@ PLAN_SYSTEM = (
     "4. 观点和领衔事实只能来自该页自己的证据句；不要自己计算合计、差值或倍数。\n"
     "5. 各页的 owns 互不重叠。几页共用一份证据时，把证据里的事实分组分给它们；"
     "宁可让一页讲一组别页都没用的事实（例如构成、人群、原因），也不要让它复述别页。\n"
-    "6. role 只有大纲本身就是总结页时才写 summary。某页从自己的证据里拿不到至少两条别页没用到的事实时，"
+    "6. 一页的价值不只来自独有的数字。role 写这一页在叙事里的任务：detail（用自己的事实论证一个观点）；"
+    "summary（大纲本身就是总结页，汇总前面几页）；judgement（战略判断：把别页的事实合起来，得出它们各自没有说出的判断或建议，"
+    "draws_on 写它依据的页码，至少两页）；visual（由一张资料原图或数据图承担的页，visual 写图的名称，例如「图 3 …」）。"
+    "这几种页不需要独有数字，但必须有别页没有的观点。某页既没有自己的事实，也没有上面这些任务时，"
     "不要硬分：owns 只写它真有的，role 写 thin。\n"
-    '只输出 JSON：{"pages":[{"page":页码,"claim":"","lead":"","increment":"","owns":[""],"context":[""],"role":"detail"}]}'
+    '只输出 JSON：{"pages":[{"page":页码,"claim":"","lead":"","increment":"","owns":[""],"context":[""],'
+    '"role":"detail","draws_on":[],"visual":""}]}'
 )
 
 JUDGE_SYSTEM = (
@@ -130,7 +134,12 @@ def _clean(entry: dict[str, Any]) -> dict[str, Any]:
             "owns": [str(item)[:60] for item in owns][:5],
             "increment": str(entry.get("increment") or "")[:60],
             "context": [str(item)[:24] for item in context][:3],
-            "role": entry.get("role") if entry.get("role") in ("summary", "thin") else "detail"}
+            "role": entry.get("role") if entry.get("role") in NARRATIVE + ("thin",) else "detail",
+            "draws_on": [page for page in entry.get("draws_on") or [] if isinstance(page, int)][:6],
+            "visual": str(entry.get("visual") or "")[:40]}
+
+
+NARRATIVE = ("summary", "judgement", "visual")  # tasks that give a page its place without figures of its own
 
 
 async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]:
@@ -308,7 +317,7 @@ async def review(client, checkpoints, contents: dict[int, dict[str, Any]], conte
 
     async def decided(pair):
         roles = {(content_plan.get(page) or {}).get("role") for page in pair["pages"]}
-        if pair["why"] == "焦点数字相同" and "summary" not in roles:
+        if pair["why"] == "焦点数字相同" and not roles & {"summary", "judgement"}:
             # Two pages leading with one figure is what the plan forbids; no judgement needed.
             return {**pair, "same": True, "by": "rule"}
         return await judged(pair)
@@ -333,9 +342,34 @@ def thin(content_plan: dict[int, dict[str, Any]], packets: dict[int, Any]) -> li
     two figures while their evidence has figures to own (CNNIC p3-6: one figure each)."""
 
     found = []
+    judged: list[int] = []
     for page, entry in sorted(content_plan.items()):
         has_figures = len(figures(getattr(packets.get(page), "text", "") or "")) >= 2
-        if entry.get("role") == "thin" or (has_figures and entry.get("role") != "summary"
-                                          and len(owned_figures(entry)) < 2):
+        if entry.get("role") in NARRATIVE and narrative_ok(page, entry, content_plan, packets, judged):
+            if entry.get("role") in ("summary", "judgement"):
+                judged.append(page)
+            continue
+        if entry.get("role") in ("thin",) + NARRATIVE or (has_figures and len(owned_figures(entry)) < 2):
             found.append(page)
     return found
+
+
+def narrative_ok(page: int, entry: dict[str, Any], content_plan: dict[int, dict[str, Any]],
+                 packets: dict[int, Any], judged: list[int]) -> bool:
+    """Whether a page's narrative task stands up: a judgement draws on two other pages and is not next to
+    another summary or judgement; a visual page names a figure its evidence contains; any of them has a
+    claim of its own."""
+
+    claim = (entry.get("claim") or "").strip()
+    if not claim or any(claim == (other.get("claim") or "").strip() for number, other in content_plan.items() if number != page):
+        return False
+    if any(abs(page - other) <= 1 for other in judged):
+        return False  # two summarising pages in a row retell each other
+    role = entry.get("role")
+    if role == "judgement":
+        return len([number for number in entry.get("draws_on") or [] if number in content_plan and number != page]) >= 2
+    if role == "visual":
+        label = re.match(r"\s*(图\s*\d+)", entry.get("visual") or "")
+        text = getattr(packets.get(page), "text", "") or ""
+        return bool(label) and re.sub(r"\s+", "", label.group(1)) in re.sub(r"\s+", "", text)
+    return True  # summary: the outline made it one

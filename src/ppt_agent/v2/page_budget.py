@@ -118,8 +118,9 @@ async def decide(client: Any, checkpoints: Any, slots: list[Any], packets: dict[
                                        "facts": facts(packets[number].text if packets.get(number) else "", limit=10),
                                        **({"plan": (content_plan or {}).get(number)} if content_plan else {})}
                                       for number in found["pages"]],
-                             **({"note": "这些页在整套策划里拿不到两条别页没用到的事实；可以都删掉（别页已讲其主题），"
-                                         "或改讲 uncovered 里的新内容，只有确有自己的内容才 keep",
+                             **({"note": "这些页在整套策划里既拿不到两条别页没用到的事实，也没有成立的总结、战略判断或视觉任务；"
+                                         "可以删掉（别页已讲其主题），或改讲 uncovered 里的新内容；"
+                                         "如果它确实有别页没有的判断或分析价值，keep 并在 why 里说明",
                                  "other_pages_own": found["others_own"]} if found.get("thin")
                                 else {"independent_facts": found["facts"]})} for found in over],
                  "uncovered": spare}
