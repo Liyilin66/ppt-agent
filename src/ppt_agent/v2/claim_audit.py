@@ -192,7 +192,7 @@ def instruction(decision: dict[str, Any]) -> str:
         else:
             item = finding["unsupported"]
             lines.append(f"· 「{item.get('text')}」缺少证据（{item.get('why')}）。有对比数据就把它放到页面上；没有就改成准确的说法。")
-    lines.append("其他条目和数字没有问题，保持不变。")
+    lines.append("本页的主题（标题讲的对象）不变，不要改讲证据里别的话题；其他条目和数字没有问题，保持不变。")
     return "\n".join(lines)
 
 

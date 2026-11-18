@@ -104,3 +104,14 @@ def test_an_arrow_between_two_figures_needs_them_to_be_one_measure():
     assert kinds(row.format("17.7%", "36.5%"), {"series": series}) == []
     assert "unbound_graphic" in kinds(row.format("2.66亿", "5.15亿"), {"series": series})   # an increase is not a starting point
     assert kinds(row.format("2.66亿", "5.15亿"), {}) == ["unbound_graphic"]
+
+
+def test_a_claimed_speed_up_must_show_its_figures():
+    from ppt_agent.v2.htmldeck import graphic_checks
+    content = {"title": "备案登记建立合规底座", "lead": "2025年新增服务与应用登记均明显提速",
+               "items": [{"heading": "服务备案", "value": "748款"}, {"heading": "服务提速", "value": "87.4%"},
+                         {"heading": "应用提速", "value": "214.3%"}]}
+    dropped = '<div class="page"><div class="r" style="grid-column:1/13;grid-row:1/9"><div class="d1">748款</div></div></div>'
+    shown = dropped.replace('748款</div>', '748款</div><div class="t3">87.4%</div>')
+    assert any("提速" in d.message for d in graphic_checks.find(dropped, content))
+    assert not any("提速" in d.message for d in graphic_checks.find(shown, content))

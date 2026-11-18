@@ -373,4 +373,19 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                         "unbound_graphic",
                         "柱子有三种以上的高度，读者会把它当成数值来比较，但高度和柱子里的数字不成比例。"
                         "请让高度 = 数值 ÷ 最大值，或只用高、低两档表示快慢。"))
+    # The page's claim asserts a comparison, rank or speed ("均明显提速"): the items that show it must be on the
+    # page. Round 7: the designer kept the two totals and dropped "服务提速 87.4%" / "应用提速 214.3%".
+    from ppt_agent.v2.claim_audit import MEASURED_CLAIM
+
+    claim = " ".join(str(content.get(key) or "") for key in ("title", "lead"))
+    asserted = set(re.findall(MEASURED_CLAIM, claim))
+    shown = re.sub(r"\s+", "", tree.root.text)
+    carriers = [item for item in content.get("items") or [] if isinstance(item, dict)
+                and any(word in " ".join(str(item.get(key) or "") for key in ("heading", "body")) for word in asserted)]
+    missing = [item for item in carriers if item.get("value") and re.sub(r"\s+", "", str(item["value"])) not in shown]
+    if asserted and carriers and len(missing) == len(carriers):
+        defects.append(Defect(
+            "unsupported",
+            f"标题或导语说了「{'、'.join(sorted(asserted))}」，但页面上没有显示支撑它的数字（"
+            + "、".join(f"{item.get('heading')} {item.get('value')}" for item in missing) + "）。把它们放到页面上。"))
     return list(dict.fromkeys(defects))

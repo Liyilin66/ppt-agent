@@ -359,6 +359,38 @@ def find_defects(
                     _item_text(item)))
                 break
 
+    if roles:
+        # Too close without touching (read from PowerPoint in round 7): a line of text standing on the edge
+        # of a filled panel it is outside of, and a large figure with the text after it on its line.
+        panels = [block for block in painted if block["h"] >= 40 and block["w"] >= 100
+                  and (_rgb(block.get("bg") or "") is not None and not re.search(r",\s*0\)$", block.get("bg") or ""))]
+        for item in texts:
+            if any(name in item.get("cls", "").split() for name in ("source", "pageno")):
+                continue
+            rect = _line_rect(item)
+            for panel in panels:
+                across = min(panel["x"] + panel["w"], rect["x"] + rect["w"]) - max(panel["x"], rect["x"])
+                gap = panel["y"] - (rect["y"] + rect["h"])
+                if across > TOLERANCE and 0 <= gap < 6:
+                    defects.append(Defect(
+                        "tight", f"文字「{_short(_item_text(item))}」贴在下面色块的上沿（只隔 {gap:.0f} 像素），读起来像压在上面。"
+                        "给它们之间留出至少一行的空隙。", _item_text(item)))
+                    break
+        for figure in texts:
+            size = max((run["size"] for run in figure["runs"] if run.get("t", "").strip()), default=0)
+            if size < 48:
+                continue
+            box = _line_rect(figure)
+            for other in texts:
+                if other is figure or len(_item_text(other).strip()) <= 3:
+                    continue  # a short unit belongs right after its figure
+                ob = _line_rect(other)
+                same_line = ob["y"] < box["y"] + box["h"] and box["y"] < ob["y"] + ob["h"]
+                gap = ob["x"] - (box["x"] + box["w"])
+                if same_line and -TOLERANCE < gap < 0.15 * size:
+                    defects.append(Defect(
+                        "tight", f"大数字「{_short(_item_text(figure))}」和旁边的「{_short(_item_text(other))}」只隔 {max(gap, 0):.0f} 像素，"
+                        f"挤在一起。留出至少 {0.15 * size:.0f} 像素，或把说明放到数字下面。", _item_text(other)))
     for data in (item for item in measured.items if item["kind"] in ("chart", "table", "image")):
         for item in texts:
             rect = _line_rect(item)

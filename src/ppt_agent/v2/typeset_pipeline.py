@@ -1298,6 +1298,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 return claim_audit.decide(verdicts[number], results[number][0].model_dump(mode='json', exclude_none=True))
 
             failing = [number for number in numbers if decided(number)['rewrite'] and number not in signed]
+            before_audit = {number: (results[number], verdicts[number]) for number in failing}
+            from ppt_agent.v2 import content_plan as deck_content
             if failing:
                 rewritten = await asyncio.gather(*(
                     produce(by_number[number], revision=claim_audit.instruction(decided(number)),
@@ -1306,6 +1308,22 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 results.update(dict(rewritten))
                 await recover_failed('after claim audit')
                 verdicts.update(await audited(failing))
+                # A rewrite must not tell another page's facts again (round 7: the 政务 page, rewritten, took the
+                # 备案 growth rates the page before it shows). Such a rewrite is undone and the page reported.
+                dumped = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()
+                          if number in numbers}
+                repeated_by_rewrite = {}
+                for pair in deck_content.suspects(dumped):
+                    hit = set(pair['pages']) & set(failing)
+                    if hit and (pair['why'] in ('焦点数字相同', deck_content.GROUP_REPEATED)
+                                or len(pair.get('shared') or []) >= deck_content.FAR_SHARED):
+                        for number in hit:
+                            repeated_by_rewrite[number] = pair
+                for number, pair in repeated_by_rewrite.items():
+                    (content, record), verdicts[number] = before_audit[number]
+                    results[number] = (content, {**record, 'claim_audit_reverted': pair})
+                if repeated_by_rewrite:
+                    progress(f"[content] claim audit: rewrite undone on {sorted(repeated_by_rewrite)}: it repeated another page")
             decisions = {number: decided(number) for number in numbers}
             for number in numbers:
                 content, record = results[number]

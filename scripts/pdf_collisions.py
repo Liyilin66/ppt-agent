@@ -76,11 +76,54 @@ def orphans(page):
     return found
 
 
+def tight(page):
+    """Too close without touching: a large figure and the text beside it less than a fifth of the figure's
+    size apart, or a line of text within 3pt of a filled panel it stands outside."""
+
+    lines = []
+    for b, block in enumerate(page.get_text("dict")["blocks"]):
+        for line in block.get("lines", []):
+            text = "".join(span["text"] for span in line["spans"]).strip()
+            if text:
+                lines.append({"text": text, "box": line["bbox"], "size": max(span["size"] for span in line["spans"]), "block": b})
+    found = []
+    for a in lines:
+        if a["size"] < 30:
+            continue
+        for other in lines:
+            if other is a or other["block"] == a["block"]:
+                continue
+            overlap = min(a["box"][3], other["box"][3]) - max(a["box"][1], other["box"][1])
+            gap = other["box"][0] - a["box"][2]
+            if overlap > 0.3 * min(a["box"][3] - a["box"][1], other["box"][3] - other["box"][1]) and 0 <= gap < 0.2 * a["size"]:
+                found.append({"tight": [a["text"], other["text"]], "gap_pt": round(gap, 1)})
+    # The same within one line: PowerPoint writes a figure and the label after it as two spans of one line.
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            spans = [span for span in line["spans"] if span["text"].strip()]
+            for first, second in zip(spans, spans[1:]):
+                big, small = max(first["size"], second["size"]), min(first["size"], second["size"])
+                gap = second["bbox"][0] - first["bbox"][2]
+                unit = first["text"].strip()[-1:].isdigit() and len(second["text"].strip()) <= 3  # "483.8" + "万个"
+                if big >= 30 and big > 1.5 * small and -1 <= gap < 0.15 * big and not unit:
+                    found.append({"tight": [first["text"].strip(), second["text"].strip()], "gap_pt": round(gap, 1)})
+    panels = [d["rect"] for d in page.get_drawings() if d.get("fill") is not None and d["rect"].width > 100 and d["rect"].height > 40
+              and max(d["fill"][:3]) < 0.3]  # near-black panels (a chart's red bar is not one)
+    for panel in panels:
+        for line in lines:
+            box = line["box"]
+            inside = box[0] >= panel.x0 - 1 and box[2] <= panel.x1 + 1 and box[1] >= panel.y0 - 1 and box[3] <= panel.y1 + 1
+            across = min(box[2], panel.x1) - max(box[0], panel.x0) > 0
+            if not inside and across and 0 <= panel.y0 - box[3] < 3:
+                found.append({"tight": [line["text"], "dark panel below"], "gap_pt": round(panel.y0 - box[3], 1)})
+    return found
+
+
 def main():
     doc = pymupdf.open(sys.argv[1])
     report = {}
     for number, page in enumerate(doc, 1):
-        found = collisions(page) + orphans(page)
+        found = collisions(page) + orphans(page) + tight(page)
         if found:
             report[number] = found
     text = json.dumps(report, ensure_ascii=False, indent=1)
