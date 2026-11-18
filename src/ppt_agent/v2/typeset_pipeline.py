@@ -970,6 +970,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     packets = {slot.page_number: packet_for(slot) for slot in content_slots}
     budget = None
     page_plans_first = None
+    original_slots = None
     if getattr(request, 'html_theme', None) and evidence_store is not None and type_roles:
         # Pages the source can carry: a group of pages sharing too few facts keeps, moves or drops pages
         # before anything is written, so no page exists only to retell another.
@@ -1265,6 +1266,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 content, record = results[page]
                 results[page] = (content, {**record, 'content_status': 'PAGE_REMOVED',
                                            'removed_because': next(pair for pair in left if page in pair)})
+            original_slots = list(skeleton.slots)
             content_slots = [slot for slot in content_slots if slot.page_number not in removed]
             skeleton = skeleton.model_copy(update={'slots': [slot for slot in skeleton.slots if slot.page_number not in removed]})
             checkpoints.save('typeset/content_overlap.json', overlap)
@@ -1273,6 +1275,44 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             # A page rewritten or moved by the overlap review can fail its number check like any other.
             retargeted.update(int(page) for page in overlap.get('retargeted', {}))
             await recover_failed('after overlap review')
+        if type_roles and getattr(request, 'claim_audit', False):
+            # The last look at what each page argues, once recovery, rewrites and removals are done.
+            from ppt_agent.v2 import claim_audit
+            auditor = client
+            try:
+                from ppt_agent import deck_jobs
+                auditor = deck_jobs.create_v2_review_client()  # another model than the writer's
+            except Exception as exc:  # noqa: BLE001
+                progress(f'[content] claim audit uses the writing model: no reviewer configured ({exc})')
+
+            async def audited(numbers):
+                found = await asyncio.gather(*(claim_audit.audit_page(
+                    auditor, checkpoints, number, results[number][0].model_dump(mode='json', exclude_none=True),
+                    getattr(packets.get(number), 'text', '') or '') for number in numbers))
+                return dict(zip(numbers, found))
+
+            numbers = [slot.page_number for slot in content_slots]
+            verdicts = await audited(numbers)
+            failing = [number for number in numbers if verdicts[number].get('verdict') == 'fix' and number not in signed]
+            if failing:
+                rewritten = await asyncio.gather(*(
+                    produce(by_number[number], revision=claim_audit.instruction(verdicts[number]),
+                            current=results[number][0].model_dump(mode='json', exclude_none=True))
+                    for number in failing))
+                results.update(dict(rewritten))
+                await recover_failed('after claim audit')
+                verdicts.update(await audited(failing))
+            for number, verdict in verdicts.items():
+                content, record = results[number]
+                record = {**record, 'claim_audit': verdict, 'claim_audit_rewritten': number in failing}
+                if verdict.get('verdict') == 'fix':
+                    record['content_status'] = 'NEEDS_CONTENT_REVIEW'
+                results[number] = (content, record)
+            audit_summary = claim_audit.summary(verdicts)
+            audit_summary['rewritten'] = failing
+            checkpoints.save('typeset/claim_audit.json', audit_summary)
+            progress(f"[content] claim audit: {len(failing)} page(s) rewritten {failing}; still failing {audit_summary['fix']}; "
+                     f"audit errors {audit_summary['error']}")
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
@@ -1622,7 +1662,23 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                         **{number: record for number, (_, record) in results.items()
                                            if record.get('content_status') == 'PAGE_REMOVED'}})
     content_states['shown_numbers'] = {str(old): new for old, new in shown_number.items() if old != new}
-    run = {'content_recovery': content_states, 'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    # Stable identity: a slide keeps the id of the slot it was planned as, whatever is removed or moved
+    # before it, so a finding names the right page in every file (round 6 named "6.02亿人" page 23; it is slide 24).
+    slide_map = []
+    for slot in sorted(original_slots or skeleton.slots, key=lambda item: item.page_number):
+        record = results[slot.page_number][1] if slot.page_number in results else {}
+        packet = packets.get(slot.page_number)
+        slide_map.append({
+            'slide_id': f'p{slot.page_number:03d}', 'kind': slot.kind, 'planned_page': slot.page_number,
+            'final_page': shown_number.get(slot.page_number),
+            'status': record.get('content_status') or ('CONTENT_VALID' if slot.kind == 'content' else slot.kind),
+            'content_checkpoint': f'typeset/content_{slot.page_number:03d}.json' if slot.kind == 'content' else None,
+            'design_checkpoint': f'html/page_{slot.page_number:03d}.json',
+            'evidence_chunks': list(getattr(packet, 'chunk_ids', []) or []) if slot.kind == 'content' else [],
+            'claim_audit': (record.get('claim_audit') or {}).get('verdict')})
+    content_states['slides'] = slide_map
+    claim_audit_summary = checkpoints.load('typeset/claim_audit.json')
+    run = {'content_recovery': content_states, 'claim_audit': claim_audit_summary, 'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,
