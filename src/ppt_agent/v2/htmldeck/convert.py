@@ -311,6 +311,7 @@ def _chart(item: dict[str, Any], next_id) -> ChartItem:
         highlight=highlight if isinstance(highlight, int) and 0 <= highlight < len(spec["categories"]) else None,
         projected=[index for index in spec.get("projected") or []
                    if isinstance(index, int) and 0 <= index < len(spec["categories"])],
+        zero_based=True,
     )
 
 

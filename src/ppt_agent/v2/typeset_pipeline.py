@@ -899,7 +899,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     references += re.findall(r'https?://[^\s]+', brief.source_digest or '')
     document_names = dict(previous_config.get('source_display_names', {})) if request.resume else {}
     document_names.update(document_display_names(request.source_paths))
+    # Rendering rules a run was accepted under stay with it: a run begun before bars were drawn from
+    # zero keeps PowerPoint's own axis, so resuming a signed-off deck does not change what was signed.
+    bars_from_zero = previous_config.get('bars_from_zero', not (request.resume and bool(previous_config)))
     checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
+                                           'bars_from_zero': bars_from_zero,
                                            'html_theme': getattr(request, 'html_theme', None),
                                            'source_references': references, 'source_page_counts': page_counts,
                                            'source_display_names': document_names})
@@ -1329,6 +1333,12 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     qa_path.write_text(summary.model_dump_json(indent=2), encoding='utf-8')
     passed = summary.pages_with_errors == 0
     pptx_path = None
+    if not bars_from_zero:
+        from ppt_agent.v2.ir import ChartItem
+        deck = deck.model_copy(update={'pages': [page.model_copy(update={'elements': [
+            element.model_copy(update={'zero_based': False}) if isinstance(element, ChartItem) else element
+            for element in page.elements]}) for page in deck.pages]})
+        design_path.write_text(deck.model_dump_json(indent=2), encoding='utf-8')
     if passed or request.qa_gate == 'lenient':
         pptx_path = render_deck(deck, output_dir / f'{request.deck_name}.pptx', assets_dir=output_dir / 'assets')
     seconds = {'content': content_seconds, 'html_design': design_seconds,

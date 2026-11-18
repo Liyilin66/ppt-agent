@@ -95,7 +95,30 @@ def test_bars_start_at_zero_in_the_rendered_chart(tmp_path):
     if deck is None:
         import pytest
         pytest.skip("P3 run not present")
+    from ppt_agent.v2.ir import ChartItem
+    deck = deck.model_copy(update={"pages": [p.model_copy(update={"elements": [
+        e.model_copy(update={"zero_based": True}) if isinstance(e, ChartItem) else e for e in p.elements]}) for p in deck.pages]})
     path = render_deck(deck, tmp_path / "d.pptx")
     charts = [shape.chart for slide in Presentation(path).slides for shape in slide.shapes if shape.has_chart]
     bars = [chart for chart in charts if chart.chart_type is not None and "BAR" in str(chart.chart_type) or "COLUMN" in str(chart.chart_type)]
     assert bars and all(chart.value_axis.minimum_scale == 0 for chart in bars)
+
+
+def test_a_design_saved_before_the_axis_rule_renders_as_signed(tmp_path):
+    import json
+
+    from pptx import Presentation
+
+    from ppt_agent.v2.ir import ChartItem, DeckDesign
+    from ppt_agent.v2.render import render_deck
+
+    path = __import__("pathlib").Path("eval/baselines/studio-20-p2-selected/p2-selected_design.json")
+    if not path.is_file():
+        import pytest
+        pytest.skip("baseline not present")
+    deck = DeckDesign.model_validate_json(path.read_text())
+    charts = [e for p in deck.pages for e in p.elements if isinstance(e, ChartItem)]
+    assert charts and not any(chart.zero_based for chart in charts)
+    out = render_deck(deck, tmp_path / "b.pptx")
+    rendered = [s.chart for sl in Presentation(out).slides for s in sl.shapes if s.has_chart]
+    assert all(chart.value_axis.minimum_scale is None for chart in rendered)

@@ -56,6 +56,7 @@ class PageResult:
     review_problems: list[str] = field(default_factory=list)
     defects: list[str] = field(default_factory=list)
     aesthetic: list[str] = field(default_factory=list)  # soft defects the final version still has
+    trace: list[dict[str, Any]] = field(default_factory=list)  # defect kinds found at each attempt
     screenshot_png: bytes = b""
     templated: bool = False  # built from the plain template after the designed page failed
 
@@ -206,6 +207,9 @@ async def design_page(
             result.defects.append(f"browser failed: {error}")
             return None
         defects = check(body, measured)
+        result.trace.append({"attempt": result.attempts,
+                             "kinds": sorted({defect.kind for defect in defects}),
+                             "messages": [defect.message[:80] for defect in defects][:6]})
         if any(defect.kind in FIT for defect in defects) and 'class="page compact' not in body:
             # A little too tall: the same page with less air often fits, at no model cost.
             tighter = body.replace('class="page', 'class="page compact', 1)

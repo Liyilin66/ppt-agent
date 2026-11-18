@@ -348,7 +348,8 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
             if item.show_gridlines:
                 axis.major_gridlines.format.line.color.rgb = _rgb(theme.palette.surface_alt)
             axis.visible = item.show_value_axis
-            if item.chart in ("bar", "column") and all(value >= 0 for series in item.series for value in series.values):
+            if item.zero_based and item.chart in ("bar", "column") and all(
+                    value >= 0 for series in item.series for value in series.values):
                 # A bar's length is read as its value. PowerPoint's automatic axis starts above zero for
                 # close values (51% and 60% drawn 2.8 times apart); bars always start at zero.
                 axis.minimum_scale = 0

@@ -156,6 +156,9 @@ class ChartItem(BaseElement):
     number_format: str | None = Field(default=None, max_length=40)
     highlight: int | None = Field(default=None, ge=0)  # the category the page is about
     projected: list[int] = Field(default_factory=list)  # categories that are forecasts, drawn hollow
+    # Bars measured from zero. False only for decks signed off before this rule (P3), which are
+    # rendered as they were accepted; a new version of such a deck is accepted anew.
+    zero_based: bool = False  # a design saved before the rule has no such field and renders as signed
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:
