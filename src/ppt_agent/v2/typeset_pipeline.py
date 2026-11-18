@@ -451,6 +451,10 @@ RICH_SYSTEM = (
     'them, say so with its exact values in highlight or items (a series is then drawn as a chart on this page; a '
     'figure is then shown beside the text) - a drawn comparison is worth more than the same numbers in prose. '
     'Do not bend the claim toward data that does not bear on it. '
+    'diversity.content_plan, when given, is the deck plan: argue this_page.claim, lead with this_page.lead and '
+    'add this_page.increment; build the items from this_page.owns. A figure another page leads with or owns may '
+    'appear here at most once, as context, never as the title, the highlight or an item value. '
+    'If your own evidence plainly contradicts the plan, follow the evidence. '
     'The source field uses exactly the form "<filename> 第N页" or "<filename> 第N-M页"; several pages are separated '
     'by "；". Item ref is optional and uses the same form. '
     'Fill headers + rows when several cases share the same attributes; cells are short. '
@@ -951,7 +955,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         if source_figures:
             progress(f'[data] {len(source_figures)} captioned figures found in the source')
 
-    async def produce(slot):
+    # What each page argues, planned across the deck before any page is written.
+    page_plans = {}
+    if rich and evidence_store is not None:
+        from ppt_agent.v2 import content_plan as deck_content
+        page_plans = await deck_content.plan(client, checkpoints, content_slots, packets)
+        progress(f'[content] {len(page_plans)} page claims planned across the deck')
+
+    async def produce(slot, revision=None, current=None):
         assigned = plan[slot.page_number]
         diversity = {'assigned_archetype': assigned,
                      # Only data-bound assignments may fall back: a page planned as
@@ -970,6 +981,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         async with semaphore:
             if rich:
                 diversity = {'other_page_titles': diversity['other_page_titles']}
+                if page_plans.get(slot.page_number):
+                    diversity['content_plan'] = deck_content.brief_for(slot.page_number, page_plans)
                 if series_found.get(slot.page_number):
                     diversity['available_series'] = [
                         {'metric': item.metric, 'scope': item.scope, 'period': item.period,
@@ -980,6 +993,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 if nearby:
                     diversity['available_figures'] = nearby
             content, record = await generate_content(client, checkpoints, slot, brief, profile,
+                                                    revision_instruction=revision, force_regenerate=revision is not None,
+                                                    current_content=current,
                                                     diversity=diversity, source_references=references,
                                                     source_page_counts=page_counts, evidence=packet,
                                                     rich_tier=tiers.get(slot.page_number))
@@ -1024,6 +1039,27 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         return slot.page_number, (content, record)
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
+    if page_plans:
+        # Pages that still argue one conclusion twice: the later (or straying) one is rewritten once.
+        signed = set((checkpoints.load('html/accepted.json') or {}).get('pages', []))
+        by_number = {slot.page_number: slot for slot in content_slots}
+        overlap = await deck_content.review(
+            client, checkpoints, {number: content.model_dump(mode='json', exclude_none=True)
+                                  for number, (content, _) in results.items()}, page_plans, signed)
+        rewrites = overlap['rewrite']
+        if rewrites:
+            rewritten = await asyncio.gather(*(
+                produce(by_number[page], revision=text,
+                        current=results[page][0].model_dump(mode='json', exclude_none=True))
+                for page, text in sorted(rewrites.items())))
+            results.update(dict(rewritten))
+            overlap = await deck_content.review(
+                client, checkpoints, {number: content.model_dump(mode='json', exclude_none=True)
+                                      for number, (content, _) in results.items()}, page_plans, signed,
+                rewritten=overlap)
+        checkpoints.save('typeset/content_overlap.json', overlap)
+        progress(f"[content] {len(overlap['repeated'])} repeated pair(s) found, {len(rewrites)} page(s) rewritten, "
+                 f"{len(overlap.get('left', []))} left")
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
