@@ -122,3 +122,27 @@ def test_a_long_deck_is_planned_in_batches_that_see_each_other():
     packets = {n: SimpleNamespace(text="", chunk_ids=[f"c{n}"]) for n in range(3, 40)}
     planned = asyncio.run(cp.plan(Planner(), _Checkpoints(), slots, packets))
     assert len(planned) == 37 and calls == [0, 12, 24, 36]
+
+
+def test_a_truncated_batch_is_retried_then_stops_the_run_with_its_error():
+    from types import SimpleNamespace
+
+    class Truncating:
+        async def complete_json(self, **kwargs):
+            asked = json.loads(kwargs["user"])
+            if asked["pages"][0]["page"] == 15:  # the second batch: its reply never parses
+                raise ValueError("reply truncated at max_output_tokens")
+            return {"pages": [{"page": entry["page"], "claim": f"c{entry['page']}", "owns": []} for entry in asked["pages"]]}
+
+    slots = [SimpleNamespace(page_number=n, brief=None, section_title="s") for n in range(3, 40)]
+    packets = {n: SimpleNamespace(text="", chunk_ids=[f"c{n}"]) for n in range(3, 40)}
+    checkpoints = _Checkpoints()
+    planned = asyncio.run(cp.plan(Truncating(), checkpoints, slots, packets))
+    saved = checkpoints.saved["typeset/content_plan.json"]
+    assert saved["unplanned_pages"] == list(range(15, 27)) and len(saved["failures"]) == 3
+    try:
+        cp.require(planned, list(range(3, 40)), checkpoints)
+    except cp.PlanningFailed as error:
+        assert "15" in str(error) and "truncated" in str(error)
+    else:
+        raise AssertionError("an unplanned deck must not go on")

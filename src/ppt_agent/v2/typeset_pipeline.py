@@ -964,6 +964,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         # before anything is written, so no page exists only to retell another.
         from ppt_agent.v2 import content_plan as deck_content, page_budget
         first_plan = await deck_content.plan(client, checkpoints, content_slots, packets)
+        deck_content.require(first_plan, [slot.page_number for slot in content_slots], checkpoints)
         budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store,
                                           thin=deck_content.thin(first_plan, packets), content_plan=first_plan)
         skeleton, packets = page_budget.apply(skeleton, packets, budget, evidence_store)
@@ -1042,6 +1043,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     if rich and evidence_store is not None:
         from ppt_agent.v2 import content_plan as deck_content
         page_plans = await deck_content.plan(client, checkpoints, content_slots, packets)
+        if type_roles:
+            deck_content.require(page_plans, [slot.page_number for slot in content_slots], checkpoints)
         unplanned = sorted({slot.page_number for slot in content_slots} - set(page_plans))
         progress(f'[content] {len(page_plans)} page claims planned across the deck'
                  + (f'; NOT planned: {unplanned} (see typeset/content_plan.json failures)' if unplanned else ''))

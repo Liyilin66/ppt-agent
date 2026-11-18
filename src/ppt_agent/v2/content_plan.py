@@ -400,3 +400,19 @@ def narrative_ok(page: int, entry: dict[str, Any], content_plan: dict[int, dict[
         text = getattr(packets.get(page), "text", "") or ""
         return bool(label) and re.sub(r"\s+", "", label.group(1)) in re.sub(r"\s+", "", text)
     return True  # summary: the outline made it one
+
+
+class PlanningFailed(RuntimeError):
+    """The deck plan could not be made for some pages: generating them unplanned would skip the checks
+    that keep pages from retelling each other, so the run stops with what failed."""
+
+
+def require(content_plan: dict[int, dict[str, Any]], numbers: list[int], checkpoints: Any) -> None:
+    missing = sorted(set(numbers) - set(content_plan))
+    if missing:
+        saved = checkpoints.load("typeset/content_plan.json") or {}
+        failures = saved.get("failures") or []
+        raise PlanningFailed(
+            f"deck plan missing for pages {missing} after retries; batch errors: "
+            + json.dumps(failures[-3:], ensure_ascii=False)[:600]
+            + " (see checkpoints/typeset/content_plan.json; rerun with --resume once the cause is fixed)")
