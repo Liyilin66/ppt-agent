@@ -158,7 +158,7 @@ def _fields(data: dict):
                 yield from walk(child, f'{path}.{key}'.strip('.'), bound if key=='value' else '')
         elif isinstance(value,list):
             for i,child in enumerate(value):
-                bound=data.get('categories',[])[i] if path=='values' and i<len(data.get('categories',[])) else label
+                bound=(data.get('categories') or [])[i] if path=='values' and i<len((data.get('categories') or [])) else label
                 yield from walk(child,f'{path}.{i}',bound)
         elif isinstance(value,(str,float,int)):
             text=str(value)
@@ -248,9 +248,9 @@ def _readable_fragments(data: dict) -> list[str]:
     result += [pair(c,f"{v:g}",unit) for c,v in zip(data.get('categories') or [],data.get('values') or [])]
     result += [i['text'] for i in data.get('insights') or []]
     result += [f"{i['heading']}：{i['body']}" for i in data.get('items') or []]
-    result += [f"{i['label']}：{i['body']}" for i in data.get('steps',[])]
-    result += [pair(m['date'],m['label']) for m in data.get('milestones',[])]
-    for row in data.get('rows',[]):
+    result += [f"{i['label']}：{i['body']}" for i in (data.get('steps') or [])]
+    result += [pair(m['date'],m['label']) for m in (data.get('milestones') or [])]
+    for row in (data.get('rows') or []):
         if isinstance(row,list):
             result.append(' '.join(row))
         else:
