@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections import Counter
 import re
@@ -477,16 +478,23 @@ RICH_SYSTEM = (
 async def generate_content(client, checkpoints, slot, brief, profile, *,
                            revision_instruction=None, force_regenerate=False, current_content: dict[str, Any] | None = None,
                            diversity: dict[str, Any] | None = None, source_references: list[str] | None = None, source_page_counts: dict[str, int] | None = None, evidence=None,
-                           rich_tier: str | None = None):
-    """``rich_tier`` asks for the richer page model the HTML engine designs from."""
+                           rich_tier: str | None = None, versioned: bool = False):
+    """``rich_tier`` asks for the richer page model the HTML engine designs from. ``versioned`` keeps an
+    automatic revision apart from the first version (a person's revision replaces it)."""
     from ppt_agent.v2.visual.content import RichContent
     source_references = source_references or re.findall(r'https?://[^\s]+', brief.source_digest or '')
     name = f'typeset/content_{slot.page_number:03d}.json'
+    if revision_instruction and versioned:
+        # A revision is its own result, keyed by everything that shapes it: the instruction, the content it
+        # revises, the evidence and the rules. The first version is never overwritten, so a resumed run
+        # starts from the same content and reaches the same decisions (round 7: overwriting it made each
+        # resume review rewritten pages and remove a different set).
+        key = hashlib.sha1(json.dumps([RULES_VERSION, revision_instruction, current_content,
+                                       getattr(evidence, 'text', None)], ensure_ascii=False, sort_keys=True,
+                                      default=str).encode('utf-8')).hexdigest()[:12]
+        name = f'typeset/content_{slot.page_number:03d}.rev-{key}.json'
     cached = checkpoints.load(name)
-    if force_regenerate and not (cached and revision_instruction
-                                 and (cached.get('record') or {}).get('revision') == revision_instruction):
-        # A revision is written once: a resumed run asked for the same revision reuses it, so a deck does not
-        # change each time it is resumed (round 7: a page removed in one pass stayed in the next).
+    if force_regenerate and not (revision_instruction and versioned):
         cached = None
     adapter = TypeAdapter(RichContent) if rich_tier else content_adapter()
     if cached is not None:
@@ -671,6 +679,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     if page_brief.speaker_notes:
         parsed = parsed.model_copy(update={'speaker_notes': page_brief.speaker_notes})
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback, 'revision': revision_instruction,
+              'checkpoint': name,
               'validation_errors': errors, 'archetype': parsed.archetype,
               'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources, 'source_trimmed': source_trims,
               'trimmed_items': trims, 'relation_check': relation_failures,
@@ -921,6 +930,7 @@ def name_categories(content, series_pool):
     return (content.model_copy(update={'items': items}) if renamed else content), renamed
 
 
+RULES_VERSION = 'p4-fix8'  # part of every revision's cache key: new rules, new revisions
 NEAR_PASSAGE = 3  # chunks of the source: how far a repeated page may move to find material of its own
 
 
@@ -1105,7 +1115,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                                     current_content=current,
                                                     diversity=diversity, source_references=references,
                                                     source_page_counts=page_counts, evidence=packet,
-                                                    rich_tier=tiers.get(slot.page_number))
+                                                    rich_tier=tiers.get(slot.page_number), versioned=rich and bool(type_roles))
         record = {**record, 'assigned_archetype': assigned,
                   'archetype_downgraded': content.archetype != assigned}
         if record.get('evidence') is not None:
@@ -1141,7 +1151,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                packet.allowed_pages if packet is not None else None):
             record = {**record, 'source_invalid_cached': True}
             content = content.model_copy(update={'source': None})
-        checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
+        checkpoints.save(record.get('checkpoint') or f'typeset/content_{slot.page_number:03d}.json',
                          {'content': content.model_dump(mode='json'), 'record': record})
         progress(f'[content] page {slot.page_number} ready')
         return slot.page_number, (content, record)
@@ -1174,7 +1184,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                                              current=content.model_dump(mode='json', exclude_none=True))
                 if not new_record.get('fallback'):
                     new_record = {**new_record, 'content_status': 'CONTENT_RECOVERED', 'content_failure': diagnosis}
-                    checkpoints.save(f'typeset/content_{number:03d}.json',
+                    checkpoints.save(f'typeset/final/content_{number:03d}.json',
                                      {'content': new_content.model_dump(mode='json'), 'record': new_record})
                     return number, (new_content, new_record)
                 content, record = new_content, new_record
@@ -1183,7 +1193,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             if title != content.title and content.title == (by_number[number].section_title or '')[:40]:
                 content = content.model_copy(update={'title': title})
             record = {**record, 'content_status': 'NEEDS_CONTENT_REVIEW', 'content_failure': diagnosis}
-            checkpoints.save(f'typeset/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
+            checkpoints.save(f'typeset/final/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             return number, (content, record)
 
         async def recover_failed(stage):
@@ -1356,7 +1366,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 if decision['rewrite']:
                     record['content_status'] = 'NEEDS_CONTENT_REVIEW'
                 results[number] = (content, record)
-                checkpoints.save(f'typeset/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
+                checkpoints.save(f'typeset/final/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             audit_summary = claim_audit.summary(verdicts)
             audit_summary.update(rewritten=failing, still_failing=[n for n in numbers if decisions[n]['rewrite']],
                                  items_moved={str(n): decisions[n]['move_items'] for n in numbers if decisions[n]['move_items']},
@@ -1598,7 +1608,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 record.setdefault('numeric_check', {}).setdefault('removed', []).extend(stripped)
                 page, notes = typeset_page(content, profile, page_number=slot.page_number,
                                           deck_title=skeleton.deck_title, history=history, frames=frame_history)
-                checkpoints.save(f'typeset/content_{slot.page_number:03d}.json',
+                checkpoints.save(f'typeset/final/content_{slot.page_number:03d}.json',
                                  {'content': content.model_dump(mode='json'), 'record': record})
             final_contents.append(content)
             page = page.model_copy(update={'section': slot.section_title})
@@ -1727,7 +1737,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             'content_checkpoint': f'typeset/content_{slot.page_number:03d}.json' if slot.kind == 'content' else None,
             'design_checkpoint': f'html/page_{slot.page_number:03d}.json',
             'evidence_chunks': list(getattr(packet, 'chunk_ids', []) or []) if slot.kind == 'content' else [],
-            'claim_audit': (record.get('claim_audit') or {}).get('verdict')})
+            'claim_audit': (record.get('claim_audit') or {}).get('verdict'),
+            'content_version': record.get('checkpoint')})
     content_states['slides'] = slide_map
     claim_audit_summary = checkpoints.load('typeset/claim_audit.json')
     run = {'content_recovery': content_states, 'claim_audit': claim_audit_summary, 'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
