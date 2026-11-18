@@ -146,14 +146,14 @@ NARRATIVE = ("summary", "judgement", "visual")  # tasks that give a page its pla
 BATCH = 12  # pages planned in one call: 37 at once overran the reply limit and the plan came back empty
 
 
-async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]:
+async def plan(client, checkpoints, slots, packets, *, name: str = "typeset/content_plan.json") -> dict[int, dict[str, Any]]:
     """Each page's claim, lead fact and increment; cached at ``typeset/content_plan.json``.
 
     A long deck is planned a batch at a time; each batch sees what the earlier ones settled, so no
     two pages lead with one fact across batches either. A batch whose call fails is tried again and,
     failing that, recorded in ``failures`` - never silently left out."""
 
-    saved = checkpoints.load("typeset/content_plan.json")
+    saved = checkpoints.load(name)
     numbers = sorted(slot.page_number for slot in slots)
     evidence = {str(number): list(getattr(packets.get(number), "chunk_ids", []) or []) for number in numbers}
     if saved and sorted(int(page) for page in saved.get("pages", {})) == numbers \
@@ -204,7 +204,7 @@ async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]
                         if unsupported else ""))
         result.update(part)
     missing_pages = sorted(set(numbers) - set(result))
-    checkpoints.save("typeset/content_plan.json", {"evidence": evidence,
+    checkpoints.save(name, {"evidence": evidence,
                                                    "pages": {str(k): v for k, v in sorted(result.items())},
                                                    "conflicts_left": found, "rounds": rounds,
                                                    "failures": failures, "unplanned_pages": missing_pages})
@@ -414,10 +414,11 @@ class PlanningFailed(RuntimeError):
     that keep pages from retelling each other, so the run stops with what failed."""
 
 
-def require(content_plan: dict[int, dict[str, Any]], numbers: list[int], checkpoints: Any) -> None:
+def require(content_plan: dict[int, dict[str, Any]], numbers: list[int], checkpoints: Any,
+            name: str = "typeset/content_plan.json") -> None:
     missing = sorted(set(numbers) - set(content_plan))
     if missing:
-        saved = checkpoints.load("typeset/content_plan.json") or {}
+        saved = checkpoints.load(name) or {}
         failures = saved.get("failures") or []
         raise PlanningFailed(
             f"deck plan missing for pages {missing} after retries; batch errors: "

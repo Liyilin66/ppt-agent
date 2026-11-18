@@ -970,8 +970,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         # Pages the source can carry: a group of pages sharing too few facts keeps, moves or drops pages
         # before anything is written, so no page exists only to retell another.
         from ppt_agent.v2 import content_plan as deck_content, page_budget
-        first_plan = await deck_content.plan(client, checkpoints, content_slots, packets)
-        deck_content.require(first_plan, [slot.page_number for slot in content_slots], checkpoints)
+        # (the outline's own pages, kept apart from the plan of the pages that remain, so a resumed run asks once)
+        first_plan = await deck_content.plan(client, checkpoints, content_slots, packets,
+                                             name='typeset/content_plan_outline.json')
+        deck_content.require(first_plan, [slot.page_number for slot in content_slots], checkpoints,
+                             name='typeset/content_plan_outline.json')
         budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store,
                                           thin=deck_content.thin(first_plan, packets), content_plan=first_plan)
         skeleton, packets = page_budget.apply(skeleton, packets, budget, evidence_store)
