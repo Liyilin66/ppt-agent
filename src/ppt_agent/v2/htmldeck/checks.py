@@ -164,6 +164,11 @@ def find_defects(
                 or rect["y"] + rect["h"] > parent["y"] + parent["h"] + TOLERANCE):
             defects.append(Defect("overflow", f"文字「{label}」超出了它所在的色块，请减少文字或放大色块。", label))
         sizes = [run["size"] for run in item["runs"] if run.get("t", "").strip()]
+        text_here = re.sub(r"\s+", "", _item_text(item))
+        if roles and item.get("lines", 1) >= 2 and len(text_here) / item["lines"] < 3.0:
+            # Two characters a line is not a line: the words have been squeezed into a column.
+            defects.append(Defect(
+                "overflow", f"文字「{label}」被挤成了每行一两个字的竖条，读不成句。请给它更宽的区域，或删短它。", label))
         if roles and sizes:
             role = role_of(item.get("cls", ""))
             least = ROLE_MIN_PX.get(role)
