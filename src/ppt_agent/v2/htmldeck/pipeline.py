@@ -60,6 +60,7 @@ class PageResult:
     defects: list[str] = field(default_factory=list)
     aesthetic: list[str] = field(default_factory=list)  # soft defects the final version still has
     trace: list[dict[str, Any]] = field(default_factory=list)  # defect kinds found at each attempt
+    reduced: bool = False  # designed with fewer items after its full content would not fit
     screenshot_png: bytes = b""
     templated: bool = False  # built from the plain template after the designed page failed
 

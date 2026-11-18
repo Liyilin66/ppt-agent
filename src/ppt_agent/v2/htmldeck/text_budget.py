@@ -86,4 +86,6 @@ def budget(content: dict[str, Any], form: str, arrangement: str = "") -> Budget 
 
 def words(plan: Budget) -> str:
     return (f"这一页的文字预算（按这种版式的文字区算出来的）：每条说明不超过 {plan.body_chars} 个字，超过的删短措辞，"
-            f"不要缩小字号、不要压缩行距；结论一句不超过 {plan.call_chars} 个字。按这个量给每个区域留够行数。")
+            f"不要缩小字号、不要压缩行距；结论一句不超过 {plan.call_chars} 个字。"
+            "区域的行号先按估计写：程序会按渲染出来的实际内容重新分配行高，并把下面的区域顺次下移。"
+            "你要定的是构图——哪些区域左右并排、哪些上下相接、各占多宽、谁是焦点；同一列里的区域按从上到下的顺序写。")

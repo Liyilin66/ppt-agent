@@ -363,9 +363,29 @@ async def design_deck(
                     result = again
                     if result.ok:
                         break
+            if not result.ok and theme.vocabulary == 2 and job.type_roles and len(job.content.get("items") or []) > 2:
+                # Less on the page before a plain one: the two most important items stay, the rest go to
+                # the notes, and the page is designed once more in its planned form.
+                index = next(i for i, item in enumerate(plan) if item.page == job.page_number)
+                keep_items, keep_notes = job.all_items, job.all_notes
+                full = list(keep_items if keep_items is not None else job.content.get("items") or [])
+                job.all_items = full[:2]
+                job.all_notes = ((job.notes + "\n") if job.notes else "") + "页面未展开的要点：" + "；".join(
+                    " ".join(str(item.get(key)) for key in ("heading", "value", "body") if item.get(key))
+                    for item in full[2:])
+                _apply(job, plan[index])
+                async with gate:
+                    again = await design_page(client, session, theme, font_css, job, look=look)
+                again.attempts += result.attempts
+                if again.ok:
+                    again.reduced = True
+                    result = again
+                else:
+                    job.all_items, job.all_notes = keep_items, keep_notes
+                    _apply(job, plan[index])
             if not result.ok and theme.vocabulary == 2:
                 # Rather than a page from the other layout engine, a plain page in this theme,
-                # arranged unlike the plain pages near it.
+                # arranged unlike the plain pages near it. It is not counted a success: it waits for a person.
                 nearby = {name for number, name in plain_used.items() if 0 < abs(number - job.page_number) <= 3}
                 variant = _plain_variant(job, nearby)
                 plain_used[job.page_number] = variant
@@ -551,6 +571,9 @@ async def design_deck(
         "no_longer_accepted": remade,
         "fell_back_pages": sorted(job.page_number for job in jobs if not results[job.page_number].ok),
         "templated_pages": sorted(job.page_number for job in jobs if results[job.page_number].templated),
+        "pending_review_pages": sorted(job.page_number for job in jobs
+                                       if results[job.page_number].templated or not results[job.page_number].ok),
+        "reduced_pages": sorted(job.page_number for job in jobs if getattr(results[job.page_number], "reduced", False)),
         "structural_fell_back": sorted(spec["page_number"] for spec in structural
                                        if not results[spec["page_number"]].ok),
         "model_calls": sum(results[job.page_number].attempts for job in jobs),
