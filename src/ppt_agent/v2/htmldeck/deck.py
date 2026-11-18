@@ -427,8 +427,12 @@ async def design_deck(
                         and abs(number - job.page_number) <= composition.WINDOW and results[number].ok]
                 taken = {drawn(job, current.arrangement), drawn(by_page.get(partner), theirs)}
                 taken |= {drawn(by_page[number], "") for number in near if by_page[number].form == "chart"}
-                options = [option for option in layout_plan.arrangements_for(contents[job.page_number])
-                           if option not in taken]
+                possible = layout_plan.arrangements_for(contents[job.page_number])
+                options = [option for option in possible if option not in taken]
+                # When the neighbours use up the rest, an arrangement only the clashing page lacks; the
+                # measured distance below still decides whether it is kept.
+                options += [option for option in possible if option not in options
+                            and option not in (drawn(job, current.arrangement), drawn(by_page.get(partner), theirs))]
                 if not options:
                     return
                 before = results[job.page_number]
