@@ -1304,6 +1304,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
             failing = [number for number in numbers if decided(number)['rewrite'] and number not in signed]
             before_audit = {number: (results[number], verdicts[number]) for number in failing}
+            before_dump = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()
+                           if number in numbers}
             from ppt_agent.v2 import content_plan as deck_content
             if failing:
                 def taken(number):
@@ -1325,10 +1327,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 dumped = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()
                           if number in numbers}
                 repeated_by_rewrite = {}
+                # Any repeat the rewrites created: a suspect pair that was not one before them.
+                old_pairs = {tuple(pair['pages']) for pair in deck_content.suspects(before_dump)}
                 for pair in deck_content.suspects(dumped):
                     hit = set(pair['pages']) & set(failing)
-                    if hit and (pair['why'] in ('焦点数字相同', deck_content.GROUP_REPEATED)
-                                or len(pair.get('shared') or []) >= deck_content.FAR_SHARED):
+                    if hit and tuple(pair['pages']) not in old_pairs:
                         for number in hit:
                             repeated_by_rewrite[number] = pair
                 for number, pair in repeated_by_rewrite.items():
