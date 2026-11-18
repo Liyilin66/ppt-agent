@@ -42,3 +42,13 @@ def test_dropping_a_page_renumbers_and_removes_an_empty_section_divider():
     new, packets = page_budget.apply(skeleton, {3: "p3", 5: "p5"}, {"decisions": {"5": {"decision": "drop"}}}, None)
     assert [(slot.page_number, slot.kind) for slot in new.slots] == [(1, "cover"), (2, "section_divider"), (3, "content"), (4, "closing")]
     assert packets == {3: "p3"} and new.total_pages == 4
+
+
+def test_pages_owning_one_figure_each_are_thin():
+    from ppt_agent.v2 import content_plan
+
+    packets = {n: _packet(FACTS, ["c1"]) for n in (3, 4, 5)}
+    plan = {3: {"lead": "5.15亿人", "owns": ["用户规模达5.15亿人", "较2024年12月增长2.66亿人"]},
+            4: {"lead": "36.5%", "owns": ["普及率达到36.5%"]},
+            5: {"lead": "18.8个百分点", "owns": [], "role": "thin"}}
+    assert content_plan.thin(plan, packets) == [4, 5]

@@ -95,22 +95,33 @@ def uncovered(store: Any, packets: dict[int, Any]) -> list[dict[str, Any]]:
 
 
 async def decide(client: Any, checkpoints: Any, slots: list[Any], packets: dict[int, Any],
-                 store: Any) -> dict[str, Any]:
-    """Decisions for pages in over-budget groups; cached at ``typeset/page_budget.json``."""
+                 store: Any, thin: list[int] | None = None,
+                 content_plan: dict[int, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Decisions for pages that cannot say something of their own: pages in over-budget groups, and
+    pages the deck plan found thin (``thin``); cached at ``typeset/page_budget.json``."""
 
     saved = checkpoints.load("typeset/page_budget.json")
     if saved is not None:
         return saved
     numbers = sorted(slot.page_number for slot in slots)
     over = [found for group in groups(numbers, packets) if (found := over_budget(group, packets))]
+    if thin:
+        # A thin page may go altogether: the pages it would retell carry its topic.
+        over.append({"pages": sorted(thin), "facts": None, "kind": "thin", "supports": 0, "thin": True,
+                     "others_own": {str(page): (content_plan or {}).get(page, {}).get("owns", [])
+                                    for page in numbers if page not in thin}})
     result: dict[str, Any] = {"requested_content_pages": len(numbers), "over_budget": over, "decisions": {}}
     if over and store is not None:
         spare = uncovered(store, packets)
         by_number = {slot.page_number: slot for slot in slots}
         asked = {"groups": [{"pages": [{"page": number, "title": by_number[number].brief.title if by_number[number].brief else "",
-                                       "facts": facts(packets[number].text if packets.get(number) else "", limit=10)}
+                                       "facts": facts(packets[number].text if packets.get(number) else "", limit=10),
+                                       **({"plan": (content_plan or {}).get(number)} if content_plan else {})}
                                       for number in found["pages"]],
-                             "independent_facts": found["facts"]} for found in over],
+                             **({"note": "这些页在整套策划里拿不到两条别页没用到的事实；可以都删掉（别页已讲其主题），"
+                                         "或改讲 uncovered 里的新内容，只有确有自己的内容才 keep",
+                                 "other_pages_own": found["others_own"]} if found.get("thin")
+                                else {"independent_facts": found["facts"]})} for found in over],
                  "uncovered": spare}
         try:
             reply = await client.complete_json(task="page_budget", system=BUDGET_SYSTEM,
@@ -149,7 +160,7 @@ def validate(reply: Any, over: list[dict[str, Any]], spare: list[dict[str, Any]]
             elif decision == "drop":
                 decisions[str(number)] = {"decision": "drop", "why": str(entry.get("why") or "")[:60]}
         kept = [number for number in group if decisions.get(str(number), {}).get("decision") != "drop"]
-        if not kept:
+        if not kept and not found.get("thin"):
             decisions.pop(str(group[0]), None)  # a group always keeps its first page
     return decisions
 

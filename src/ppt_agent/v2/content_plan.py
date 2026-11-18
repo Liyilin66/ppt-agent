@@ -37,7 +37,8 @@ PLAN_SYSTEM = (
     "4. 观点和领衔事实只能来自该页自己的证据句；不要自己计算合计、差值或倍数。\n"
     "5. 各页的 owns 互不重叠。几页共用一份证据时，把证据里的事实分组分给它们；"
     "宁可让一页讲一组别页都没用的事实（例如构成、人群、原因），也不要让它复述别页。\n"
-    "6. role 只有大纲本身就是总结页时才写 summary。\n"
+    "6. role 只有大纲本身就是总结页时才写 summary。某页从自己的证据里拿不到至少两条别页没用到的事实时，"
+    "不要硬分：owns 只写它真有的，role 写 thin。\n"
     '只输出 JSON：{"pages":[{"page":页码,"claim":"","lead":"","increment":"","owns":[""],"context":[""],"role":"detail"}]}'
 )
 
@@ -129,7 +130,7 @@ def _clean(entry: dict[str, Any]) -> dict[str, Any]:
             "owns": [str(item)[:60] for item in owns][:5],
             "increment": str(entry.get("increment") or "")[:60],
             "context": [str(item)[:24] for item in context][:3],
-            "role": "summary" if entry.get("role") == "summary" else "detail"}
+            "role": entry.get("role") if entry.get("role") in ("summary", "thin") else "detail"}
 
 
 async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]:
@@ -137,7 +138,9 @@ async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]
 
     saved = checkpoints.load("typeset/content_plan.json")
     numbers = sorted(slot.page_number for slot in slots)
-    if saved and sorted(int(page) for page in saved.get("pages", {})) == numbers:
+    evidence = {str(number): list(getattr(packets.get(number), "chunk_ids", []) or []) for number in numbers}
+    if saved and sorted(int(page) for page in saved.get("pages", {})) == numbers \
+            and saved.get("evidence", evidence) == evidence:
         return {int(page): entry for page, entry in saved["pages"].items()}
     digest = _digest(slots, packets)
     user = json.dumps(digest, ensure_ascii=False)
@@ -174,7 +177,8 @@ async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]
                  + ("\n这些页领衔了同一个数字，让每个数字只有一页领衔：" + json.dumps(found, ensure_ascii=False) if found else "")
                  + ("\n这些页的领衔事实里有证据中没有的数字（不能自己计算合计或差值）：" + json.dumps(unsupported, ensure_ascii=False)
                     if unsupported else ""))
-    checkpoints.save("typeset/content_plan.json", {"pages": {str(k): v for k, v in sorted(result.items())},
+    checkpoints.save("typeset/content_plan.json", {"evidence": evidence,
+                                                   "pages": {str(k): v for k, v in sorted(result.items())},
                                                    "conflicts_left": found, "rounds": rounds})
     return result
 
@@ -322,3 +326,16 @@ async def review(client, checkpoints, contents: dict[int, dict[str, Any]], conte
         rewrite[page] = instruction(page, other, contents, content_plan, pair["why"])
     return {"suspects": found, "repeated": [pair["pages"] for pair in repeated],
             "rewrite": {page: text for page, text in sorted(rewrite.items())}}
+
+
+def thin(content_plan: dict[int, dict[str, Any]], packets: dict[int, Any]) -> list[int]:
+    """Pages with too little of their own to say: marked thin by the planner, or owning fewer than
+    two figures while their evidence has figures to own (CNNIC p3-6: one figure each)."""
+
+    found = []
+    for page, entry in sorted(content_plan.items()):
+        has_figures = len(figures(getattr(packets.get(page), "text", "") or "")) >= 2
+        if entry.get("role") == "thin" or (has_figures and entry.get("role") != "summary"
+                                          and len(owned_figures(entry)) < 2):
+            found.append(page)
+    return found

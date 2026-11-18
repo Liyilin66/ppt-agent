@@ -244,10 +244,10 @@ def _readable_fragments(data: dict) -> list[str]:
         return f"{label} {value}{unit}".strip()
     unit='%' if '%' in (data.get('unit_format') or '') else ''
     result=[]
-    result += [pair(m['label'],m['value']) for m in data.get('metrics',[])]
-    result += [pair(c,f"{v:g}",unit) for c,v in zip(data.get('categories',[]),data.get('values',[]))]
-    result += [i['text'] for i in data.get('insights',[])]
-    result += [f"{i['heading']}：{i['body']}" for i in data.get('items',[])]
+    result += [pair(m['label'],m['value']) for m in data.get('metrics') or []]
+    result += [pair(c,f"{v:g}",unit) for c,v in zip(data.get('categories') or [],data.get('values') or [])]
+    result += [i['text'] for i in data.get('insights') or []]
+    result += [f"{i['heading']}：{i['body']}" for i in data.get('items') or []]
     result += [f"{i['label']}：{i['body']}" for i in data.get('steps',[])]
     result += [pair(m['date'],m['label']) for m in data.get('milestones',[])]
     for row in data.get('rows',[]):

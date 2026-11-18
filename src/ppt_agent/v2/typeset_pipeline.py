@@ -931,10 +931,13 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     if getattr(request, 'html_theme', None) and evidence_store is not None and type_roles:
         # Pages the source can carry: a group of pages sharing too few facts keeps, moves or drops pages
         # before anything is written, so no page exists only to retell another.
-        from ppt_agent.v2 import page_budget
-        budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store)
+        from ppt_agent.v2 import content_plan as deck_content, page_budget
+        first_plan = await deck_content.plan(client, checkpoints, content_slots, packets)
+        budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store,
+                                          thin=deck_content.thin(first_plan, packets), content_plan=first_plan)
         skeleton, packets = page_budget.apply(skeleton, packets, budget, evidence_store)
         content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
+        # (the deck plan below is made again when pages moved or went: its pages are no longer these)
         moved = sum(entry['decision'] == 'retarget' for entry in budget['decisions'].values())
         progress(f"[content] page budget: {budget['supported_content_pages']} of {budget['requested_content_pages']} "
                  f"content pages supported, {moved} moved to uncovered material")
