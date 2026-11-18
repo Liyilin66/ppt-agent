@@ -12,7 +12,13 @@ from pydantic import TypeAdapter, ValidationError
 
 from .visual.content import ArchetypeContent, StatementContent
 
-_NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|万亿|亿|万|千|百|pp)?', re.I)
+# Thousands may be grouped with commas or, in English reports (IEA), spaces: "27 000", "1 000 000".
+_NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3}(?!\d))*(?:[ \u00a0\u202f]\d{3}(?![\d,.]))*(?:\.\d+)?\s*'
+                     r'(?:[%％]|万亿|亿|万|千|百|pp|percentage points?|trillion|billion|million|thousand|bn\b|mn\b)?', re.I)
+# A figure is compared by magnitude, so "2,000万" (Chinese page) is the "20 million" of an English source.
+_SCALE = {'万亿': Decimal(10) ** 12, '亿': Decimal(10) ** 8, '万': Decimal(10) ** 4, '千': Decimal(1000), '百': Decimal(100),
+          'trillion': Decimal(10) ** 12, 'billion': Decimal(10) ** 9, 'bn': Decimal(10) ** 9, 'million': Decimal(10) ** 6,
+          'mn': Decimal(10) ** 6, 'thousand': Decimal(1000)}
 # Roadmap phases and bar positions are the deck's advice, not claims about a source.
 _SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart', 'phases', 'start', 'end',
          'series', 'figure', 'diagram', 'visual'}  # checked by v2.data_series and v2.figures, more strictly than here
@@ -20,11 +26,28 @@ _ADAPTER = TypeAdapter(ArchetypeContent)
 
 
 def _key(value: str) -> tuple[Decimal, str]:
-    match = re.match(r'([-+]?\d[\d,]*(?:\.\d+)?)\s*(.*)', value.strip())
-    return Decimal(match[1].replace(',', '')), match[2].lower().replace('％', '%')
+    match = re.match(r'([-+]?\d+(?:,\d{3}(?!\d))*(?:[ \u00a0\u202f]\d{3}(?![\d,.]))*(?:\.\d+)?)\s*(.*)', value.strip())
+    return Decimal(re.sub(r'[,\s\u202f]', '', match[1])), match[2].lower().replace('％', '%')
+
+
+def _magnitude(value: str) -> tuple[Decimal, str]:
+    """A figure as an amount: "2,000万", "20 million" and "20 000 000" are one key; "%" and points keep theirs."""
+    match = re.match(r'([-+]?\d[\d,  \u202f]*(?:\.\d+)?)\s*(.*)', value.strip())
+    number = Decimal(re.sub(r'[,\s\u202f]', '', match[1]))
+    unit = match[2].lower().replace('％', '%').strip()
+    if unit.startswith('percentage point'):
+        unit = 'pp'
+    if unit in _SCALE:
+        return (number * _SCALE[unit]).normalize(), ''
+    return number.normalize(), unit
 
 
 _YEAR = re.compile(r'(?:19|20)\d{2}')
+
+
+def _cjk_share(text: str) -> float:
+    letters = re.findall(r'[\u3400-\u9fffA-Za-z]', text or '')
+    return sum(bool(re.match(r'[\u3400-\u9fff]', c)) for c in letters) / len(letters) if letters else 0.0
 _COUNTED = re.compile(r'[ \t]*(?:[个家项款台人吨元种位名件次倍兆]|多个|多家|多项|余|以上|的|美元|欧元)')
 
 
@@ -138,10 +161,10 @@ def number_contexts(issues: list[dict], evidence, width: int = 50, limit: int = 
     result = []
     for issue in issues:
         try:
-            wanted = _key(issue['value'].lstrip('-+'))
+            wanted = _magnitude(issue['value'].lstrip('-+'))
         except (TypeError, ValueError, ArithmeticError):
             continue
-        hits = [m for m in _NUMBER.finditer(text) if _key(m.group()) == wanted][:limit]
+        hits = [m for m in _NUMBER.finditer(text) if _magnitude(m.group()) == wanted][:limit]
         for m in hits:
             snippet = re.sub(r'\s+', '', text[max(0, m.start() - width):m.end() + width // 2])
             result.append(f"{issue['value']}: …{snippet}…")
@@ -207,7 +230,7 @@ def check_content_numbers(content, evidence) -> list[dict]:
     numbers=list(_NUMBER.finditer(text))
     indexed={}
     for match in numbers:
-        indexed.setdefault(_key(match.group()),[]).append(match)
+        indexed.setdefault(_magnitude(match.group()),[]).append(match)
     issues=[]
     for path,value,label in _fields(content.model_dump(mode='json')):
         if re.fullmatch(r'milestones\.\d+\.date',path) and re.fullmatch(r'\s*(?:第|阶段|step|phase)?\s*\d{1,2}\s*(?:步|阶段)?\s*',value,re.I):
@@ -223,15 +246,19 @@ def check_content_numbers(content, evidence) -> list[dict]:
             # Removing it would also leave a broken title.
             if not label and re.fullmatch(r'\d{1,2}',match.group().strip()) and int(match.group())<=12:
                 continue
-            candidates=indexed.get(_key(match.group()),[])
+            candidates=indexed.get(_magnitude(match.group()),[])
             if not candidates and unit and not _key(match.group())[1]:
-                candidates=indexed.get(_key(match.group()+unit[1]),[])
+                candidates=indexed.get(_magnitude(match.group()+unit[1]),[])
             if not candidates and match.group().strip().startswith('-'):
                 # "-11%" for "运动次数减少 11%": a decline written as a negative value.
-                candidates=[c for c in indexed.get(_key(match.group().strip()[1:]),[])
+                candidates=[c for c in indexed.get(_magnitude(match.group().strip()[1:]),[])
                             if _DECREASE.search(text[max(0,c.start()-8):c.start()]+label)]
             reason = 'number_missing' if not candidates else None
-            if candidates and label and not any(_metric_match(text,numbers,c,label) for c in candidates):
+            # A Chinese label cannot be found word for word in an English source: the
+            # figure is bound by its magnitude only there, and what it measures is left to the claim audit.
+            # (Latin product names in a Chinese source, "Llama 2", are not another language.)
+            other_language = _cjk_share(label) > 0.3 and _cjk_share(text) < 0.05
+            if candidates and label and not other_language and not any(_metric_match(text,numbers,c,label) for c in candidates):
                 reason='metric_mismatch'
             if reason:
                 issues.append({'path':path,'value':match.group().strip(),'label':label,'reason':reason})

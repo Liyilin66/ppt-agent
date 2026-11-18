@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
-MEASURE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|个百分点|亿|万|倍|元|美元|人|家|个|项|款|笔)")
+from ppt_agent.v2.text_units import MEASURE, sentences as _sentences, weight as _weight  # Chinese and English (stage B)
 WINDOW = 3          # pages apart that a reader still holds in mind
 SHARED_FIGURES = 2  # figures in common that make two pages a suspect pair
 FAR_SHARED = 3      # figures in common that make two distant pages one group of facts told twice
@@ -64,11 +64,9 @@ def facts(text: str | None, limit: int = FACTS_PER_PAGE) -> list[str]:
     and bare chart labels (few words, many figures) are not sentences."""
 
     ticks = re.sub(r"(?:(?<![\d.])\d{1,3}%\s+){2,}\d{1,3}%", "", text or "")  # 0% 20% 40% ...: an axis
-    joined = re.sub(r"\s*\n\s*", "", ticks)
     found, seen = [], set()
-    for sentence in re.split(r"(?<=[。；！？])", joined):
-        sentence = " ".join(sentence.split())
-        words = len(re.findall(r"[\u4e00-\u9fff]", sentence))
+    for sentence in _sentences(ticks):
+        words = _weight(sentence)
         if not MEASURE.search(sentence) or words < 6 or len(MEASURE.findall(sentence)) > max(3, words // 4):
             continue
         sentence = sentence[:FACT_CHARS]

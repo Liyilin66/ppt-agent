@@ -35,8 +35,9 @@ BUDGET_SYSTEM = (
 def _sentences(text: str) -> list[str]:
     import re
 
-    joined = re.sub(r"\s*\n\s*", "", text or "")
-    return [s for s in re.split(r"(?<=[。；！？])", joined) if len(re.findall(r"[一-鿿]", s)) >= 12]
+    from ppt_agent.v2.text_units import sentences, weight
+
+    return [s for s in sentences(text) if weight(s) >= 12]
 
 
 def units(text: str) -> tuple[int, str]:

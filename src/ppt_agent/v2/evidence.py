@@ -11,6 +11,8 @@ import hashlib
 import math
 from pathlib import Path
 import re
+
+from ppt_agent.v2 import text_units
 from typing import Protocol
 
 _TERMS = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff]+|[A-Za-z0-9]+')
@@ -273,8 +275,10 @@ class EvidenceStore:
                 for page in pages:
                     content_lines = [line.strip() for line in page['text'].splitlines() if line.strip() and not re.fullmatch(r'[0-9IVX]+', line.strip()) and not re.search(r'报告[（(].*[）)]$', line.strip())]
                     flattened = re.sub(r'\s+', ' ', ' '.join(content_lines))
-                    for sentence in re.split(r'(?<=[。！？;；])', flattened):
-                        if re.search(r'\d[\d.,．]*\s*(?:亿|万|%|％|人|项|台|元|美元|倍|款|EFLOPS)', sentence) and '来源：' not in sentence and len(sentence) <= 500 and len(re.findall(r'[\u4e00-\u9fff]', sentence)) >= 5:
+                    for sentence in text_units.sentences('\n'.join(content_lines)):
+                        # Chinese and English figures alike (stage B: an English report showed the outline no figure)
+                        if (re.search(r'\d[\d.,．]*\s*(?:亿|万|%|％|人|项|台|元|美元|倍|款|EFLOPS)', sentence) or text_units.MEASURE.search(sentence)) \
+                                and '来源：' not in sentence and len(sentence) <= 500 and text_units.weight(sentence) >= 5:
                             numbers.append(f"[{doc['page_kind']} p{page['page']}] {sentence.strip()}")
                 # Spread numeric examples over the chapter rather than only its lead.
                 chosen = numbers
