@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import os
 import hashlib
 import json
 from typing import Any, Callable
@@ -332,7 +333,12 @@ async def design_deck(
                         results[job.page_number] = saved
                         return
                 if result is None or not result.ok:
-                    result = await design_page(client, session, theme, font_css, job, look=look)
+                    if job.type_roles and os.environ.get("PPT_AGENT_LAYOUT_IR") == "1" and job.role == "content":
+                        # Experimental: the model plans the structure and the program lays it out.
+                        from ppt_agent.v2.htmldeck.layout_ir import design_page_ir
+                        result = await design_page_ir(client, session, theme, font_css, job)
+                    else:
+                        result = await design_page(client, session, theme, font_css, job, look=look)
             if not result.ok and theme.vocabulary == 2:
                 failed = result
                 if checkpoints is not None:
