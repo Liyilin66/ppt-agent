@@ -1,0 +1,446 @@
+{
+ "3": {
+  "A": {
+   "overall": 4.57,
+   "wins": 2,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.67,
+    "fit": 4.0,
+    "legibility": 4.67,
+    "composition": 4.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 4.38,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.0,
+    "fit": 4.0,
+    "legibility": 4.67,
+    "composition": 4.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.62,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.67,
+    "fit": 5.0,
+    "legibility": 4.0,
+    "composition": 4.33,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "4": {
+  "A": {
+   "overall": 4.48,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.33,
+    "fit": 4.67,
+    "legibility": 4.0,
+    "composition": 4.33,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 4.43,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.33,
+    "fit": 4.67,
+    "legibility": 4.33,
+    "composition": 3.67,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.67,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 4.33,
+    "fit": 4.33,
+    "legibility": 5.0,
+    "composition": 4.33,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "5": {
+  "A": {
+   "overall": 4.43,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.0,
+    "fit": 4.67,
+    "legibility": 4.67,
+    "composition": 4.0,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 4.95,
+   "wins": 3,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 5.0,
+    "fit": 5.0,
+    "legibility": 5.0,
+    "composition": 4.67,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.29,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.0,
+    "fit": 4.0,
+    "legibility": 4.67,
+    "composition": 3.33,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "9": {
+  "A": {
+   "overall": 4.67,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.67,
+    "fit": 4.67,
+    "legibility": 5.0,
+    "composition": 3.67,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 4.57,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.33,
+    "fit": 4.33,
+    "legibility": 5.0,
+    "composition": 4.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.57,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.0,
+    "fit": 5.0,
+    "legibility": 4.0,
+    "composition": 4.33,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "11": {
+  "A": {
+   "overall": 4.48,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.33,
+    "fit": 4.33,
+    "legibility": 5.0,
+    "composition": 3.67,
+    "consistency": 4.33,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 5.0,
+   "wins": 3,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 5.0,
+    "fit": 5.0,
+    "legibility": 5.0,
+    "composition": 5.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.0,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 3.0,
+    "fit": 4.0,
+    "legibility": 4.67,
+    "composition": 3.0,
+    "consistency": 4.33,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "14": {
+  "A": {
+   "overall": 4.24,
+   "wins": 0,
+   "vetoes": [
+    "评审指出：中部箭头将4198亿网页数量指向3958亿GB移动流量，暗示两者是同一指标的前后或因果关系，结构关系不准确。",
+    "评审指出：用箭头将4198亿网页数量与3958亿GB移动流量连接，暗示两者存在前后或因果关系，属于不同指标的错误结构关系。",
+    "评审指出：用箭头将4198亿网页数量指向3958亿GB移动流量，暗示二者是前后转化或同一指标关系，与事实中的两个并列指标不符。"
+   ],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.33,
+    "fit": 3.0,
+    "legibility": 5.0,
+    "composition": 4.33,
+    "consistency": 5.0,
+    "accuracy": 4.0
+   }
+  },
+  "B": {
+   "overall": 4.86,
+   "wins": 3,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 5.0,
+    "fit": 4.67,
+    "legibility": 4.33,
+    "composition": 5.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.19,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.0,
+    "fit": 4.0,
+    "legibility": 4.33,
+    "composition": 3.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "16": {
+  "A": {
+   "overall": 4.09,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 3.67,
+    "polish": 4.0,
+    "fit": 4.0,
+    "legibility": 4.33,
+    "composition": 3.33,
+    "consistency": 5.0,
+    "accuracy": 4.33
+   }
+  },
+  "B": {
+   "overall": 4.43,
+   "wins": 2,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.67,
+    "fit": 4.0,
+    "legibility": 5.0,
+    "composition": 3.67,
+    "consistency": 5.0,
+    "accuracy": 4.33
+   }
+  },
+  "C": {
+   "overall": 4.52,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.0,
+    "fit": 5.0,
+    "legibility": 4.0,
+    "composition": 4.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  }
+ },
+ "21": {
+  "A": {
+   "overall": 4.67,
+   "wins": 2,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.67,
+    "polish": 4.67,
+    "fit": 4.67,
+    "legibility": 4.67,
+    "composition": 4.33,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  },
+  "B": {
+   "overall": 4.29,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 3.67,
+    "polish": 4.0,
+    "fit": 4.33,
+    "legibility": 4.67,
+    "composition": 3.67,
+    "consistency": 4.67,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.57,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.67,
+    "fit": 4.67,
+    "legibility": 4.67,
+    "composition": 4.67,
+    "consistency": 5.0,
+    "accuracy": 4.0
+   }
+  }
+ },
+ "22": {
+  "A": {
+   "overall": 1.95,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 2.0,
+    "polish": 1.67,
+    "fit": 2.0,
+    "legibility": 1.0,
+    "composition": 2.67,
+    "consistency": 1.33,
+    "accuracy": 3.0
+   }
+  },
+  "B": {
+   "overall": 4.95,
+   "wins": 3,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 5.0,
+    "fit": 5.0,
+    "legibility": 4.67,
+    "composition": 5.0,
+    "consistency": 5.0,
+    "accuracy": 5.0
+   }
+  },
+  "C": {
+   "overall": 4.1,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 4.0,
+    "fit": 3.33,
+    "legibility": 5.0,
+    "composition": 2.67,
+    "consistency": 5.0,
+    "accuracy": 4.67
+   }
+  }
+ },
+ "25": {
+  "A": {
+   "overall": 4.57,
+   "wins": 2,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.33,
+    "polish": 4.67,
+    "fit": 4.33,
+    "legibility": 5.0,
+    "composition": 4.33,
+    "consistency": 5.0,
+    "accuracy": 4.33
+   }
+  },
+  "B": {
+   "overall": 4.57,
+   "wins": 1,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 5.0,
+    "polish": 4.33,
+    "fit": 4.33,
+    "legibility": 5.0,
+    "composition": 4.0,
+    "consistency": 5.0,
+    "accuracy": 4.33
+   }
+  },
+  "C": {
+   "overall": 3.71,
+   "wins": 0,
+   "vetoes": [],
+   "scores": {
+    "hierarchy": 4.0,
+    "polish": 3.33,
+    "fit": 3.33,
+    "legibility": 4.0,
+    "composition": 3.0,
+    "consistency": 4.33,
+    "accuracy": 4.0
+   }
+  }
+ }
+}
