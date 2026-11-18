@@ -178,7 +178,7 @@ def decide(verdict: dict[str, Any], content: dict[str, Any]) -> dict[str, Any]:
     return {"rewrite": rewrite, "move_items": move, "minor": minor}
 
 
-def instruction(decision: dict[str, Any]) -> str:
+def instruction(decision: dict[str, Any], taken: list[str] | None = None) -> str:
     lines = ["终审发现本页的论点（标题、导语或焦点数字）和证据不一致，按下面修改后重写这一页（数字仍然必须来自证据原文）："]
     for finding in decision.get("rewrite") or []:
         if "unrelated" in finding:
@@ -192,6 +192,8 @@ def instruction(decision: dict[str, Any]) -> str:
         else:
             item = finding["unsupported"]
             lines.append(f"· 「{item.get('text')}」缺少证据（{item.get('why')}）。有对比数据就把它放到页面上；没有就改成准确的说法。")
+    if taken:
+        lines.append("· 这些数字别的页已经讲过，本页不要用来补位：" + "、".join(taken[:20]) + "。")
     lines.append("本页的主题（标题讲的对象）不变，不要改讲证据里别的话题；其他条目和数字没有问题，保持不变。")
     return "\n".join(lines)
 

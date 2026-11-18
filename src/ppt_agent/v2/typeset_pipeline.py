@@ -482,7 +482,12 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     from ppt_agent.v2.visual.content import RichContent
     source_references = source_references or re.findall(r'https?://[^\s]+', brief.source_digest or '')
     name = f'typeset/content_{slot.page_number:03d}.json'
-    cached = None if force_regenerate else checkpoints.load(name)
+    cached = checkpoints.load(name)
+    if force_regenerate and not (cached and revision_instruction
+                                 and (cached.get('record') or {}).get('revision') == revision_instruction):
+        # A revision is written once: a resumed run asked for the same revision reuses it, so a deck does not
+        # change each time it is resumed (round 7: a page removed in one pass stayed in the next).
+        cached = None
     adapter = TypeAdapter(RichContent) if rich_tier else content_adapter()
     if cached is not None:
         saved = cached['content']
@@ -665,7 +670,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
         parsed = parsed.model_copy(update={'kicker': slot.section_title[:24]})
     if page_brief.speaker_notes:
         parsed = parsed.model_copy(update={'speaker_notes': page_brief.speaker_notes})
-    record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
+    record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback, 'revision': revision_instruction,
               'validation_errors': errors, 'archetype': parsed.archetype,
               'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources, 'source_trimmed': source_trims,
               'trimmed_items': trims, 'relation_check': relation_failures,
@@ -1301,8 +1306,15 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             before_audit = {number: (results[number], verdicts[number]) for number in failing}
             from ppt_agent.v2 import content_plan as deck_content
             if failing:
+                def taken(number):
+                    # Figures of this page's evidence that other pages already show: a rewrite must not reach for them.
+                    own = deck_content.figures(getattr(packets.get(number), 'text', '') or '')
+                    elsewhere = set().union(*(deck_content.figures(json.dumps(results[other][0].model_dump(mode='json'), ensure_ascii=False))
+                                              for other in numbers if other != number))
+                    return sorted(own & elsewhere - deck_content.figures(json.dumps(results[number][0].model_dump(mode='json'), ensure_ascii=False)))
+
                 rewritten = await asyncio.gather(*(
-                    produce(by_number[number], revision=claim_audit.instruction(decided(number)),
+                    produce(by_number[number], revision=claim_audit.instruction(decided(number), taken(number)),
                             current=results[number][0].model_dump(mode='json', exclude_none=True))
                     for number in failing))
                 results.update(dict(rewritten))
