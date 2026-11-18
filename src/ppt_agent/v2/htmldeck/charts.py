@@ -102,6 +102,11 @@ def caption(series: dict[str, Any]) -> str:
     rough = [point["display"] for point in points if approximate(point.get("display") or "")]
     if rough:
         parts.append("原文作「" + "、".join(rough) + "」")
+    from ppt_agent.v2.completeness import describe
+
+    coverage = describe(series)
+    if coverage:
+        parts.append(coverage)
     if series.get("omitted"):
         parts.append(f"原文另有 {len(series['omitted'])} 项未能核对，未画出")
     pages = _pages(series)

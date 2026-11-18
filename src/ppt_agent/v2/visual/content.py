@@ -205,6 +205,12 @@ class DataSeries(StrictModel):
     points: list[DataPoint] = Field(..., min_length=2, max_length=16)
     # Values the source also gives that could not be checked, so are not drawn: named, never hidden.
     omitted: list[Annotated[str, Field(max_length=20)]] = Field(default_factory=list, max_length=16)
+    # Whether these are all the members the source gives (a whole distribution or ranking) or a
+    # selection of them ("北京最多，其次上海和广东" out of 27 regions). An excerpt is drawn as an
+    # excerpt and named so; it is never a share of a whole.
+    coverage: Literal["complete", "excerpt", "unknown"] = "unknown"
+    of_total: int | None = Field(default=None, ge=2)
+    selection: str | None = Field(default=None, max_length=30)
 
     @model_validator(mode="after")
     def _points_are_one_series(self) -> "DataSeries":

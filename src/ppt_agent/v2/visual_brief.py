@@ -69,6 +69,39 @@ async def decide(client: Any, checkpoints: Any, page: int, content: dict[str, An
     return result
 
 
+SUPPORT_SYSTEM = (
+    "你是审稿人，专门找图表和论点之间的脱节。下面是一页幻灯片的论点和页面内容，以及准备放在这一页上的一组数据或一张图。"
+    "判断它是不是这句论点的证据：读者看了它，论点会更可信——它衡量的就是论点说的那件事，或者是那件事的组成部分、"
+    "原因或结果，而且这层关系在页面内容里写明了。同一章节、同一话题、同一份报告里的另一组数据，不是证据；"
+    "只是页面某一条附带提到它，也不够。拿不准时判 false。"
+    '只输出 JSON：{"supports":true 或 false,"why":"不超过40个字"}'
+)
+
+
+async def supports(client: Any, checkpoints: Any, page: int, content: dict[str, Any],
+                   candidate: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
+    """A second, separate judgement that the chosen visual evidences the claim (CAICT p11: a chart of
+    PyTorch's share beside "54 days, 466 interruptions" was chosen as supporting)."""
+
+    shown = {key: value for key, value in candidate.items() if key not in ("payload", "id")}
+    asked = json.dumps({"claim": brief.get("claim"), "page": _digest(content), "visual": shown},
+                       ensure_ascii=False, sort_keys=True)
+    name = f"briefs/support_{page:03d}_{hashlib.sha1(asked.encode('utf-8')).hexdigest()[:10]}.json"
+    saved = checkpoints.load(name) if checkpoints is not None else None
+    if saved is not None:
+        return saved
+    try:
+        reply = await client.complete_json(task="visual_support", system=SUPPORT_SYSTEM, user=asked,
+                                           max_output_tokens=300, context={"page": page})
+    except Exception as error:  # noqa: BLE001 - unasked is not supported
+        return {"supports": False, "why": "未能核对：" + str(error)[:40]}
+    result = {"supports": bool(reply.get("supports")) if isinstance(reply, dict) else False,
+              "why": str((reply or {}).get("why") or "")[:60] if isinstance(reply, dict) else ""}
+    if checkpoints is not None:
+        checkpoints.save(name, result)
+    return result
+
+
 def settle(briefs: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
     """Each thing is shown once in a deck: where it is the main visual before
     where it only supports, and on the earlier page when that does not decide it."""

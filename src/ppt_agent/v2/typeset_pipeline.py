@@ -972,7 +972,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
         extracted = dict(await asyncio.gather(*(read_series(slot) for slot in content_slots)))
         series_read = list(extracted.values())
-        series_found = {number: [DataSeries.model_validate(item) for item in result['series']]
+        from ppt_agent.v2 import completeness
+        axes = {}
+        # Whether each series is all the source gives or a selection of it (a top three is not a distribution).
+        series_found = {number: [completeness.assess(DataSeries.model_validate(item), pdfs, axes)
+                                 for item in result['series']]
                         for number, result in extracted.items() if result['series']}
         progress(f'[data] {len({data_series.signature(s) for found in series_found.values() for s in found})} '
                  'series verified against the source')
@@ -1133,6 +1137,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                     item for table, item in table_series
                     if table['page'] in source_figure._cited(content.get('source'), table['document'])]):
                 candidates.append({'id': series_id(item), 'type': '核对过的数据序列', 'metric': item.metric,
+                                   **({'coverage': item.selection} if item.coverage == 'excerpt' else {}),
                                    'scope': item.scope, 'period': item.period,
                                    'values': {point.label: point.display for point in item.points}, 'payload': item})
             for figure in usable_figures:
@@ -1156,7 +1161,15 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                    'caption': f"{figure['label']} {figure['title']}", 'holds': verdict.get('redraw') or verdict.get('kind'),
                                    'payload': (figure, verdict)})
             async with semaphore:
-                return number, candidates, await visual_brief.decide(client, checkpoints, number, content, candidates)
+                choice = await visual_brief.decide(client, checkpoints, number, content, candidates)
+            chosen = next((candidate for candidate in candidates if candidate['id'] == choice['use']), None)
+            if chosen is not None:
+                async with semaphore:
+                    check = await visual_brief.supports(client, checkpoints, number, content, chosen, choice)
+                if not check['supports']:
+                    # Shown beside a claim it does not evidence, true data misleads: the page goes without it.
+                    choice = {**choice, 'use': 'none', 'rejected': {'id': chosen['id'], 'why': check['why']}}
+            return number, candidates, choice
 
         briefed = await asyncio.gather(*(brief_page(number) for number in sorted(dumps)))
         settled = visual_brief.settle({number: choice for number, _, choice in briefed})

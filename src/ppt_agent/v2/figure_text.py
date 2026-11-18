@@ -180,3 +180,26 @@ def blocks(path: str | Path, page_numbers: list[int]) -> str:
         if found:
             out.append(f"[{name} | {KIND} p{number}]\n" + "\n".join(f"{label} {value}" for label, value in found))
     return "\n".join(out)
+
+
+NUMBER = re.compile(r"^[约超近]?\d+(?:\.\d+)?(?:%|％|亿|万|倍|个百分点|家|款|个|项)?$")
+
+
+def axis_labels(page) -> list[list[str]]:
+    """Every figure axis on a page as its list of labels: labels standing in one line, each with
+    a number on its row (bar charts) - bare integers included, since a count is often printed
+    without a unit. Used to tell how many members a figure has, not to read its values."""
+
+    fragments = words(page)
+    numbers = [word for word in fragments if NUMBER.match(word["text"])]
+    labels = [word for word in fragments if LABEL.match(word["text"]) and not NOT_LABEL.search(word["text"])
+              and not NUMBER.match(word["text"])]
+    with_value = [label for label in labels
+                  if any(abs(number["y"] - label["y"]) <= ROW and number["x"] > label["x"] for number in numbers)]
+    clusters: list[list[dict[str, Any]]] = []
+    for edge in (lambda word: word["x"], lambda word: word["x"] + word["w"]):
+        for label in with_value:
+            group = [other for other in with_value if abs(edge(other) - edge(label)) <= LINE]
+            if len(group) >= MIN_PAIRS and not any({id(w) for w in group} <= {id(w) for w in c} for c in clusters):
+                clusters = [c for c in clusters if not {id(w) for w in c} <= {id(w) for w in group}] + [group]
+    return [[word["text"] for word in sorted(group, key=lambda word: -word["y"])] for group in clusters]

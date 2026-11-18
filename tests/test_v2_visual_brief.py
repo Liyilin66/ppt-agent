@@ -94,3 +94,18 @@ def test_a_titled_box_keeps_what_it_holds():
     assert figures.item_text(nested) == "模型训练工具（分布式策略、训练加速）" and figures._item("RAG") == "RAG"
     diagram = {"levels": [{"name": "大模型开发平台", "items": [nested, "RAG"]}], "groups": [{"name": "衍生安全", "covers": [1]}]}
     assert diagram_words(diagram) == ["大模型开发平台", "模型训练工具（分布式策略、训练加速）", "RAG", "衍生安全"]
+
+
+def test_a_visual_the_second_check_rejects_is_not_used():
+    import asyncio
+
+    from ppt_agent.v2 import visual_brief
+
+    class No:
+        async def complete_json(self, **kwargs):
+            assert kwargs["task"] == "visual_support"
+            return {"supports": False, "why": "PyTorch 占比与训练中断无关"}
+
+    verdict = asyncio.run(visual_brief.supports(No(), None, 11, {"title": "54天466次中断推高训练成本"},
+                                                {"id": "series:x", "metric": "使用PyTorch的论文比例"}, {"claim": "中断推高成本"}))
+    assert verdict == {"supports": False, "why": "PyTorch 占比与训练中断无关"}

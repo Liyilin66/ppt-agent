@@ -114,6 +114,14 @@ class _Tree(HTMLParser):
         self._open.own_text += data
 
 
+def _numbers(text: str) -> set[float]:
+    return {float(match.replace(",", "")) for match in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", text or "")}
+
+
+def _plain(text: Any) -> str:
+    return re.sub(r"[\s、，,。（）()·：:\-—]", "", str(text or ""))
+
+
 def _style(node: _Node, name: str) -> float | None:
     match = re.search(rf"(?:^|;)\s*{name}\s*:\s*(\d+(?:\.\d+)?)%", node.style)
     return float(match.group(1)) if match else None
@@ -153,6 +161,29 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                     f"以「{_label(first)}」开头的区域（列 {a[0]}/{a[1]}、行 {a[2]}/{a[3]}）和以「{_label(second)}」开头的区域"
                     f"（列 {b[0]}/{b[1]}、行 {b[2]}/{b[3]}）占了同一块格子，内容会叠在一起。请改行号让它们上下错开。"))
     allowed, known = shares(content), _percentages(content)
+    page_values = _numbers(" ".join(
+        [str((content.get("highlight") or {}).get("value") or "")]
+        + [str(item.get("value") or "") for item in content.get("items") or [] if isinstance(item, dict)]
+        + [str(point.get("display") or "") for series in content.get("series") or [] for point in series.get("points") or []]
+        + [str(cell) for row in content.get("rows") or [] for cell in row]
+        + [str(metric.get("value") or "") for metric in content.get("metrics") or [] if isinstance(metric, dict)]
+        + [str(content.get("title") or "")]))
+    # The source's own name for a category goes with its value wherever the value is written out.
+    for series in content.get("series") or []:
+        if series.get("kind") == "time":
+            continue  # a date need not stand beside each value
+        for point in series.get("points") or []:
+            display = re.sub(r"\s+", "", str(point.get("display") or ""))
+            label = _plain(re.sub(r"[（(][^）)]*[）)]", "", str(point.get("label") or "")))  # "GPT-3（2020）" is GPT-3
+            if not display or not label:
+                continue
+            for region in (node for node in tree.root.walk() if node.has("r")):
+                text = re.sub(r"\s+", "", region.text)
+                standalone = any(re.sub(r"\s+", "", node.own_text) == display for node in region.walk())
+                if standalone and not any(child.has("chart") for child in region.walk()) and label not in _plain(text):
+                    defects.append(Defect(
+                        "unsupported",
+                        f"{display} 在原文里对应的类别是「{point.get('label')}」，写它的地方要用原文的类别名，不要改名或概括。"))
     from ppt_agent.v2.htmldeck import charts
 
     drawable = [series for series in content.get("series") or [] if charts.kind_for(series)]
@@ -193,6 +224,18 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                         "unbound_graphic",
                         f"「{match.group(0)}」用箭头把两个数连起来，但它们不是同一条核对过的序列里的两个值，"
                         "也不是内容里原有的写法；箭头会读成前者变成了后者。改成两个并列的数字，各自写清楚它是什么。"))
+
+        # A display figure is read as the page's data; it must be one of the page's values - never a
+        # page reference, a footnote number or a figure of the designer's own (CAICT p15: "第49–50页").
+        if {"d1", "d2", "d3", "d4"} & set(node.classes) and re.search(r"\d", node.text):
+            shown = re.sub(r"\s+", "", node.text)
+            cited = re.search(r"第\s*\d+.*页|\bp\.?\s*\d+", shown)
+            # (a page with no values of its own is left to the general check on unsupported numbers)
+            if cited or (page_values and not _numbers(shown) & page_values):
+                defects.append(Defect(
+                    "unsupported",
+                    f"大字「{shown[:16]}」不是这一页内容里的数据（焦点数字、条目数值或图表数据）。"
+                    "大字只能放这些值；出处、页码和其他数字用小字写在出处或说明里。"))
 
         if node.has("chart") and "data-chart" in node.attrs:
             try:

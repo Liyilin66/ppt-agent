@@ -54,3 +54,19 @@ def test_doubling_against_the_value_printed_beside_it_in_the_source():
     source = "普及率2024年12月为17.7%，2025年6月为36.5%。用户规模5.15亿人。"
     assert rel.check_text("普及率半年翻倍至36.5%", source, where="标题") == []
     assert rel.check_text("用户规模翻倍至5.15亿人", source, where="标题")
+
+
+def test_display_figures_are_values_and_categories_keep_their_names():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+
+    content = {"title": "安全测试覆盖25家模型", "highlight": {"value": "25家"}, "items": [{"value": "50余万条", "ref": "第49-50页"}],
+               "series": [{"points": [{"label": "生成会议纪要、PPT", "value": 29.7, "display": "29.7%"},
+                                      {"label": "休闲娱乐", "value": 23.6, "display": "23.6%"}]}]}
+    page = ('<div class="page"><div class="r"><div class="d1">25家</div></div>'
+            '<div class="r"><div class="d3">第 49–50 页</div></div>'
+            '<div class="r"><p class="h">办公提效</p><p class="d3">29.7%</p></div>'
+            '<div class="r"><p class="h">休闲娱乐</p><p class="d3">23.6%</p></div></div>')
+    messages = [d.message for d in find_graphic(page, content)]
+    assert any("第49–50页" in m for m in messages)
+    assert any("生成会议纪要、PPT" in m for m in messages)
+    assert not any("休闲娱乐" in m or "「25家」" in m for m in messages)
