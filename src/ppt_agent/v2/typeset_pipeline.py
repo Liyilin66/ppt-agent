@@ -1222,6 +1222,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         briefed = await asyncio.gather(*(brief_page(number) for number in sorted(dumps)))
         settled = visual_brief.settle({number: choice for number, _, choice in briefed})
         placed, shown, redrawn = {}, {}, {}
+        async def relevant(number):
+            content = results[number][0]
+            if not type_roles or getattr(content, 'archetype', None) != 'rich':
+                return number, None
+            # Every fact on the page evidences its claim; padding goes to the notes, nothing is lost.
+            async with semaphore:
+                return number, await visual_brief.unrelated_items(
+                    client, checkpoints, number, content.model_dump(mode='json', exclude_none=True),
+                    settled[number].get('claim'))
+
+        relevance = dict(await asyncio.gather(*(relevant(number) for number, _, _ in briefed)))
         for number, candidates, _ in briefed:
             choice = settled[number]
             chosen = next((candidate for candidate in candidates if candidate['id'] == choice['use']), None)
@@ -1253,6 +1264,16 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             content, renamed = name_categories(content, pool)
             if renamed:
                 record = {**record, 'category_names_restored': renamed}
+            verdict = relevance.get(number) or {'unrelated': []}
+            if verdict['unrelated']:
+                moved = [item for index, item in enumerate(content.items, 1) if index in verdict['unrelated']]
+                kept = [item for index, item in enumerate(content.items, 1) if index not in verdict['unrelated']]
+                note = '页面未展开（与本页论点无直接关系）：' + '；'.join(
+                    ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                content = content.model_copy(update={'items': kept, 'speaker_notes': (
+                    (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
+                record = {**record, 'unrelated_items_moved': {'items': [item.heading for item in moved],
+                                                              'why': verdict['why']}}
             results[number] = (content, record)
         series_summary = {**data_series.summary(series_read, placed),
                           'tables_found': len(read_tables), 'tables_verified': sum(bool(table['rows']) for table in read_tables),

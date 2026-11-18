@@ -117,3 +117,40 @@ def settle(briefs: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
         else:
             taken.add(use)
     return settled
+
+
+RELEVANCE_SYSTEM = (
+    "你是审稿人。下面是一页幻灯片的论点和它的条目。逐条判断：这一条是不是这句论点的证据或必要说明？"
+    "只是同一章节、同一份报告里的另一组数据，或者和论点没有论证关系、只是把版面填满的条目，判为不相关。"
+    "拿不准时判为相关。"
+    '只输出 JSON：{"unrelated":[条目序号，从 1 开始],"why":"不超过40个字"}'
+)
+
+
+async def unrelated_items(client: Any, checkpoints: Any, page: int, content: dict[str, Any], claim: str) -> dict[str, Any]:
+    """Items that do not evidence the page's claim (CNNIC 57 p23: the gender split under a page about AI
+    apps as the main entry). Cached by the page's text."""
+
+    items = [{key: item.get(key) for key in ("heading", "value", "body") if item.get(key)}
+             for item in content.get("items") or []]
+    if len(items) < 2:
+        return {"unrelated": [], "why": ""}
+    asked = json.dumps({"claim": claim or content.get("title"), "title": content.get("title"),
+                        "highlight": content.get("highlight"), "items": items}, ensure_ascii=False, sort_keys=True)
+    name = f"briefs/relevance_{page:03d}_{hashlib.sha1(asked.encode('utf-8')).hexdigest()[:10]}.json"
+    saved = checkpoints.load(name) if checkpoints is not None else None
+    if saved is not None:
+        return saved
+    try:
+        reply = await client.complete_json(task="item_relevance", system=RELEVANCE_SYSTEM, user=asked,
+                                           max_output_tokens=300, context={"page": page})
+    except Exception as error:  # noqa: BLE001 - unjudged items stay; the failure is recorded
+        return {"unrelated": [], "why": "未能核对：" + str(error)[:40], "failed": True}
+    picked = reply.get("unrelated") if isinstance(reply, dict) else None
+    result = {"unrelated": sorted({index for index in picked or [] if isinstance(index, int) and 1 <= index <= len(items)}),
+              "why": str((reply or {}).get("why") or "")[:60] if isinstance(reply, dict) else ""}
+    if len(result["unrelated"]) >= len(items):
+        result["unrelated"] = result["unrelated"][:-1]  # a page keeps at least one item
+    if checkpoints is not None:
+        checkpoints.save(name, result)
+    return result

@@ -114,6 +114,8 @@ class MockLLMClient:
             return {"series": []}  # the mock source has no series; an empty answer is a valid one
         if task in ("source_table", "figure_read", "visual_brief"):
             return {}
+        if task == "item_relevance":
+            return {"unrelated": []}
         if task == "visual_support":
             return {"supports": True, "why": "mock"}
         if task in ("content_plan", "content_overlap", "page_budget"):
