@@ -1139,9 +1139,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
     if rich and evidence_store is not None and type_roles:
-        # A page that failed its number check three times is diagnosed, not left as a placeholder: if every
-        # rejected figure is printed in the source, the pages that hold them join its evidence and it is
-        # written once more; otherwise it is reported for review, under its planned claim.
+        # A page that failed its number check three times is diagnosed, not left as a placeholder: each rejected
+        # figure is classed (printed on another source page / bare chart label / computed / unsupported) and the
+        # page is written once more with that diagnosis, the pages holding mismatched citations added to its
+        # evidence. If it fails again it is reported for review, under its planned claim. Run after the pages
+        # are written and again after the overlap review, which rewrites and moves pages.
         from ppt_agent.v2 import content_recovery
         by_number = {slot.page_number: slot for slot in content_slots}
         by_chunk = {chunk['chunk_id']: chunk for chunk in evidence_store.chunks}
@@ -1167,19 +1169,24 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                      {'content': new_content.model_dump(mode='json'), 'record': new_record})
                     return number, (new_content, new_record)
                 content, record = new_content, new_record
-            title = content_recovery.title_for((page_plans or {}).get(number) or (page_plans_first or {}).get(number), content.title)
+            planned = None if number in retargeted else (page_plans or {}).get(number) or (page_plans_first or {}).get(number)
+            title = content_recovery.title_for(planned, content.title)
             if title != content.title and content.title == (by_number[number].section_title or '')[:40]:
                 content = content.model_copy(update={'title': title})
             record = {**record, 'content_status': 'NEEDS_CONTENT_REVIEW', 'content_failure': diagnosis}
             checkpoints.save(f'typeset/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             return number, (content, record)
 
-        failed = [number for number, (_, record) in results.items()
-                  if record.get('fallback') and not record.get('content_status')]
-        if failed:
-            results.update(dict(await asyncio.gather(*(recover(number) for number in failed))))
-            progress(f"[content] {len(failed)} page(s) failed their number check: "
-                     + ", ".join(f"{n} {results[n][1].get('content_status')}" for n in sorted(failed)))
+        async def recover_failed(stage):
+            failed = [number for number, (_, record) in results.items()
+                      if record.get('fallback') and record.get('content_status') != 'NEEDS_CONTENT_REVIEW']
+            if failed:
+                results.update(dict(await asyncio.gather(*(recover(number) for number in failed))))
+                progress(f"[content] {stage}: {len(failed)} page(s) failed their number check: "
+                         + ", ".join(f"{n} {results[n][1].get('content_status')}" for n in sorted(failed)))
+
+        retargeted: set[int] = set()
+        await recover_failed('written')
     if rich and evidence_store is not None:
         # Pages that still argue one conclusion twice (checked even where planning failed): the later (or straying) one is rewritten once.
         signed = set((checkpoints.load('html/accepted.json') or {}).get('pages', []))
@@ -1194,8 +1201,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                         current=results[page][0].model_dump(mode='json', exclude_none=True))
                 for page, text in sorted(rewrites.items())))
             # A recovered page keeps its recovery record through an overlap rewrite.
-            rewritten = [(page, (content, {**record, **{key: results[page][1][key] for key in ('content_status', 'content_failure')
-                                                        if key in results[page][1] and key not in record}}))
+            rewritten = [(page, (content, record if record.get('fallback') else
+                                 {**record, **{key: results[page][1][key] for key in ('content_status', 'content_failure')
+                                               if key in results[page][1] and key not in record}}))
                          for page, (content, record) in rewritten]
             results.update(dict(rewritten))
             overlap = await deck_content.review(
@@ -1232,6 +1240,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         checkpoints.save('typeset/content_overlap.json', overlap)
         progress(f"[content] {len(overlap['repeated'])} repeated pair(s) found, {len(rewrites)} page(s) rewritten, "
                  f"{len(overlap.get('retargeted', {}))} moved to uncovered material, {len(overlap.get('left', []))} left")
+        if type_roles:
+            # A page rewritten or moved by the overlap review can fail its number check like any other.
+            retargeted.update(int(page) for page in overlap.get('retargeted', {}))
+            await recover_failed('after overlap review')
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
