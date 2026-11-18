@@ -233,6 +233,8 @@ async def design_page(
                 if index is not None:
                     overflow[index] = max(overflow.get(index, 0), clip["over"])
         solved = autofix.solve(body, overflow) if job.type_roles else None
+        result.trace[-1]["solver"] = ("no overflow measured" if not overflow else
+                                      "infeasible: the page cannot hold it" if solved is None else "solved")
         grown = autofix.grow(body)
         candidates = ([solved, autofix.grow(solved)] if solved else []) + [grown, autofix.grow(grown)]
         if 'class="page compact' not in body:
@@ -245,6 +247,8 @@ async def design_page(
             except MeasureFailed:
                 continue
             again = check(variant, remeasured)
+            if solved is not None and variant == solved:
+                result.trace[-1]["after_solver"] = sorted({defect.kind for defect in hard(again)})
             if len(hard(again)) < len(hard(best_here[2])):
                 best_here = (variant, remeasured, again)
             if not hard(again):
