@@ -96,3 +96,18 @@ def test_half_a_unit_under_its_figure_is_a_mistake_and_a_whole_one_is_a_choice()
     assert "split_unit" not in kinds("1287", "兆瓦时")      # the whole unit under the figure
     beside = [_line("6233", size=58, y=200, cls="d4"), {**_line("亿美元", size=24, y=230, cls="unit")}]
     assert "split_unit" not in [d.kind for d in find_defects(Measured(background="", items=beside), None, require_fill=False)]
+
+
+@needs_browser
+def test_fix7_orphan_repeated_figure_and_glyph_overlap():
+    css_page = '<div class="tall" style="position:relative">'
+    orphan = css_page + '<p style="width:200px;font-size:20px">一二三四五六七八九十一二三四五六七八九十甲</p></div>'
+    assert "orphan" in _defects(orphan, allowed=numbers_in(""), roles=True)
+    repeated = css_page + '<div class="d1">483.8</div><div class="t3">483.8万个</div><div class="t3">28.5→29.4</div></div>'
+    found = _defects(repeated, allowed=numbers_in("483.8 28.5 29.4"), roles=True)
+    assert found.count("repeated_figure") == 1
+    # a figure running one character into a long label: 7% of the label's area, still a collision
+    collide = (css_page + '<p style="position:absolute;left:0;top:0;font-size:80px;white-space:nowrap;margin:0">6.02亿人</p>'
+               '<p style="position:absolute;left:260px;top:40px;font-size:24px;white-space:nowrap;margin:0">'
+               '2025年12月生成式人工智能用户规模说明文字</p></div>')
+    assert "overlap" in _defects(collide, allowed=numbers_in("6.02 2025 12"), roles=True)

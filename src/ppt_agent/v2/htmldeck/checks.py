@@ -87,6 +87,10 @@ def _line_rect(item: dict[str, Any]) -> dict[str, float]:
     return {"x": rect["x"], "y": rect["y"] + (rect["h"] - height) / 2, "w": rect["w"], "h": height}
 
 
+def _glyph_px(item: dict[str, Any]) -> float:
+    return min((run["size"] for run in item.get("runs") or [] if run.get("t", "").strip()), default=0)
+
+
 def _decorative(item: dict[str, Any]) -> bool:
     names = item.get("cls", "").split()
     return any(name.startswith("deco") or name == "backdrop" for name in names)
@@ -105,6 +109,7 @@ def _ordinal(token: str) -> bool:
 ROLE_MIN_PX = {"body": 18.6, "secondary": 16.0, "caption": 14.6, "label": 14.0, "source": 12.0}
 ROLE_NAMES = {"body": "正文", "secondary": "辅助说明", "caption": "图注", "label": "标签", "source": "来源"}
 HARD_ROLES = {"body", "secondary", "caption"}
+FIGURE_CLASSES = {"d1", "d2", "d3", "d4", "t3", "fig", "num", "key", "v", "nm"}  # where a figure is shown as data
 _DISPLAY = {"d1", "d2", "d3", "d4", "t1", "t2", "t3", "q1", "h", "fig", "num", "key", "call", "unit", "nm",
             "title", "cover-title", "section-title", "section-no", "quote", "arrow"}
 
@@ -198,6 +203,11 @@ def find_defects(
                         f"文字「{label}」和背景的对比度只有 {ratio:.1f}:1（至少 {need:g}:1），投影上读不出来。"
                         "换成和背景反差足够的颜色，或去掉它下面的底色。", label))
                     break
+        if roles and item.get("lines", 1) >= 2 and item.get("lastLine") is not None and sizes \
+                and re.search(r"[\u4e00-\u9fff]", text_here) and item["lastLine"] < 1.3 * max(sizes):
+            # One character alone on the last line ("…规模普" / "及").
+            defects.append(Defect(
+                "orphan", f"文字「{label}」最后一行只剩一个字。请删短几个字，或给它更宽的区域，让它整行结束。", label))
         if roles and item.get("lines", 1) >= 2 and len(text_here) / item["lines"] < 3.0:
             # Two characters a line is not a line: the words have been squeezed into a column.
             defects.append(Defect(
@@ -236,6 +246,27 @@ def find_defects(
                         "split_unit",
                         f"单位「{_short(_item_text(unit))}」离数字「{_short(_item_text(figure))}」有 {gap:.0f} 像素远，读起来像两样东西。"
                         "把单位紧跟在数字后面（同一个 rowx，不要用 spread 或 g 系列把它们拉开）。", _item_text(unit)))
+    if roles:
+        # One figure shown as data twice ("483.8" as the focal figure and "483.8万个" in the row below):
+        # the second showing adds nothing. A title or a sentence restating it is fine.
+        shown: dict[Decimal, list[str]] = {}
+        for item in texts:
+            names = set(item.get("cls", "").split())
+            text_here = _item_text(item).strip()
+            if not names & FIGURE_CLASSES or names & {"t1", "t2", "title", "kicker"} or len(text_here) > 12:
+                continue
+            numbers = numbers_in(text_here)
+            if len(numbers) != 1:
+                continue  # "28.5→28.4→29.4" compares; it does not repeat
+            for number in numbers:
+                if not (1900 <= number <= 2100 and number == number.to_integral_value()):  # a year is no figure
+                    shown.setdefault(number, []).append(text_here)
+        for number, places in shown.items():
+            if len(places) >= 2:
+                defects.append(Defect(
+                    "repeated_figure",
+                    f"数字「{places[1]}」在页面上作为数据出现了 {len(places)} 次（{'、'.join(places)}），重复的那处没有带来新信息。"
+                    "只保留最有力的一处；另一处改写成比较、趋势或解释，或者删掉。", places[1]))
     for index, first in enumerate(texts):
         a = _line_rect(first)
         for second in texts[index + 1:]:
@@ -245,7 +276,12 @@ def find_defects(
             if width <= TOLERANCE or height <= TOLERANCE:
                 continue
             smaller = min(a["w"] * a["h"], b["w"] * b["h"])
-            if smaller > 0 and width * height / smaller > 0.1:
+            # Or one glyph's worth: half a character wide and half a line tall. A long label makes 10% of
+            # its area a lot, and a figure can run a whole character into it (CNNIC 57: "6.02亿人" 29px
+            # into a 394px label, 7% of it, plainly colliding on the slide).
+            glyph = min(_glyph_px(first), _glyph_px(second))
+            if (smaller > 0 and width * height / smaller > 0.1) or (
+                    glyph and width >= 0.5 * glyph and height >= 0.5 * min(a["h"], b["h"])):
                 defects.append(Defect(
                     "overlap",
                     f"文字「{_short(_item_text(first))}」和「{_short(_item_text(second))}」重叠了。",

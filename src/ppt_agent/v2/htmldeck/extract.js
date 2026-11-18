@@ -75,6 +75,9 @@
     if (!rects.length) return;
     const tops = [];
     rects.forEach(q => { if (!tops.some(t => Math.abs(t - q.top) < q.height * 0.5)) tops.push(q.top); });
+    // How much the last line holds: one character alone on it is an orphan.
+    const lastTop = Math.max(...tops);
+    const lastLine = rects.filter(q => Math.abs(q.top - lastTop) < q.height * 0.5).reduce((m, q) => m + q.width, 0);
     const cs = getComputedStyle(owner);
     const ob = owner.getBoundingClientRect();
     const pl = num(cs.paddingLeft) + num(cs.borderLeftWidth), pr = num(cs.paddingRight) + num(cs.borderRightWidth);
@@ -83,7 +86,7 @@
     // Range rects are glyph boxes; the line box is taller or shorter by the leading.
     const first = rects.reduce((m, q) => q.top < m.top ? q : m, rects[0]);
     const tallest = rects.filter(q => Math.abs(q.top - first.top) < q.height * 0.5).reduce((m, q) => Math.max(m, q.height), 0);
-    items.push({kind: 'text', runs: runsOf(nodes), lines: tops.length, align, op: opacityOf(owner),
+    items.push({kind: 'text', runs: runsOf(nodes), lines: tops.length, lastLine, align, op: opacityOf(owner),
                 cls: owner.className || '', linePx: cs.lineHeight === 'normal' ? null : num(cs.lineHeight), glyphPx: tallest,
                 text: rectOf(tr), box: {x: ob.left - origin.left + pl, w: ob.width - pl - pr},
                 parent: rectOf(paintedAncestor(owner).getBoundingClientRect()),

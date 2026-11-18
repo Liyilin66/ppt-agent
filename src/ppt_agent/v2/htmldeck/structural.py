@@ -82,10 +82,23 @@ def plain(*, title: str | None, kicker: str | None, source: str | None, page_num
     )
 
 
+COVER_LIST_CHARS = 12  # characters a cover list line holds (282px column, 19px bold)
+
+
+def _balanced(name: str, limit: int = COVER_LIST_CHARS) -> str:
+    """A section name too long for one line is split into two even lines, so it never wraps
+    leaving one character alone ("生成式人工智能进入规模普" / "及")."""
+
+    if len(name) <= limit:
+        return escape(name)
+    middle = (len(name) + 1) // 2
+    return escape(name[:middle]) + "<br>" + escape(name[middle:])
+
+
 def cover(title: str, subtitle: str | None, sections: list[str], kicker: str = "") -> str:
     agenda = "".join(
         f'<div class="item"><span class="num">{index:02d}</span>'
-        f'<span class="bold">{escape(name)}</span></div>'
+        f'<span class="bold">{_balanced(name)}</span></div>'
         for index, name in enumerate(sections[:6], 1)
     )
     aside = (
