@@ -186,6 +186,10 @@ NUMBER = re.compile(r"^[约超近]?\d+(?:\.\d+)?(?:%|％|亿|万|倍|个百分�
 
 
 def axis_labels(page) -> list[list[str]]:
+    return [[label for label, _ in axis] for axis in axes(page)]
+
+
+def axes(page) -> list[list[tuple[str, str | None]]]:
     """Every figure axis on a page as its list of labels: labels standing in one line, each with
     a number on its row (bar charts) - bare integers included, since a count is often printed
     without a unit. Used to tell how many members a figure has, not to read its values."""
@@ -194,12 +198,18 @@ def axis_labels(page) -> list[list[str]]:
     numbers = [word for word in fragments if NUMBER.match(word["text"])]
     labels = [word for word in fragments if LABEL.match(word["text"]) and not NOT_LABEL.search(word["text"])
               and not NUMBER.match(word["text"])]
-    with_value = [label for label in labels
-                  if any(abs(number["y"] - label["y"]) <= ROW and number["x"] > label["x"] for number in numbers)]
+    def on_row(label):
+        return [number for number in numbers if abs(number["y"] - label["y"]) <= ROW and number["x"] > label["x"]]
+
+    with_value = [label for label in labels if on_row(label)]
     clusters: list[list[dict[str, Any]]] = []
     for edge in (lambda word: word["x"], lambda word: word["x"] + word["w"]):
         for label in with_value:
             group = [other for other in with_value if abs(edge(other) - edge(label)) <= LINE]
             if len(group) >= MIN_PAIRS and not any({id(w) for w in group} <= {id(w) for w in c} for c in clusters):
                 clusters = [c for c in clusters if not {id(w) for w in c} <= {id(w) for w in group}] + [group]
-    return [[word["text"] for word in sorted(group, key=lambda word: -word["y"])] for group in clusters]
+    def value(label):
+        row = sorted(on_row(label), key=lambda number: number["x"])
+        return row[0]["text"] if len(row) == 1 else None  # two numbers on a row: which is the value is unknown
+
+    return [[(word["text"], value(word)) for word in sorted(group, key=lambda word: -word["y"])] for group in clusters]

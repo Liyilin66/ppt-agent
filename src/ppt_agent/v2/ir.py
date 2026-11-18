@@ -159,6 +159,8 @@ class ChartItem(BaseElement):
     # Bars measured from zero. False only for decks signed off before this rule (P3), which are
     # rendered as they were accepted; a new version of such a deck is accepted anew.
     zero_based: bool = False  # a design saved before the rule has no such field and renders as signed
+    # A data label's own words for a category whose value the source gives as approximate ("约40家").
+    label_texts: list[str | None] | None = None
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:

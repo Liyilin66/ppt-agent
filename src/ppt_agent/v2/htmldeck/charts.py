@@ -68,6 +68,12 @@ def spec(series: dict[str, Any]) -> dict[str, Any]:
     projected = [index for index, point in enumerate(points) if point.get("projected")]
     if projected:
         made["projected"] = projected
+    from ppt_agent.v2.data_series import approximate
+
+    if any(approximate(point.get("display") or "") for point in points):
+        # "约40家" drawn as 40 is shown as "约40家" on its bar: an approximation never passes for exact.
+        # (every bar then carries its own text: PowerPoint hides the others once some have custom labels)
+        made["texts"] = [point["display"] for point in points]
     return made
 
 
@@ -102,6 +108,9 @@ def caption(series: dict[str, Any]) -> str:
     rough = [point["display"] for point in points if approximate(point.get("display") or "")]
     if rough:
         parts.append("原文作「" + "、".join(rough) + "」")
+    stated = [f"{point['label']}正文作「{point['stated']}」" for point in points if point.get("stated")]
+    if stated:
+        parts.append("、".join(stated) + "，图中用原图标注值")
     from ppt_agent.v2.completeness import describe
 
     coverage = describe(series)

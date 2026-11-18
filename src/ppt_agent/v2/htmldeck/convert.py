@@ -312,6 +312,8 @@ def _chart(item: dict[str, Any], next_id) -> ChartItem:
         projected=[index for index in spec.get("projected") or []
                    if isinstance(index, int) and 0 <= index < len(spec["categories"])],
         zero_based=True,
+        label_texts=([str(text) if text else None for text in spec["texts"]]
+                     if isinstance(spec.get("texts"), list) and len(spec["texts"]) == len(spec["categories"]) else None),
     )
 
 

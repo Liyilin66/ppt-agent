@@ -189,6 +189,9 @@ class DataPoint(StrictModel):
     quote: str = Field(..., min_length=1, max_length=160)   # the source's own words around the value
     ref: str = Field(..., min_length=1, max_length=60)      # "<filename> 第N页"
     projected: bool = False                                 # a forecast or a plan, not an observation
+    # The running text's own wording when the figure prints an exact value that replaced it
+    # ("约40家" in the text, 43 on the figure's bar): kept, never shown as the value.
+    stated: str | None = Field(default=None, max_length=20)
 
 
 SeriesKind = Literal["time", "category", "share", "distribution"]

@@ -435,6 +435,16 @@ def _editorial_chart(chart, item: ChartItem, theme: ThemeSpec) -> None:
             fill.solid()
             fill.fore_color.rgb = accent if index == focus else RGBColor.from_string(tones[index % len(tones)])
             series.points[index].format.line.color.rgb = _rgb(theme.palette.background)
+    for index, text in enumerate(item.label_texts or []):
+        if text and index < count:
+            # The source says "about": the bar's label says so too.
+            frame = series.points[index].data_label.text_frame
+            frame.text = text
+            run = frame.paragraphs[0].runs[0]
+            run.font.size = Pt(item.font_pt or 12)
+            run.font.name = theme.fonts.body_latin
+            run.font.color.rgb = _rgb(theme.palette.text)
+            series.points[index].data_label.position = labels.position if item.chart != "line" else XL_LABEL_POSITION.ABOVE
     for axis_name in ("category_axis", "value_axis"):
         try:
             axis = getattr(chart, axis_name)

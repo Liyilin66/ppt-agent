@@ -22,6 +22,17 @@ def _squash(text: str) -> str:
     return re.sub(r"[\s、，,（）()·\-]", "", text or "")
 
 
+# The same place named with or without its administrative word: 浙江 / 浙江省, 北京 / 北京市.
+# Used only to match a series to its figure; every name shown stays as the source writes it.
+_ADMIN = re.compile(r"(?:省|市|自治区|特别行政区|壮族自治区|回族自治区|维吾尔自治区)$")
+
+
+def key(name: str) -> str:
+    plain = _squash(name)
+    shorter = _ADMIN.sub("", plain)
+    return shorter if len(shorter) >= 2 else plain
+
+
 def _source_page(series: DataSeries) -> tuple[str, int] | None:
     places = {point.ref for point in series.points}
     if len(places) != 1:
@@ -38,21 +49,42 @@ def assess(series: DataSeries, pdfs: dict[str, str | Path], axes_cache: dict | N
     from ppt_agent.v2 import figure_text
 
     cache = axes_cache if axes_cache is not None else {}
-    labels = {_squash(point.label) for point in series.points}
+    labels = {key(point.label) for point in series.points}
     place = _source_page(series)
     if place is not None and place[0] in pdfs:
         if place not in cache:
             reader = PdfReader(str(pdfs[place[0]]))
-            cache[place] = figure_text.axis_labels(reader.pages[place[1] - 1]) if place[1] <= len(reader.pages) else []
+            cache[place] = figure_text.axes(reader.pages[place[1] - 1]) if place[1] <= len(reader.pages) else []
         for axis in cache[place]:
-            members = {_squash(label) for label in axis}
-            if labels <= members:
+            members = {key(label): value for label, value in axis}
+            if labels <= set(members):
+                series = exact_values(series, members, place)
                 if len(members) == len(labels):
                     return series.model_copy(update={"coverage": "complete", "of_total": len(members)})
                 return _excerpt(series, len(members), f"原图共 {len(members)} 项，图中为其中 {len(labels)} 项")
     if any(SELECTING.search(point.quote) for point in series.points):
         return _excerpt(series, None, "原文只点出这几项，不是全部")
     return series
+
+
+def exact_values(series: DataSeries, printed: dict[str, str | None], place: tuple[str, int]) -> DataSeries:
+    """Values the text gives as "about" replaced by the figure's printed value for the same category;
+    the text's wording is kept in ``stated``. A figure value is used only when it is a plain number
+    in the series' unit (or bare)."""
+
+    from ppt_agent.v2.data_series import approximate
+
+    points = []
+    for point in series.points:
+        figure = printed.get(key(point.label))
+        number = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(.*)", figure or "")
+        if approximate(point.display) and number and number.group(2) in ("", series.unit):
+            value = float(number.group(1))
+            point = point.model_copy(update={
+                "value": value, "display": f"{number.group(1)}{series.unit}"[:16], "stated": point.display[:20],
+                "quote": f"{point.label} {figure}（原图第 {place[1]} 页）"[:160]})
+        points.append(point)
+    return series.model_copy(update={"points": points})
 
 
 def _excerpt(series: DataSeries, total: int | None, words: str) -> DataSeries:
