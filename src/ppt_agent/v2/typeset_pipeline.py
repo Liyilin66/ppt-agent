@@ -1207,9 +1207,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
         def series_id(item):
             # A series is its data: the same values under another metric wording are the same chart, used once.
-            import hashlib
-            identity = sorted((point.label, point.display, point.ref) for point in item.points)
-            return 'series:' + hashlib.sha1(repr(identity).encode('utf-8')).hexdigest()[:8]
+            from ppt_agent.v2.htmldeck.charts import series_key
+            return series_key(item.model_dump())
 
         async def brief_page(number):
             content = dumps[number]
@@ -1226,7 +1225,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             for item in data_series.prune(series_found.get(number, []) + elsewhere + [
                     item for table, item in table_series
                     if table['page'] in source_figure._cited(content.get('source'), table['document'])]):
+                places = {}
+                for point in item.points:
+                    match = re.fullmatch(r'(.+?) 第(\d+)(?:-(\d+))?页', point.ref)
+                    if match:
+                        places.setdefault(match.group(1), set()).update(
+                            range(int(match.group(2)), int(match.group(3) or match.group(2)) + 1))
                 candidates.append({'id': series_id(item), 'type': '核对过的数据序列', 'metric': item.metric,
+                                   'pages': {name: sorted(numbers) for name, numbers in places.items()},
                                    **({'coverage': item.selection} if item.coverage == 'excerpt' else {}),
                                    'scope': item.scope, 'period': item.period,
                                    'values': {point.label: point.display for point in item.points}, 'payload': item})

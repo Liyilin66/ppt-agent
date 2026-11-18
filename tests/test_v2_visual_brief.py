@@ -115,12 +115,24 @@ def test_a_chart_is_bound_by_its_data_not_by_its_topic():
     from ppt_agent.v2.visual_brief import binding
 
     page20 = {"title": "AI服务备案新增增长87.4%", "highlight": {"value": "87.4%", "text": "2025年新增备案生成式AI服务数量同比增长"},
-              "items": [{"heading": "工业企业采用提升", "value": "47.5%"}]}
-    industry = {"metric": "中国工业企业应用大模型及智能体的比例", "values": {"2024年": "9.6%", "2025年": "47.5%"}}
+              "source": "r.pdf 第58页", "items": [{"heading": "工业企业采用提升", "value": "47.5%"}]}
+    industry = {"metric": "中国工业企业应用大模型及智能体的比例", "values": {"2024年": "9.6%", "2025年": "47.5%"}, "pages": {"r.pdf": [58]}}
     assert binding(page20, industry)["relation"] == "topic"
-    funding = {"title": "2024年上半年AI融资达316亿美元", "highlight": {"value": "316亿美元", "text": "AI融资金额"},
-               "items": [{"heading": "占比提升", "value": "12.1%", "body": "AI融资占全行业融资比例由4.5%升至12.1%"}]}
-    share = {"metric": "AI融资占全行业融资比例", "values": {"2022年": "4.5%", "2024年上半年": "12.1%"}}
-    assert binding(funding, share)["relation"] == "evidenced"
-    direct = {"metric": "备案服务数量同比增长", "values": {"2025年": "87.4%", "2024年": "50%"}}
-    assert binding(page20, direct)["relation"] == "direct"
+    # page 5 of the Fix3 run: the age structure backs "50岁及以上网民占34.4%", same source page
+    page5 = {"title": "50岁及以上网民占34.4%，是重要用户群", "highlight": {"value": "34.4%", "text": "50岁及以上网民占比"},
+             "source": "r.pdf 第26页"}
+    ages = {"metric": "网民年龄结构占比", "values": {"50-59岁": "19.0%", "60岁及以上": "15.4%"}, "pages": {"r.pdf": [26]}}
+    assert binding(page5, ages)["relation"] == "evidenced"
+    assert binding({**page5, "source": "r.pdf 第21页"}, ages)["relation"] == "topic"   # data on a page it does not cite
+
+
+def test_equal_numbers_or_another_year_do_not_make_a_chart_direct():
+    from ppt_agent.v2.visual_brief import binding
+
+    page = {"title": "网购用户占网民83.2%", "highlight": {"value": "83.2%", "text": "网络购物用户占网民整体比例"}, "source": "r.pdf 第37页"}
+    other = {"metric": "某行业企业数字化比例", "values": {"A": "83.2%", "B": "40%"}, "pages": {"r.pdf": [37]}}
+    assert binding(page, other)["relation"] == "topic"
+    same_metric_old_year = {"metric": "网络购物用户占网民比例", "period": "2019年", "values": {"2019年": "83.2%", "2018年": "70%"},
+                            "pages": {"r.pdf": [37]}}
+    page2025 = {**page, "title": "2025年网购用户占网民83.2%"}
+    assert binding(page2025, same_metric_old_year)["relation"] == "topic"

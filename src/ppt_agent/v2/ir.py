@@ -161,6 +161,7 @@ class ChartItem(BaseElement):
     zero_based: bool = False  # a design saved before the rule has no such field and renders as signed
     # A data label's own words for a category whose value the source gives as approximate ("约40家").
     label_texts: list[str | None] | None = None
+    series_id: str | None = Field(default=None, max_length=24)  # the verified series it draws, readable in the PPTX
 
     @model_validator(mode="after")
     def validate_series_lengths(self) -> Self:

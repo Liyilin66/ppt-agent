@@ -172,22 +172,38 @@ def _terms(text: str) -> set[str]:
 
 
 def binding(content: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
-    """How a chart is bound to the page's claim, decided from data, not from a model's opinion:
-    direct (it holds the figure the page is about), evidenced (the page cites its values and it measures
-    what the title is about), or topic (same report, different subject: not evidence)."""
+    """How a chart is bound to the page's claim, decided from data, not from a model's opinion.
+
+    direct: the chart holds the page's focal figure *and* measures the claim's subject over the claim's
+    time (equal numbers alone prove nothing); evidenced: it measures the same subject and its data come
+    from source pages this page itself cites (a relation in the source, not a shared keyword alone);
+    topic: same report, another subject - not evidence."""
 
     import re
 
+    from ppt_agent.v2.figures import _cited
+
     values = list((candidate.get("values") or {}).values())
-    head = " ".join(str(part) for part in (content.get("title"), (content.get("highlight") or {}).get("value"))
-                    if part)
+    claim = " ".join(str(part) for part in (content.get("title"), (content.get("highlight") or {}).get("value"),
+                                             (content.get("highlight") or {}).get("text")) if part)
     squash = lambda text: re.sub(r"\s+", "", str(text or ""))
-    if any(value and squash(value) in squash(head) for value in values):
-        return {"relation": "direct", "why": "图表包含本页焦点数字"}
     # The chart's subject is its metric and its categories ("50-59岁", "农村网民", "短视频").
     subject = " ".join([str(candidate.get("metric") or "")] + [str(label) for label in (candidate.get("values") or {})])
-    shared = _terms(subject) & _terms(
-        " ".join(str(part) for part in (content.get("title"), (content.get("highlight") or {}).get("text")) if part))
-    if shared:
-        return {"relation": "evidenced", "why": "图表与标题讲同一对象：" + "、".join(sorted(shared))[:30]}
-    return {"relation": "topic", "why": "图表衡量的是另一件事，与本页论点只是同一主题"}
+    shared = _terms(subject) & _terms(" ".join(str(part) for part in (content.get("title"),
+                                                                     (content.get("highlight") or {}).get("text")) if part))
+    years = set(re.findall(r"(?:19|20)\d{2}", claim))
+    covered = set(re.findall(r"(?:19|20)\d{2}", subject + " " + str(candidate.get("period") or "")))
+    in_time = not years or not covered or bool(years & covered)
+    holds_focal = any(value and squash(value) in squash(claim) for value in values)
+    if holds_focal and shared and in_time:
+        return {"relation": "direct", "why": "图表含本页焦点数字，且衡量同一对象：" + "、".join(sorted(shared))[:24]}
+    pages = candidate.get("pages") or {}
+    cited = all(set(numbers) <= _cited(content.get("source"), document) for document, numbers in pages.items()) if pages else False
+    if shared and cited and in_time:
+        return {"relation": "evidenced", "why": "图表与论点讲同一对象（" + "、".join(sorted(shared))[:20]
+                + "），数据来自本页引用的原文页"}
+    why = ("数字相同但衡量的不是同一对象" if holds_focal and not shared else
+           "时间不一致" if not in_time else
+           "同一对象，但数据不在本页引用的原文页上，关系无法核实" if shared else
+           "图表衡量的是另一件事，与本页论点只是同一主题")
+    return {"relation": "topic", "why": why}

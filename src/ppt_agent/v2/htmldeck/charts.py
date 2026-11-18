@@ -46,6 +46,15 @@ def _format(series: dict[str, Any]) -> str:
     return number + (f'"{unit}"' if 0 < len(unit) <= UNIT_IN_LABEL else "")
 
 
+def series_key(series: dict[str, Any]) -> str:
+    """A series' identity: its data (category, value as written, source page), not its wording."""
+
+    import hashlib
+
+    identity = sorted((point["label"], point["display"], point.get("ref") or "") for point in series["points"])
+    return "series:" + hashlib.sha1(repr(identity).encode("utf-8")).hexdigest()[:8]
+
+
 def spec(series: dict[str, Any]) -> dict[str, Any]:
     """The ``data-chart`` value for a series."""
 
@@ -64,6 +73,7 @@ def spec(series: dict[str, Any]) -> dict[str, Any]:
         "series": [{"name": series.get("metric") or "数值", "values": values}],
         "highlight": highlight,
         "format": _format(series),
+        "id": series_key(series),
     }
     projected = [index for index, point in enumerate(points) if point.get("projected")]
     if projected:

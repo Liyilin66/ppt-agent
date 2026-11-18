@@ -281,6 +281,8 @@ def _render_chart(slide, item: ChartItem, theme: ThemeSpec) -> None:
         _emu(frame.h),
         data,
     )
+    if item.series_id:
+        graphic_frame.name = f"chart {item.series_id}"  # which verified series this is, for reading the deck back
     chart = graphic_frame.chart
     chart.has_title = item.title is not None
     if item.title:
