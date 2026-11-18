@@ -204,7 +204,8 @@ def find_defects(
                         "换成和背景反差足够的颜色，或去掉它下面的底色。", label))
                     break
         if roles and item.get("lines", 1) >= 2 and item.get("lastLine") is not None and sizes \
-                and re.search(r"[\u4e00-\u9fff]", text_here) and item["lastLine"] < 1.3 * max(sizes):
+                and re.search(r"[\u4e00-\u9fff]", text_here) and item["lastLine"] < 1.9 * max(sizes) \
+                and re.search(r"[\u4e00-\u9fff][，。、；：！？,.]?$", text_here.strip()):
             # One character alone on the last line ("…规模普" / "及").
             defects.append(Defect(
                 "orphan", f"文字「{label}」最后一行只剩一个字。请删短几个字，或给它更宽的区域，让它整行结束。", label))

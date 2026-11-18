@@ -54,6 +54,13 @@ def collisions(page):
             for key, chars_ in hits.items()]
 
 
+def _orphan(text):
+    """One character alone on a line, with or without the punctuation after it ("及", "个，")."""
+
+    text = text.strip().rstrip("，。、；：！？,.")
+    return len(text) == 1 and "\u2e80" <= text <= "\u9fff"
+
+
 def orphans(page):
     """A wrapped paragraph whose last line holds one CJK character, as PowerPoint broke it."""
 
@@ -64,10 +71,10 @@ def orphans(page):
                   max((span["size"] for span in line["spans"]), default=0)) for line in block.get("lines", [])]
         lines = [line for line in lines if line[0]]
         rows += lines
-        if len(lines) >= 2 and len(lines[-1][0]) == 1 and "\u2e80" <= lines[-1][0] <= "\u9fff":
+        if len(lines) >= 2 and _orphan(lines[-1][0]):
             found.append({"orphan": lines[-1][0], "after": lines[-2][0]})
     for text, box, size in rows:
-        if len(text) != 1 or not "\u2e80" <= text <= "\u9fff":
+        if not _orphan(text):
             continue
         above = [other for other in rows if other[0] != text and abs(other[1][0] - box[0]) < 2
                  and abs(other[2] - size) < 0.5 and 0.5 * size < box[1] - other[1][1] < 2 * size and len(other[0]) >= 4]
