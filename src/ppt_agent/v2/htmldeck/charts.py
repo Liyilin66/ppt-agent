@@ -47,11 +47,13 @@ def _format(series: dict[str, Any]) -> str:
 
 
 def series_key(series: dict[str, Any]) -> str:
-    """A series' identity: its data (category, value as written, source page), not its wording."""
+    """A series' identity: its data (each category and its value as written) - not its wording, and not
+    which of two neighbouring pages a copy cited (CNNIC 57: one chart cited as p.40 and as p.39-40 was
+    drawn twice)."""
 
     import hashlib
 
-    identity = sorted((point["label"], point["display"], point.get("ref") or "") for point in series["points"])
+    identity = sorted((point["label"], point["display"]) for point in series["points"])
     return "series:" + hashlib.sha1(repr(identity).encode("utf-8")).hexdigest()[:8]
 
 
