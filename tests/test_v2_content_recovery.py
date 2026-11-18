@@ -55,3 +55,13 @@ def test_a_moved_page_does_not_bring_its_old_topic_back():
     diag = content_recovery.diagnose(record(['3748万']), store('外卖增长3748万人'), moved=True)
     assert diag['values'] == {'3748万': 'OFF_TOPIC'} and content_recovery.pages_to_add(diag) == {}
     assert '不要再讲原来的主题' in content_recovery.instruction(diag)
+
+
+def test_renumber_changes_only_the_footer_number():
+    from ppt_agent.v2.htmldeck.deck import renumber
+    from ppt_agent.v2.ir import PageDesign
+    page = PageDesign.model_validate({'page_number': 18, 'role': 'content', 'elements': [
+        {'type': 'rich_text', 'id': 'a', 'frame': {'x': 76, 'y': 300, 'w': 300, 'h': 40}, 'runs': [{'text': '18'}]},
+        {'type': 'rich_text', 'id': 'b', 'frame': {'x': 1191, 'y': 679, 'w': 80, 'h': 17}, 'runs': [{'text': '18'}]}]})
+    out = renumber(page, 17)
+    assert [e.runs[0].text for e in out.elements] == ['18', '17']

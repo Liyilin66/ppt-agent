@@ -603,3 +603,19 @@ async def design_deck(
                                             for job in jobs if results[job.page_number].ok}),
         )
     return results, summary
+
+
+def renumber(page: Any, shown: int) -> Any:
+    """The page with the number it shows in the footer set to ``shown`` (pages were removed before it)."""
+
+    from ppt_agent.v2.ir import CANVAS_HEIGHT, CANVAS_WIDTH
+
+    old = f"{page.page_number:02d}"
+    elements = []
+    for element in page.elements:
+        if (getattr(element, "type", None) == "rich_text" and element.frame.y > CANVAS_HEIGHT * 0.85
+                and element.frame.x > CANVAS_WIDTH * 0.6 and "".join(run.text for run in element.runs).strip() == old):
+            runs = [element.runs[0].model_copy(update={"text": f"{shown:02d}"})]
+            element = element.model_copy(update={"runs": runs})
+        elements.append(element)
+    return page.model_copy(update={"elements": elements})

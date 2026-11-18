@@ -916,6 +916,9 @@ def name_categories(content, series_pool):
     return (content.model_copy(update={'items': items}) if renamed else content), renamed
 
 
+NEAR_PASSAGE = 3  # chunks of the source: how far a repeated page may move to find material of its own
+
+
 async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, progress):
     # Lazy imports keep the orchestrator's delegation free of import cycles.
     from ppt_agent.v2.orchestrator import BuildResult, PageOutcome
@@ -1211,6 +1214,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                                       for number, (content, _) in results.items()}, page_plans, signed,
                 rewritten=overlap)
         left = overlap.get('left') or []
+        removed: set[int] = set()
         if left and evidence_store is not None and type_roles:
             # Rewriting did not part them: the later page moves to source material no page has used, or the
             # repeat is reported - it is never just retitled again.
@@ -1220,7 +1224,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             moved = {}
             for pair in left:
                 page = max(pair)
-                if page in signed or page in moved or not spare:
+                if page in signed or page in moved or page in removed:
+                    continue
+                if not spare:
+                    removed.add(page)
                     continue
                 # The unused passage nearest in the source to what the page was about, so a moved page stays
                 # with its section (CNNIC 57: the first unused passages, 政府网站, landed between AI pages).
@@ -1229,6 +1236,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                              if chunk_id in order)
                 centre = own[len(own) // 2] if own else 0
                 chunk = min(spare, key=lambda item: (abs(order.get(item['chunk_id'], 0) - centre), order.get(item['chunk_id'], 0)))
+                if abs(order.get(chunk['chunk_id'], 0) - centre) > NEAR_PASSAGE:
+                    # No unused passage near what the page was about: material from another part of the
+                    # report would sit off-topic in this section, so the page goes (the deck is one shorter).
+                    removed.add(page)
+                    continue
                 spare.remove(chunk)
                 packets[page] = evidence_store.packet_of([by_id[chunk['chunk_id']]])
                 moved[page] = chunk['chunk_id']
@@ -1247,6 +1259,16 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         checkpoints.save('typeset/content_overlap.json', overlap)
         progress(f"[content] {len(overlap['repeated'])} repeated pair(s) found, {len(rewrites)} page(s) rewritten, "
                  f"{len(overlap.get('retargeted', {}))} moved to uncovered material, {len(overlap.get('left', []))} left")
+        if removed:
+            overlap['removed'] = sorted(removed)
+            for page in removed:
+                content, record = results[page]
+                results[page] = (content, {**record, 'content_status': 'PAGE_REMOVED',
+                                           'removed_because': next(pair for pair in left if page in pair)})
+            content_slots = [slot for slot in content_slots if slot.page_number not in removed]
+            skeleton = skeleton.model_copy(update={'slots': [slot for slot in skeleton.slots if slot.page_number not in removed]})
+            checkpoints.save('typeset/content_overlap.json', overlap)
+            progress(f"[content] removed page(s) {sorted(removed)}: still repeating another page, no unused material near them")
         if type_roles:
             # A page rewritten or moved by the overlap review can fail its number check like any other.
             retargeted.update(int(page) for page in overlap.get('retargeted', {}))
@@ -1541,6 +1563,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         checkpoints.save(f'pages/page_{slot.page_number:03d}.json', {'page': page.model_dump(mode='json'),
                         'qa': qa.model_dump(mode='json'), 'outcome': outcome.model_dump(mode='json')})
         progress(f'[typeset] page {slot.page_number} done')
+    shown = {page.page_number: index + 1 for index, page in enumerate(sorted(pages, key=lambda page: page.page_number))}
+    if any(old != new for old, new in shown.items()):
+        # A removed page leaves no gap in the numbers the slides show.
+        from ppt_agent.v2.htmldeck.deck import renumber
+        pages = [renumber(page, shown[page.page_number]) for page in pages]
     deck = DeckDesign(deck_title=skeleton.deck_title, subtitle=skeleton.subtitle,
                       language=brief.language, theme=theme, pages=pages)
     fallbacks = [item.page_number for item in outcomes if item.status == 'fallback']
