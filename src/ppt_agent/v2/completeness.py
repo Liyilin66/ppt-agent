@@ -15,7 +15,8 @@ from typing import Any
 
 from ppt_agent.v2.visual.content import DataSeries
 
-SELECTING = re.compile(r"最多|最高|最低|最少|其次|居首|位居|排名|前[一二三四五六七八九十\d]+[位名个]|领先|主要|等[。；，、]|[如例]")
+RANKING = re.compile(r"最多|最高|其次|居首|位居|排名|前[一二三四五六七八九十\d]+[位名个]")
+SELECTING = re.compile(r"最多|最高|最低|最少|其次|居首|位居|排名|前[一二三四五六七八九十\d]+[位名个]|领先|主要有|等[。；，、]|例如|比如|诸如|如[：:]")  # "比例" is not "例如"
 
 
 def _squash(text: str) -> str:
@@ -61,9 +62,11 @@ def assess(series: DataSeries, pdfs: dict[str, str | Path], axes_cache: dict | N
                 series = exact_values(series, members, place)
                 if len(members) == len(labels):
                     return series.model_copy(update={"coverage": "complete", "of_total": len(members)})
-                return _excerpt(series, len(members), f"原图共 {len(members)} 项，图中为其中 {len(labels)} 项")
+                return _excerpt(series, len(members), f"节选：原图共 {len(members)} 项，图中为其中 {len(labels)} 项")
+    if any(RANKING.search(point.quote) for point in series.points):
+        return _excerpt(series, None, f"节选：原文只给出排名前 {len(series.points)} 的项")
     if any(SELECTING.search(point.quote) for point in series.points):
-        return _excerpt(series, None, "原文只点出这几项，不是全部")
+        return _excerpt(series, None, "节选：原文只点出这几项，不是全部")
     return series
 
 

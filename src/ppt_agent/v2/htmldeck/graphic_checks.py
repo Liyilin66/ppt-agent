@@ -24,6 +24,7 @@ _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*[%％]")
 _VOID = {"br", "hr", "img", "input", "meta", "link"}
 QUALITATIVE_TEXT = 8   # a column that is a text container, not a bar, says at least this much
 HEIGHT_TOLERANCE = 8.0  # percentage points between a column's height and its value's share
+UNITS_TOLERANCE = 2.5   # a grid of ten shows tenths: a share further than this from one is misdrawn by it
 
 
 def shares(content: dict[str, Any]) -> set[float]:
@@ -282,11 +283,12 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
         if node.has("units"):
             lit = sum(1 for child in node.children if child.has("u") and child.has("on"))
             cells = sum(1 for child in node.children if child.has("u"))
-            if cells != 10 or not any(round(share / 10) == lit for share in allowed):
+            if cells != 10 or not any(round(share / 10) == lit and abs(lit * 10 - share) <= UNITS_TOLERANCE
+                                      for share in allowed):
                 defects.append(Defect(
                     "unbound_graphic",
-                    f"方块阵点亮了 {lit}/{cells} 个，对不上内容里的任何占比。必须是 10 个方块，点亮个数 = 占比 ÷ 10（四舍五入）；"
-                    "没有占比就不要用方块阵。"))
+                    f"方块阵点亮了 {lit}/{cells} 个，对不上内容里的任何占比。必须是 10 个方块，点亮个数 = 占比 ÷ 10，"
+                    f"而且占比离整十不超过 {UNITS_TOLERANCE:g} 个百分点（96.8% 点亮 10 格会被读成 100%）；不满足就不要用方块阵。"))
 
         if node.has("cols"):
             columns = [child for child in node.children if child.has("col")]

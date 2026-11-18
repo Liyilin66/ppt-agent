@@ -131,8 +131,9 @@ def candidates(content: dict[str, Any]) -> list[str]:
         if form == "poster":
             return bool(highlight)
         if form == "units":
+            from ppt_agent.v2.htmldeck.graphic_checks import UNITS_TOLERANCE
             percent = _percent(highlight)
-            return percent is not None and percent in parts
+            return percent is not None and percent in parts and abs(round(percent / 10) * 10 - percent) <= UNITS_TOLERANCE
         if form == "strip":
             return bool(parts)
         if form == "timeline":

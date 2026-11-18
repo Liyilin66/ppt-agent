@@ -70,3 +70,13 @@ def test_display_figures_are_values_and_categories_keep_their_names():
     assert any("第49–50页" in m for m in messages)
     assert any("生成会议纪要、PPT" in m for m in messages)
     assert not any("休闲娱乐" in m or "「25家」" in m for m in messages)
+
+
+def test_a_grid_of_ten_does_not_draw_96_8_as_a_whole():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+    content = {"highlight": {"value": "96.8%", "text": "光纤端口占比"}}
+    page = ('<div class="page"><div class="r"><div class="units">' + '<i class="u on"></i>' * 10 + '</div></div></div>')
+    assert [d.kind for d in find_graphic(page, content)] == ["unbound_graphic"]
+    content = {"highlight": {"value": "60%", "text": "合成数据占比"}}
+    page = ('<div class="page"><div class="r"><div class="units">' + '<i class="u on"></i>' * 6 + '<i class="u"></i>' * 4 + '</div></div></div>')
+    assert find_graphic(page, content) == []

@@ -15,7 +15,7 @@ def test_a_series_whose_figure_has_more_members_is_an_excerpt(monkeypatch):
     monkeypatch.setattr("pypdf.PdfReader", lambda path: type("R", (), {"pages": [None] * 30})())
     top = completeness.assess(_series([("北京", 158), ("上海", 92), ("广东", 92)]), {"r.pdf": "r.pdf"})
     assert top.coverage == "excerpt" and top.of_total == 5
-    assert "原图共 5 项" in charts.caption(top.model_dump())
+    assert "节选：原图共 5 项" in charts.caption(top.model_dump())
     whole = completeness.assess(_series([("北京", 158), ("广东", 92), ("上海", 92), ("浙江", 43), ("江苏", 39)]),
                                 {"r.pdf": "r.pdf"})
     assert whole.coverage == "complete"
@@ -65,3 +65,9 @@ def test_an_approximation_left_standing_is_labelled_on_its_bar():
     series = _series([("北京", 158), ("上海", 92)]).model_dump()
     series["points"].append({"label": "浙江", "value": 40, "display": "约40家", "quote": "q", "ref": "r"})
     assert charts.spec(series)["texts"] == ["158家", "92家", "约40家"]
+
+
+def test_a_ratio_is_not_a_selection():
+    quote = "我国网民使用手机上网的比例达99.6%；使用台式电脑上网的比例为32.5%"
+    assert not completeness.SELECTING.search(quote) and not completeness.RANKING.search(quote)
+    assert completeness.SELECTING.search("例如北京、上海")
