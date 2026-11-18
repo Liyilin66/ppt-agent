@@ -87,6 +87,9 @@ def _leaf(node: dict[str, Any], job: Any, state: State, refs: dict[str, Any]) ->
         size = _size(node.get("size") if node.get("size") in ("d1", "d2", "d3", "d4") else "d3", state)
         words = source.get("text") or source.get("heading") or ""
         body = source.get("body") if ref != "highlight" else ""
+        if len(unit) <= 2:
+            # "80.1%", "11.25亿": a short unit is part of the figure and keeps its type.
+            number, unit = number + unit, ""
         return (f'<div class="rowx base"><div class="{size}{accent}">{escape(number)}</div>'
                 + (f'<div class="unit">{escape(unit)}</div>' if unit else "") + "</div>"
                 + (f'<div class="b bold">{escape(words)}</div>' if words else "")
