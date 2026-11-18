@@ -110,3 +110,14 @@ def test_an_arrow_inside_wrappers_between_different_units_is_caught():
             '</div></div></div>')
     content = {"items": [{"value": "4198亿个"}, {"value": "3958亿GB"}]}
     assert "unbound_graphic" in [d.kind for d in find_graphic(page, content)]
+
+
+def test_a_bar_labelled_as_something_else_than_its_share_is_caught():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+    content = {"highlight": {"value": "11.25亿", "text": "网民规模"},
+               "items": [{"heading": "互联网普及率", "value": "80.1%", "body": "互联网普及率为80.1%"}]}
+    wrong = ('<div class="page"><div class="r"><div class="c">截至2025年12月我国网民规模</div>'
+             '<div class="strip"><div class="fill red" style="width:80.1%"></div></div></div></div>')
+    right = wrong.replace("我国网民规模", "我国互联网普及率")
+    assert "unbound_graphic" in [d.kind for d in find_graphic(wrong, content)]
+    assert "unbound_graphic" not in [d.kind for d in find_graphic(right, content)]

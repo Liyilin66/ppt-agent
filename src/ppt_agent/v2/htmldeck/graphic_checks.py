@@ -324,6 +324,21 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                         defects.append(Defect(
                             "unbound_graphic",
                             f"比例条画了 {width:g}%，但内容里没有这个占比。条的宽度必须等于内容里的真实占比，否则请删掉比例条。"))
+                else:
+                    # The bar's own label must name the share it draws (CNNIC 57 p3: an 80.1% bar labelled
+                    # "我国网民规模" - a total has no denominator and is no bar).
+                    from ppt_agent.v2.visual_brief import _terms
+                    owners = [f"{entry.get('heading') or ''}{entry.get('text') or ''}{entry.get('body') or ''}"
+                              for entry in [content.get("highlight") or {}] + list(content.get("items") or [])
+                              if isinstance(entry, dict) and any(_same(width, float(m.group(1)))
+                                                                 for m in _PERCENT.finditer(str(entry.get("value") or "")))]
+                    holder = node.parent if node.parent is not None else node
+                    label = re.sub(r"\d+(?:\.\d+)?\s*%?", "", holder.text)
+                    if owners and label.strip() and not any(_terms(owner) & _terms(label) for owner in owners):
+                        defects.append(Defect(
+                            "unbound_graphic",
+                            f"比例条画的是 {width:g}%（{owners[0][:20]}），但旁边的标注写的是「{label.strip()[:20]}」。"
+                            "比例条的标注必须写它画的那个占比是什么；总量（如网民规模）没有分母，不能画成比例条。"))
 
         if node.has("units"):
             lit = sum(1 for child in node.children if child.has("u") and child.has("on"))

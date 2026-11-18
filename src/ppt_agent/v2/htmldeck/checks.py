@@ -218,6 +218,24 @@ def find_defects(
         if sizes and min(sizes) < MIN_TEXT_PX - 0.01:
             defects.append(Defect("small_text", f"文字「{label}」只有 {min(sizes):.0f} 像素，太小。请减少内容，不要缩小字号。", label))
 
+    if roles:
+        # A number and its unit are one thing: the unit stands right after its figure, not across the page.
+        for figure in texts:
+            size = max((run["size"] for run in figure["runs"] if run.get("t", "").strip()), default=0)
+            if size < 48 or not re.search(r"\d\s*$", _item_text(figure)):
+                continue
+            box = _line_rect(figure)
+            for unit in texts:
+                if "unit" not in unit.get("cls", "").split():
+                    continue
+                ubox = _line_rect(unit)
+                same_line = ubox["y"] < box["y"] + box["h"] and box["y"] < ubox["y"] + ubox["h"]
+                gap = ubox["x"] - (box["x"] + box["w"])
+                if same_line and gap > max(40.0, size * 0.6):
+                    defects.append(Defect(
+                        "split_unit",
+                        f"单位「{_short(_item_text(unit))}」离数字「{_short(_item_text(figure))}」有 {gap:.0f} 像素远，读起来像两样东西。"
+                        "把单位紧跟在数字后面（同一个 rowx，不要用 spread 或 g 系列把它们拉开）。", _item_text(unit)))
     for index, first in enumerate(texts):
         a = _line_rect(first)
         for second in texts[index + 1:]:
