@@ -966,6 +966,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     # generated concurrently instead of one after another.
     packets = {slot.page_number: packet_for(slot) for slot in content_slots}
     budget = None
+    page_plans_first = None
     if getattr(request, 'html_theme', None) and evidence_store is not None and type_roles:
         # Pages the source can carry: a group of pages sharing too few facts keeps, moves or drops pages
         # before anything is written, so no page exists only to retell another.
@@ -973,6 +974,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         # (the outline's own pages, kept apart from the plan of the pages that remain, so a resumed run asks once)
         first_plan = await deck_content.plan(client, checkpoints, content_slots, packets,
                                              name='typeset/content_plan_outline.json')
+        page_plans_first = first_plan
         deck_content.require(first_plan, [slot.page_number for slot in content_slots], checkpoints,
                              name='typeset/content_plan_outline.json')
         budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store,
@@ -1136,6 +1138,48 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         return slot.page_number, (content, record)
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
+    if rich and evidence_store is not None and type_roles:
+        # A page that failed its number check three times is diagnosed, not left as a placeholder: if every
+        # rejected figure is printed in the source, the pages that hold them join its evidence and it is
+        # written once more; otherwise it is reported for review, under its planned claim.
+        from ppt_agent.v2 import content_recovery
+        by_number = {slot.page_number: slot for slot in content_slots}
+        by_chunk = {chunk['chunk_id']: chunk for chunk in evidence_store.chunks}
+        names = {document['doc_id']: document['name'] for document in evidence_store.documents}
+
+        async def recover(number):
+            content, record = results[number]
+            diagnosis = content_recovery.diagnose(record, evidence_store)
+            if diagnosis['recoverable']:
+                wanted = content_recovery.pages_to_add(diagnosis)
+                packet = packets.get(number)
+                # The pages holding the rejected figures go first, so the size limit never cuts them.
+                chunks = [chunk for chunk in evidence_store.chunks
+                          if set(chunk['pages']) & wanted.get(names.get(chunk['doc_id']), set())]
+                chunks += [by_chunk[chunk_id] for chunk_id in (packet.chunk_ids if packet is not None else [])
+                           if chunk_id in by_chunk and by_chunk[chunk_id] not in chunks]
+                packets[number] = evidence_store.packet_of(chunks, max_chars=9500)
+                _, (new_content, new_record) = await produce(by_number[number], revision=content_recovery.instruction(diagnosis),
+                                                             current=content.model_dump(mode='json', exclude_none=True))
+                if not new_record.get('fallback'):
+                    new_record = {**new_record, 'content_status': 'CONTENT_RECOVERED', 'content_failure': diagnosis}
+                    checkpoints.save(f'typeset/content_{number:03d}.json',
+                                     {'content': new_content.model_dump(mode='json'), 'record': new_record})
+                    return number, (new_content, new_record)
+                content, record = new_content, new_record
+            title = content_recovery.title_for((page_plans or {}).get(number) or (page_plans_first or {}).get(number), content.title)
+            if title != content.title and content.title == (by_number[number].section_title or '')[:40]:
+                content = content.model_copy(update={'title': title})
+            record = {**record, 'content_status': 'NEEDS_CONTENT_REVIEW', 'content_failure': diagnosis}
+            checkpoints.save(f'typeset/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
+            return number, (content, record)
+
+        failed = [number for number, (_, record) in results.items()
+                  if record.get('fallback') and not record.get('content_status')]
+        if failed:
+            results.update(dict(await asyncio.gather(*(recover(number) for number in failed))))
+            progress(f"[content] {len(failed)} page(s) failed their number check: "
+                     + ", ".join(f"{n} {results[n][1].get('content_status')}" for n in sorted(failed)))
     if rich and evidence_store is not None:
         # Pages that still argue one conclusion twice (checked even where planning failed): the later (or straying) one is rewritten once.
         signed = set((checkpoints.load('html/accepted.json') or {}).get('pages', []))
@@ -1523,7 +1567,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     content_numbers = {slot.page_number for slot in content_slots}
     layouts = layout_signature.conflicts(
         [layout_signature.of(page) for page in pages if page.page_number in content_numbers])
-    run = {'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    from ppt_agent.v2 import content_recovery as _recovery
+    content_states = _recovery.summary({record.get('page_number', i): record for i, record in enumerate(records)})
+    run = {'content_recovery': content_states, 'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,
