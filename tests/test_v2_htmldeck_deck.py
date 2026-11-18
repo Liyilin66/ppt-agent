@@ -194,3 +194,20 @@ def test_a_page_without_series_keeps_the_content_it_had():
     content = RichContent.model_validate({"title": TITLE, "items": CONTENT["items"]})
     made = deck.job_for(content, page_number=4, section_index=1, section_title="AI投入窗口已开启")
     assert "series" not in made.content and "figure" not in made.content
+
+
+def test_items_carrying_the_claim_survive_the_form_limit():
+    from ppt_agent.v2.htmldeck import deck as html_deck
+    from ppt_agent.v2.htmldeck.pipeline import DesignJob
+
+    items = [{"heading": h, "value": v} for h, v in (("服务备案", "748款"), ("应用登记", "435款"), ("新增服务", "446款"),
+                                                     ("新增应用", "330款"), ("服务提速", "87.4%"), ("应用提速", "214.3%"))]
+    job = DesignJob(page_number=29, archetype="points",
+                    content={"title": "备案登记建立合规底座", "lead": "2025年新增服务与应用登记均明显提速", "items": items})
+    fingerprint = type("F", (), {"form": "ledger", "arrangement": None})()
+    limit = html_deck.FORM_ITEMS.get("ledger")
+    if limit and limit < 6:
+        html_deck._fit_items(job, fingerprint)
+        kept = [item["heading"] for item in job.content["items"]]
+        assert "服务提速" in kept and "应用提速" in kept and len(kept) == limit
+        assert kept == [item["heading"] for item in items if item["heading"] in kept]  # order kept

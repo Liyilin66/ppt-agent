@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 import dataclasses
 import os
@@ -80,6 +82,16 @@ FORM_ITEMS = {"poster": 3, "units": 3, "strip": 3, "statement": 2, "columns": 3,
 CHART_ITEMS = {"side": 3, "inset": 3, "full": 2, "band": 3}
 
 
+def _carries(item: dict[str, Any], claim: str) -> bool:
+    """Whether an item shows the comparison, rank or speed the page's claim asserts ("明显提速" -> "服务提速")."""
+
+    from ppt_agent.v2.claim_audit import MEASURED_CLAIM
+
+    asserted = set(re.findall(MEASURED_CLAIM, claim))
+    text = " ".join(str(item.get(key) or "") for key in ("heading", "body"))
+    return any(word in text for word in asserted)
+
+
 def _fit_items(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
     if job.all_items is None:
         job.all_items, job.all_notes = list(job.content.get("items") or []), job.notes
@@ -90,7 +102,13 @@ def _fit_items(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
         job.content = {**job.content, "items": items} if "items" in job.content else job.content
         job.notes = job.all_notes
         return
-    kept, moved = items[:limit], items[limit:]
+    # The items the page's claim rests on stay; then the rest in order. CNNIC 57 round 6: "新增登记均明显提速"
+    # over six items, the limit kept the four totals and cut "服务提速 87.4%" / "应用提速 214.3%", the only
+    # figures that showed the speed-up, and the page claimed what it no longer showed.
+    claim = "".join(str(job.content.get(key) or "") for key in ("title", "lead"))
+    chosen = sorted(range(len(items)), key=lambda index: (not _carries(items[index], claim), index))[:limit]
+    kept = [item for index, item in enumerate(items) if index in chosen]
+    moved = [item for index, item in enumerate(items) if index not in chosen]
     job.content = {**job.content, "items": kept}
     extra = "；".join(" ".join(str(item.get(key)) for key in ("heading", "value", "body") if item.get(key))
                      for item in moved)

@@ -1293,25 +1293,44 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
             numbers = [slot.page_number for slot in content_slots]
             verdicts = await audited(numbers)
-            failing = [number for number in numbers if verdicts[number].get('verdict') == 'fix' and number not in signed]
+
+            def decided(number):
+                return claim_audit.decide(verdicts[number], results[number][0].model_dump(mode='json', exclude_none=True))
+
+            failing = [number for number in numbers if decided(number)['rewrite'] and number not in signed]
             if failing:
                 rewritten = await asyncio.gather(*(
-                    produce(by_number[number], revision=claim_audit.instruction(verdicts[number]),
+                    produce(by_number[number], revision=claim_audit.instruction(decided(number)),
                             current=results[number][0].model_dump(mode='json', exclude_none=True))
                     for number in failing))
                 results.update(dict(rewritten))
                 await recover_failed('after claim audit')
                 verdicts.update(await audited(failing))
-            for number, verdict in verdicts.items():
+            decisions = {number: decided(number) for number in numbers}
+            for number in numbers:
                 content, record = results[number]
-                record = {**record, 'claim_audit': verdict, 'claim_audit_rewritten': number in failing}
-                if verdict.get('verdict') == 'fix':
+                decision = decisions[number]
+                if decision['move_items'] and number not in signed:
+                    # An unrelated fact among the items goes to the notes; the page is not rewritten for it.
+                    moved = [content.items[index] for index in decision['move_items']]
+                    kept = [item for index, item in enumerate(content.items) if index not in decision['move_items']]
+                    note = '与本页论点无关、移出页面的事实：' + '；'.join(
+                        ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                    content = content.model_copy(update={'items': kept, 'speaker_notes': (
+                        (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
+                record = {**record, 'claim_audit': {**verdicts[number], 'decision': decision},
+                          'claim_audit_rewritten': number in failing}
+                if decision['rewrite']:
                     record['content_status'] = 'NEEDS_CONTENT_REVIEW'
                 results[number] = (content, record)
+                checkpoints.save(f'typeset/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             audit_summary = claim_audit.summary(verdicts)
-            audit_summary['rewritten'] = failing
+            audit_summary.update(rewritten=failing, still_failing=[n for n in numbers if decisions[n]['rewrite']],
+                                 items_moved={str(n): decisions[n]['move_items'] for n in numbers if decisions[n]['move_items']},
+                                 minor={str(n): decisions[n]['minor'] for n in numbers if decisions[n]['minor']})
             checkpoints.save('typeset/claim_audit.json', audit_summary)
-            progress(f"[content] claim audit: {len(failing)} page(s) rewritten {failing}; still failing {audit_summary['fix']}; "
+            progress(f"[content] claim audit: {len(failing)} page(s) rewritten {failing}; still failing {audit_summary['still_failing']}; "
+                     f"items moved to notes {audit_summary['items_moved']}; "
                      f"audit errors {audit_summary['error']}")
     series_summary = None
     if rich and evidence_store is not None:

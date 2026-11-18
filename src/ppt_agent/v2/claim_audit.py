@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 SYSTEM = """你是严格的事实编辑，审查一页演示文稿的论点和证据是否一致。只依据给你的本页内容和本页证据原文，不用常识补充。
@@ -28,9 +29,17 @@ SYSTEM = """你是严格的事实编辑，审查一页演示文稿的论点和�
    （例如"提速"需要前后两期的增量对比；"领先"需要同类的比较对象）。没有就是 unsupported。
 4. 结论或建议是否超出页面证据（推断可以有，但不能被说成数据结论）。
 
+5. 标题或导语是否把两个不同对象的结论拼在一起（例如"短视频拿走最多新增注意力，AI需求仍以问答为主"：
+   短视频时长和 AI 使用目的是两件事，互不支撑）。拼在一起的那句列进 mixed，各自对象的事实都标 unrelated 于另一个。
+
+不算问题（不要列出）：评价性形容词（大、超大、较大、明显、突出）、建议和展望（建议、应、可、值得关注）、
+"仍""持续"这类说法在有当期数据时的用法。只列出把数据关系说错或说过头的地方：说了提速/加快/领先/最高/增长/下降/带动/导致，
+而本页和证据里没有相应的对比数据或因果说明。
+
 只返回 JSON：
-{"claim": "核心论点", "facts": [{"text": "页面上的事实", "relation": "direct|independent|unrelated", "why": "一句话"}],
+{"claim": "核心论点", "facts": [{"text": "页面上的事实（原话）", "relation": "direct|independent|unrelated", "why": "一句话"}],
  "unsupported": [{"text": "页面上的原话", "why": "缺什么证据"}],
+ "mixed": [{"text": "标题或导语里拼接两个对象的原话", "why": "哪两个对象"}],
  "verdict": "ok" 或 "fix",
  "instruction": "verdict 为 fix 时：具体怎么改（删掉/替换哪条事实，哪句话改成什么准确说法）；ok 时为空"}
 有 unrelated 或 unsupported 时 verdict 必须是 fix。independent 本身不是问题。"""
@@ -46,7 +55,7 @@ def view(content: dict[str, Any]) -> dict[str, Any]:
 
 
 def _key(content: dict[str, Any], evidence: str) -> str:
-    text = json.dumps(view(content), ensure_ascii=False, sort_keys=True) + "\x00" + (evidence or "")
+    text = VERSION + json.dumps(view(content), ensure_ascii=False, sort_keys=True) + "\x00" + (evidence or "")
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
@@ -71,23 +80,119 @@ def normalise(verdict: Any) -> dict[str, Any]:
         return {"verdict": "error", "error": "not an object"}
     facts = [fact for fact in verdict.get("facts") or [] if isinstance(fact, dict)]
     unsupported = [item for item in verdict.get("unsupported") or [] if isinstance(item, dict)]
-    failing = any(fact.get("relation") == "unrelated" for fact in facts) or bool(unsupported)
-    return {"claim": verdict.get("claim") or "", "facts": facts, "unsupported": unsupported,
+    mixed = [item for item in verdict.get("mixed") or [] if isinstance(item, dict) and item.get("text")]
+    failing = any(fact.get("relation") == "unrelated" for fact in facts) or bool(unsupported) or bool(mixed)
+    return {"claim": verdict.get("claim") or "", "facts": facts, "unsupported": unsupported, "mixed": mixed,
             # The rule decides, not the reviewer's own word: an unrelated fact or unsupported wording is a fix.
             "verdict": "fix" if failing else "ok",
             "instruction": (verdict.get("instruction") or "").strip() if failing else ""}
 
 
-def instruction(verdict: dict[str, Any]) -> str:
-    lines = ["终审发现本页的论点和证据不一致，按下面修改后重写这一页（数字仍然必须来自证据原文）："]
+MEASURED_CLAIM = (r"提速|加速|加快|放缓|领先|领跑|居首|首位|第一|最高|最快|最大|最多|最低|翻倍|倍增|超过|高于|低于|"
+                  r"回升|反弹|下降|下滑|增速|增幅|带动|导致|由于|因为|拉动|驱动")
+CLAIM_FIELDS = ("title", "lead", "highlight", "statement")  # where the page states what it argues
+VERSION = "3"  # the reviewer's brief; a change asks every page again
+
+
+def _squash(text: Any) -> str:
+    return "".join(str(text or "").split())
+
+
+def _flat(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(_flat(part) for part in value.values())
+    if isinstance(value, list):
+        return " ".join(_flat(part) for part in value)
+    return str(value or "")
+
+
+def _figures(text: str) -> set[str]:
+    """The figures of a text, without the dates every line carries ("2025年12月")."""
+
+    found = set(re.findall(r"\d+(?:\.\d+)?", text))
+    return {n for n in found if not (re.fullmatch(r"(19|20)\d\d", n) or (n.isdigit() and int(n) <= 12))}
+
+
+def _score(text: str, value: Any) -> float:
+    """How well a finding quotes this part of the page: 1 when one holds the other, else the share of the
+    finding's word pairs found in it - provided the finding's figures are all there."""
+
+    a, b = _squash(text), _squash(_flat(value))
+    if not a or not b:
+        return 0.0
+    if a in b or (len(b) >= 6 and b in a):
+        return 1.0
+    figures = _figures(a)
+    if figures and not figures <= _figures(b):
+        return 0.0
+    pairs = [a[index:index + 2] for index in range(len(a) - 1)]
+    share = sum(pair in b for pair in pairs) / max(1, len(pairs))
+    return share if (figures or share >= 0.6) and share >= 0.3 else 0.0
+
+
+def _in(text: str, value: Any) -> bool:
+    return _score(text, value) > 0
+
+
+def _where(text: str, claim: dict[str, Any], items: list[Any]) -> tuple[str, int | None]:
+    """The part of the page a finding quotes: ("claim", None), ("item", index) or ("", None)."""
+
+    places = [(_score(text, value), "claim", None) for value in claim.values()]
+    places += [(_score(text, item), "item", index) for index, item in enumerate(items)]
+    best = max(places, key=lambda place: place[0], default=(0.0, "", None))
+    return (best[1], best[2]) if best[0] > 0 else ("", None)
+
+
+def decide(verdict: dict[str, Any], content: dict[str, Any]) -> dict[str, Any]:
+    """What a finding means for the page. Only the claim is rewritten: an unrelated fact or an unsupported
+    comparison in the title, lead or focal figure. An unrelated fact among the items moves to the notes
+    (at least two items stay). Anything else is reported, not acted on - wording is not worth a new page."""
+
+    claim = {field: content.get(field) for field in CLAIM_FIELDS if content.get(field)}
+    items = content.get("items") or []
+    rewrite, move, minor = [], [], []
     for fact in verdict.get("facts") or []:
-        if fact.get("relation") == "unrelated":
-            lines.append(f"· 「{fact.get('text')}」讲的是别的对象，不能支撑本页论点（{fact.get('why')}）。删掉或换成证据里与论点同一对象的事实；"
-                         "不要只改措辞把它留下。")
+        if fact.get("relation") != "unrelated":
+            continue
+        place, index = _where(fact.get("text"), claim, items)
+        if place == "claim":
+            rewrite.append({"unrelated": fact})
+        elif place == "item":
+            move.append(index)
+        else:
+            minor.append({"unrelated": fact})
     for item in verdict.get("unsupported") or []:
-        lines.append(f"· 「{item.get('text')}」缺少证据（{item.get('why')}）。有对比数据就把它放到页面上；没有就改成准确的说法。")
-    if verdict.get("instruction"):
-        lines.append("· 审稿建议：" + verdict["instruction"])
+        # In the claim, only a comparison, rank, speed or cause the data must carry ("明显提速", "增长最快",
+        # "带动") is rewritten; an interpretive headline ("夯实底座", "转向场景") is the page's reading of
+        # its data and is reported, not rewritten.
+        measured = re.search(MEASURED_CLAIM, str(item.get("text") or ""))
+        place, _ = _where(item.get("text"), claim, items)
+        (rewrite if place == "claim" and measured else minor).append({"unsupported": item})
+    for item in verdict.get("mixed") or []:
+        # A claim joining two subjects is rewritten wherever it stands in the claim.
+        place, _ = _where(item.get("text"), claim, items)
+        (rewrite if place == "claim" else minor).append({"mixed": item})
+    move = sorted(set(move))
+    while move and len(items) - len(move) < 2:
+        minor.append({"unrelated_kept": items[move.pop()]})
+    return {"rewrite": rewrite, "move_items": move, "minor": minor}
+
+
+def instruction(decision: dict[str, Any]) -> str:
+    lines = ["终审发现本页的论点（标题、导语或焦点数字）和证据不一致，按下面修改后重写这一页（数字仍然必须来自证据原文）："]
+    for finding in decision.get("rewrite") or []:
+        if "unrelated" in finding:
+            fact = finding["unrelated"]
+            lines.append(f"· 「{fact.get('text')}」讲的是别的对象，不能支撑本页论点（{fact.get('why')}）。"
+                         "换成证据里与论点同一对象的事实；不要只改措辞把它留下。")
+        elif "mixed" in finding:
+            item = finding["mixed"]
+            lines.append(f"· 「{item.get('text')}」把两个对象拼成一个论点（{item.get('why')}）。本页只讲一个对象："
+                         "保留和标题同一对象的事实，另一个对象的事实删掉；不要只改措辞把它留下。")
+        else:
+            item = finding["unsupported"]
+            lines.append(f"· 「{item.get('text')}」缺少证据（{item.get('why')}）。有对比数据就把它放到页面上；没有就改成准确的说法。")
+    lines.append("其他条目和数字没有问题，保持不变。")
     return "\n".join(lines)
 
 
