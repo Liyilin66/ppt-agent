@@ -902,7 +902,7 @@ def name_categories(content, series_pool):
         if names and len(names) == 1:
             label = next(iter(names))
             core = squash(re.sub(r'[（(][^）)]*[）)]', '', label))
-            if core and core not in squash(item.heading) + squash(item.body):
+            if core and core not in squash(item.heading):  # the heading names the category, not a paraphrase of it
                 renamed.append({'value': item.value, 'was': item.heading, 'now': label})
                 item = item.model_copy(update={'heading': label[:18]})
         items.append(item)
