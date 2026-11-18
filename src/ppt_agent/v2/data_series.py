@@ -350,8 +350,8 @@ def prune(items: list[DataSeries]) -> list[DataSeries]:
         mine = values(item)
         if any(mine < values(other) for other in items if other is not item):
             continue
-        if any(mine == values(other) and signature(other) != signature(item) for other in kept):
-            continue  # the same values under another wording
+        if any(mine == values(other) for other in kept):
+            continue  # the same values, perhaps under another wording
         kept.append(item)
     return kept
 

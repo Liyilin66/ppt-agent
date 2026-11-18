@@ -1116,7 +1116,16 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         async def brief_page(number):
             content = dumps[number]
             candidates = []
-            for item in data_series.prune(series_found.get(number, []) + [
+            def cited(item):
+                # A series read from another page's evidence, every value of it on pages this page cites.
+                places = [point.ref.rsplit(' ', 1) for point in item.points]
+                return all(len(place) == 2 and re.fullmatch(r'第\d+页', place[1]) and
+                           int(place[1][1:-1]) in source_figure._cited(content.get('source'), place[0])
+                           for place in places)
+
+            elsewhere = [item for other, found in series_found.items() if other != number
+                         for item in found if cited(item)]
+            for item in data_series.prune(series_found.get(number, []) + elsewhere + [
                     item for table, item in table_series
                     if table['page'] in source_figure._cited(content.get('source'), table['document'])]):
                 candidates.append({'id': series_id(item), 'type': '核对过的数据序列', 'metric': item.metric,
