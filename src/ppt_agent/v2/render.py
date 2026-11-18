@@ -409,6 +409,13 @@ def _editorial_chart(chart, item: ChartItem, theme: ThemeSpec) -> None:
         series.marker.format.fill.solid()
         series.marker.format.fill.fore_color.rgb = accent
         series.marker.format.line.color.rgb = accent
+        for index in range(count if item.zero_based else 0):  # (designs signed before this fix render as signed)
+            if index not in item.projected:
+                # A point's own formatting (e.g. the highlight's fill) drops the series line for its segment,
+                # and PowerPoint draws that segment in its default blue: every segment states its line.
+                segment = series.points[index].format.line
+                segment.color.rgb = accent
+                segment.width = Pt(2.25)
         for index in item.projected:
             marker = series.points[index].marker
             marker.style = XL_MARKER_STYLE.CIRCLE

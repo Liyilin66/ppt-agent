@@ -120,8 +120,9 @@ def settle(briefs: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
 
 
 RELEVANCE_SYSTEM = (
-    "你是审稿人。下面是一页幻灯片的论点和它的条目。逐条判断：这一条是不是这句论点的证据或必要说明？"
-    "只是同一章节、同一份报告里的另一组数据，或者和论点没有论证关系、只是把版面填满的条目，判为不相关。"
+    "你是审稿人。下面是一页幻灯片的论点和它的条目。只找出讲的是另一件事的条目：换了对象或话题、"
+    "和论点毫无关系、只为把版面填满（例如讲 AI APP 入口的页里插入用户性别比例）。"
+    "解释、补充、对比、背景、原因、影响和同一主题下的细分数据都算相关，即使它不直接证明论点本身。"
     "拿不准时判为相关。"
     '只输出 JSON：{"unrelated":[条目序号，从 1 开始],"why":"不超过40个字"}'
 )
@@ -149,8 +150,8 @@ async def unrelated_items(client: Any, checkpoints: Any, page: int, content: dic
     picked = reply.get("unrelated") if isinstance(reply, dict) else None
     result = {"unrelated": sorted({index for index in picked or [] if isinstance(index, int) and 1 <= index <= len(items)}),
               "why": str((reply or {}).get("why") or "")[:60] if isinstance(reply, dict) else ""}
-    if len(result["unrelated"]) >= len(items):
-        result["unrelated"] = result["unrelated"][:-1]  # a page keeps at least one item
+    # Padding is the exception: at most a third of a page's items go, and a page keeps at least two.
+    result["unrelated"] = result["unrelated"][:max(0, min(len(items) // 3, len(items) - 2))]
     if checkpoints is not None:
         checkpoints.save(name, result)
     return result

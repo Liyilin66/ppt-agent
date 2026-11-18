@@ -245,7 +245,17 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
 
         # A display figure's unit stands on its line, not in another region (CNNIC 57 p12: "3162" | "万个").
         if {"d1", "d2", "d3", "d4"} & set(node.classes):
-            bare = re.fullmatch(r"[约超近]?(\d+(?:,\d{3})*(?:\.\d+)?)", re.sub(r"\s+", "", node.text))
+            shown_text = re.sub(r"\s+", "", node.text)
+            whole = [value for value in unit_values if value != shown_text and value.startswith(shown_text)
+                     and re.search(r"\d", shown_text) and not value[len(shown_text)].isdigit()
+                     and value[len(shown_text)] != "."]
+            line_text = re.sub(r"\s+", "", node.parent.text if node.parent is not None else "")
+            if whole and not any(value in line_text for value in whole):
+                # "483.8万" in big type and its "个" elsewhere: part of the unit left the figure.
+                defects.append(Defect(
+                    "split_unit",
+                    f"大字「{shown_text}」只写了一部分，完整的是「{whole[0]}」。剩下的单位用 unit 类紧跟在同一个 rowx 里。"))
+            bare = re.fullmatch(r"[约超近]?(\d+(?:,\d{3})*(?:\.\d+)?)", shown_text)
             if bare:
                 number = bare.group(1).replace(",", "")
                 units = {match.group(2) for value in unit_values for match in [re.fullmatch(

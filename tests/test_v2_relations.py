@@ -90,3 +90,12 @@ def test_a_display_figure_keeps_its_unit_on_its_line():
     together = '<div class="page"><div class="r"><div class="rowx"><div class="d1">3162</div><div class="unit">万个</div></div></div></div>'
     assert "split_unit" in [d.kind for d in find_graphic(apart, content)]
     assert "split_unit" not in [d.kind for d in find_graphic(together, content)]
+
+
+def test_part_of_a_unit_left_behind_is_a_split():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+    content = {"highlight": {"value": "483.8万个", "text": "5G基站"}}
+    apart = '<div class="page"><div class="r"><div class="d1">483.8万</div></div><div class="r"><p class="c">个</p></div></div>'
+    together = '<div class="page"><div class="r"><div class="rowx"><div class="d1">483.8万</div><div class="unit">个</div></div></div></div>'
+    assert "split_unit" in [d.kind for d in find_graphic(apart, content)]
+    assert "split_unit" not in [d.kind for d in find_graphic(together, content)]
