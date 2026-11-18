@@ -7,11 +7,12 @@ page's evidence packet (a chart's bar values, a fact the deck plan showed it fro
 one on a figure the model added up itself. Each rejected figure is now classed:
 
 - CITATION_MISMATCH: printed verbatim in the source, on a page the packet did not hold
+- CHART_LABEL_ONLY: printed only as a bare chart label, its unit or category not in the text
 - COMPUTED: not in the source, but a sum or difference of two figures that are
 - UNSUPPORTED: in the source nowhere
 
-and the page is recovered only when every rejected figure is in the source: those pages' text is
-added to its evidence and it is written once more. Otherwise it is reported as needing review.
+and the page is written once more with that diagnosis (the pages holding mismatched citations are added
+to its evidence; nothing is relaxed in the check). If it fails again it is reported as needing review.
 """
 
 from __future__ import annotations
@@ -51,7 +52,9 @@ def locate(value: str, store: Any) -> list[tuple[str, int]]:
             continue
         for page in document["pages"]:
             text = _squash(page["text"])
-            if wanted in text or (len(number.group(1)) >= 3 and re.search(rf"(?<![\d.]){re.escape(number.group(1))}(?![\d])", text)):
+            unit = wanted[number.end():]
+            if wanted in text or (not unit and len(number.group(1)) >= 3
+                                  and re.search(rf"(?<![\d.]){re.escape(number.group(1))}(?![\d])", text)):
                 found.append((document["name"], page["page"]))
     return found
 
@@ -106,14 +109,19 @@ def diagnose(record: dict[str, Any], store: Any) -> dict[str, Any]:
     values = rejected_values(record)
     together = locate_together(values, store) if store is not None else {}
     for value in values:
-        where = (locate(value, store) if store is not None else []) or together.get(value, [])
+        where = locate(value, store) if store is not None else []
         if where:
             classes[value], places[value] = "CITATION_MISMATCH", where[:3]
+        elif together.get(value):
+            # Printed as a bare chart label ("142.5" under "单位：万个", or with no category names at all):
+            # true as a number, but its unit and category are not text a quote can carry.
+            classes[value], places[value] = "CHART_LABEL_ONLY", together[value][:3]
         elif computed(value, evidence):
             classes[value] = "COMPUTED"
         else:
             classes[value] = "UNSUPPORTED"
-    recoverable = bool(classes) and all(kind == "CITATION_MISMATCH" for kind in classes.values())
+    # Every diagnosed page is written once more with its diagnosis; only a citation mismatch adds evidence.
+    recoverable = bool(classes)
     return {"values": classes, "where": {value: [list(place) for place in where] for value, where in places.items()},
             "recoverable": recoverable}
 
@@ -124,11 +132,13 @@ def pages_to_add(diagnosis: dict[str, Any]) -> dict[str, set[int]]:
     # Each figure's page is the one printing the most of the page's rejected figures: "9.7%" is on three
     # pages, but only one carries it with the three figures it was quoted next to.
     counts: dict[tuple[str, int], int] = {}
-    for where in diagnosis["where"].values():
+    cited = {value: where for value, where in diagnosis["where"].items()
+             if diagnosis["values"].get(value) == "CITATION_MISMATCH"}
+    for where in cited.values():
         for document, page in where:
             counts[(document, int(page))] = counts.get((document, int(page)), 0) + 1
     wanted: dict[str, set[int]] = {}
-    for where in diagnosis["where"].values():
+    for where in cited.values():
         if where:
             document, page = max(((d, int(p)) for d, p in where), key=lambda place: (counts[place], -place[1]))
             wanted.setdefault(document, set()).add(page)
@@ -136,9 +146,20 @@ def pages_to_add(diagnosis: dict[str, Any]) -> dict[str, set[int]]:
 
 
 def instruction(diagnosis: dict[str, Any]) -> str:
-    values = "、".join(diagnosis["values"])
-    return ("上一版用到的这些数字是真实的，但不在本页原来的证据里：" + values + "。现在证据里已经加上了它们所在的原文页。"
-            "重新写这一页：这些数字照原文写，出处写它们所在的页；不要自己计算合计或差值。")
+    by_kind: dict[str, list[str]] = {}
+    for value, kind in diagnosis["values"].items():
+        by_kind.setdefault(kind, []).append(value)
+    lines = ["上一版有数字没有通过核对，原因已经查清，按下面逐条处理后重写这一页："]
+    if by_kind.get("CITATION_MISMATCH"):
+        lines.append("· " + "、".join(by_kind["CITATION_MISMATCH"]) + "：原文里有，但不在本页原来的证据里。证据里已经加上它们所在的原文页；照原文写，出处写那一页。")
+    if by_kind.get("CHART_LABEL_ONLY"):
+        lines.append("· " + "、".join(by_kind["CHART_LABEL_ONLY"]) + "：只是原文图表上的裸数值，单位或类别名称不在文字里，不能当作文字事实。不要写进标题、导语或条目；只用原文句子里写明的数字。")
+    if by_kind.get("COMPUTED"):
+        lines.append("· " + "、".join(by_kind["COMPUTED"]) + "：是你自己算出的合计或差值，原文没有。不要自己计算，分别写原文给出的各个数字。")
+    if by_kind.get("UNSUPPORTED"):
+        lines.append("· " + "、".join(by_kind["UNSUPPORTED"]) + "：原文里找不到，删掉，不要换成别的数字。")
+    lines.append("论点不变；如果去掉这些数字后论点撑不住，改用证据里确实写明的数字支撑同一个论点。")
+    return "\n".join(lines)
 
 
 def title_for(content_plan_entry: dict[str, Any] | None, fallback: str) -> str:

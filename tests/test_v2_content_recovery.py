@@ -18,18 +18,21 @@ def test_value_printed_elsewhere_is_a_citation_mismatch():
     assert content_recovery.pages_to_add(diag) == {'r.pdf': {2}}
 
 
-def test_glued_chart_labels_count_only_together():
-    glued = store('图 142.5231.2337.7425.1483.8', '比例 1142.57')
-    diag = content_recovery.diagnose(record(['142.5万', '231.2万', '425.1万']), glued)
-    assert diag['recoverable'] and content_recovery.pages_to_add(diag) == {'r.pdf': {1}}
+def test_bare_chart_labels_are_not_text_facts():
+    chart = store('图 142.5\n231.2\n337.7\n425.1\n483.8 单位（万个）', '比例 1142.57')
+    diag = content_recovery.diagnose(record(['142.5万', '231.2万', '425.1万']), chart)
+    assert set(diag['values'].values()) == {'CHART_LABEL_ONLY'}
+    assert content_recovery.pages_to_add(diag) == {}  # nothing to add: the number is no quotable fact
+    assert '裸数值' in content_recovery.instruction(diag)
     # one decimal inside another number on a page with none of the others is chance
     alone = content_recovery.diagnose(record(['142.5万', '999.9万']), store('比例 1142.57'))
-    assert not alone['recoverable']
+    assert set(alone['values'].values()) == {'UNSUPPORTED'}
 
 
-def test_sum_of_two_figures_is_computed_and_not_recovered():
+def test_sum_of_two_figures_is_computed():
     diag = content_recovery.diagnose(record(['1183'], evidence='企业 748 家，机构 435 家'), store('企业748家'))
-    assert diag['values'] == {'1183': 'COMPUTED'} and not diag['recoverable']
+    assert diag['values'] == {'1183': 'COMPUTED'} and content_recovery.pages_to_add(diag) == {}
+    assert '自己计算' in content_recovery.instruction(diag)
 
 
 def test_page_holding_most_figures_wins():
