@@ -44,6 +44,10 @@ SYSTEM = """你是严格的事实编辑，审查一页演示文稿的论点和�
  "instruction": "verdict 为 fix 时：具体怎么改（删掉/替换哪条事实，哪句话改成什么准确说法）；ok 时为空"}
 有 unrelated 或 unsupported 时 verdict 必须是 fix。independent 本身不是问题。"""
 
+import asyncio as _asyncio
+
+_GATE = _asyncio.Semaphore(6)  # thirty reviews at once came back with errors on twelve
+
 FIELDS = ("title", "lead", "highlight", "items", "metrics", "insights", "takeaway", "statement", "conclusion",
           "categories", "values", "rows", "left", "right", "steps", "milestones", "series")
 
@@ -65,10 +69,17 @@ async def audit_page(client: Any, checkpoints: Any, number: int, content: dict[s
     if saved is not None:
         return saved
     user = json.dumps({"page": number, "content": view(content), "evidence": (evidence or "")[:7000]}, ensure_ascii=False)
-    try:
-        verdict = await client.complete_json(task="claim_audit", system=SYSTEM, user=user, max_output_tokens=2500)
-    except Exception as exc:  # noqa: BLE001 - an audit that cannot run is reported, never passed
-        return {"verdict": "error", "error": str(exc)[:300]}
+    import asyncio
+
+    for attempt in range(3):
+        try:
+            async with _GATE:
+                verdict = await client.complete_json(task="claim_audit", system=SYSTEM, user=user, max_output_tokens=2500)
+            break
+        except Exception as exc:  # noqa: BLE001 - an audit that cannot run is reported, never passed
+            if attempt == 2:
+                return {"verdict": "error", "error": str(exc)[:300]}
+            await asyncio.sleep(4 * (attempt + 1))
     verdict = normalise(verdict)
     if checkpoints is not None:
         checkpoints.save(name, verdict)

@@ -1390,7 +1390,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                         (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
                 record = {**record, 'claim_audit': {**verdicts[number], 'decision': decision},
                           'claim_audit_rewritten': number in failing}
-                if decision['rewrite']:
+                if decision['rewrite'] or verdicts[number].get('verdict') == 'error':
                     record['content_status'] = 'NEEDS_CONTENT_REVIEW'
                 results[number] = (content, record)
                 checkpoints.save(f'typeset/final/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
