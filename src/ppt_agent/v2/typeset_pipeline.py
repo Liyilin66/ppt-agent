@@ -1151,7 +1151,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
 
         async def recover(number):
             content, record = results[number]
-            diagnosis = content_recovery.diagnose(record, evidence_store)
+            diagnosis = content_recovery.diagnose(record, evidence_store, moved=number in retargeted)
             if diagnosis['recoverable']:
                 wanted = content_recovery.pages_to_add(diagnosis)
                 packet = packets.get(number)
@@ -1215,14 +1215,21 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             # Rewriting did not part them: the later page moves to source material no page has used, or the
             # repeat is reported - it is never just retitled again.
             from ppt_agent.v2 import page_budget
-            spare = page_budget.uncovered(evidence_store, packets)
+            spare = page_budget.uncovered(evidence_store, packets, limit=len(evidence_store.chunks))
             by_id = {chunk['chunk_id']: chunk for chunk in evidence_store.chunks}
             moved = {}
             for pair in left:
                 page = max(pair)
                 if page in signed or page in moved or not spare:
                     continue
-                chunk = spare.pop(0)
+                # The unused passage nearest in the source to what the page was about, so a moved page stays
+                # with its section (CNNIC 57: the first unused passages, 政府网站, landed between AI pages).
+                order = {item['chunk_id']: index for index, item in enumerate(evidence_store.chunks)}
+                own = sorted(order[chunk_id] for chunk_id in (packets[page].chunk_ids if packets.get(page) else [])
+                             if chunk_id in order)
+                centre = own[len(own) // 2] if own else 0
+                chunk = min(spare, key=lambda item: (abs(order.get(item['chunk_id'], 0) - centre), order.get(item['chunk_id'], 0)))
+                spare.remove(chunk)
                 packets[page] = evidence_store.packet_of([by_id[chunk['chunk_id']]])
                 moved[page] = chunk['chunk_id']
             if moved:

@@ -8,6 +8,7 @@ one on a figure the model added up itself. Each rejected figure is now classed:
 
 - CITATION_MISMATCH: printed verbatim in the source, on a page the packet did not hold
 - CHART_LABEL_ONLY: printed only as a bare chart label, its unit or category not in the text
+- OFF_TOPIC: printed elsewhere, but the page was moved off the topic it belongs to
 - COMPUTED: not in the source, but a sum or difference of two figures that are
 - UNSUPPORTED: in the source nowhere
 
@@ -103,14 +104,20 @@ def computed(value: str, evidence: str) -> bool:
     return False
 
 
-def diagnose(record: dict[str, Any], store: Any) -> dict[str, Any]:
+def diagnose(record: dict[str, Any], store: Any, *, moved: bool = False) -> dict[str, Any]:
+    """``moved``: the overlap review gave the page new evidence because its old topic was another page's.
+    A figure printed elsewhere is then that old topic coming back (CNNIC 57 p16: moved off 外卖, written
+    with 3748万 again), so it is dropped rather than brought back with its page."""
+
     evidence = (record.get("evidence") or {}).get("text", "")
     classes, places = {}, {}
     values = rejected_values(record)
     together = locate_together(values, store) if store is not None else {}
     for value in values:
         where = locate(value, store) if store is not None else []
-        if where:
+        if where and moved:
+            classes[value] = "OFF_TOPIC"
+        elif where:
             classes[value], places[value] = "CITATION_MISMATCH", where[:3]
         elif together.get(value):
             # Printed as a bare chart label ("142.5" under "单位：万个", or with no category names at all):
@@ -154,11 +161,14 @@ def instruction(diagnosis: dict[str, Any]) -> str:
         lines.append("· " + "、".join(by_kind["CITATION_MISMATCH"]) + "：原文里有，但不在本页原来的证据里。证据里已经加上它们所在的原文页；照原文写，出处写那一页。")
     if by_kind.get("CHART_LABEL_ONLY"):
         lines.append("· " + "、".join(by_kind["CHART_LABEL_ONLY"]) + "：只是原文图表上的裸数值，单位或类别名称不在文字里，不能当作文字事实。不要写进标题、导语或条目；只用原文句子里写明的数字。")
+    if by_kind.get("OFF_TOPIC"):
+        lines.append("· " + "、".join(by_kind["OFF_TOPIC"]) + "：属于别页已经讲过的旧话题，本页已改讲现在证据里的内容。删掉它们，只用现在证据里写明的数字。")
     if by_kind.get("COMPUTED"):
         lines.append("· " + "、".join(by_kind["COMPUTED"]) + "：是你自己算出的合计或差值，原文没有。不要自己计算，分别写原文给出的各个数字。")
     if by_kind.get("UNSUPPORTED"):
         lines.append("· " + "、".join(by_kind["UNSUPPORTED"]) + "：原文里找不到，删掉，不要换成别的数字。")
-    lines.append("论点不变；如果去掉这些数字后论点撑不住，改用证据里确实写明的数字支撑同一个论点。")
+    lines.append("论点不变；如果去掉这些数字后论点撑不住，改用证据里确实写明的数字支撑同一个论点。"
+                 if "OFF_TOPIC" not in by_kind else "观点、焦点数字和条目都来自现在的证据，不要再讲原来的主题。")
     return "\n".join(lines)
 
 

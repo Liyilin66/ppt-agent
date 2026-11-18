@@ -79,7 +79,7 @@ def over_budget(group: list[int], packets: dict[int, Any]) -> dict[str, Any] | N
     return {"pages": group, "facts": count, "kind": kind, "supports": max(1, count // FACTS_PER_PAGE)}
 
 
-def uncovered(store: Any, packets: dict[int, Any]) -> list[dict[str, Any]]:
+def uncovered(store: Any, packets: dict[int, Any], limit: int | None = None) -> list[dict[str, Any]]:
     """Chunks of the source no page's packet holds, with the facts in them."""
 
     used = {chunk for packet in packets.values() if packet is not None for chunk in packet.chunk_ids}
@@ -91,7 +91,7 @@ def uncovered(store: Any, packets: dict[int, Any]) -> list[dict[str, Any]]:
         if count >= FACTS_PER_PAGE:
             found.append({"chunk_id": chunk["chunk_id"], "pages": chunk["pages"],
                           "facts": (facts(chunk["text"], limit=5) or _sentences(chunk["text"])[:3])})
-    return found[:UNCOVERED_LIMIT]
+    return found[:UNCOVERED_LIMIT if limit is None else limit]
 
 
 async def decide(client: Any, checkpoints: Any, slots: list[Any], packets: dict[int, Any],

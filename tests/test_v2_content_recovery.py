@@ -49,3 +49,9 @@ def test_placeholder_title_takes_planned_claim():
 def test_summary_groups_by_status():
     out = content_recovery.summary({1: {}, 2: {'content_status': 'CONTENT_RECOVERED', 'content_failure': {'x': 1}}})
     assert out['by_status']['CONTENT_VALID'] == [1] and out['by_status']['CONTENT_RECOVERED'] == [2]
+
+
+def test_a_moved_page_does_not_bring_its_old_topic_back():
+    diag = content_recovery.diagnose(record(['3748万']), store('外卖增长3748万人'), moved=True)
+    assert diag['values'] == {'3748万': 'OFF_TOPIC'} and content_recovery.pages_to_add(diag) == {}
+    assert '不要再讲原来的主题' in content_recovery.instruction(diag)
