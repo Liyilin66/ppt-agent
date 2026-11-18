@@ -109,6 +109,27 @@ _DISPLAY = {"d1", "d2", "d3", "d4", "t1", "t2", "t3", "q1", "h", "fig", "num", "
             "title", "cover-title", "section-title", "section-no", "quote", "arrow"}
 
 
+def _rgb(text: str) -> tuple[float, float, float] | None:
+    match = re.match(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)", text or "")
+    return tuple(float(value) for value in match.groups()) if match else None
+
+
+def contrast(foreground: str, background: str) -> float | None:
+    """WCAG contrast ratio of two CSS rgb() colours."""
+
+    first, second = _rgb(foreground), _rgb(background)
+    if first is None or second is None:
+        return None
+
+    def luminance(rgb):
+        channels = [value / 255 for value in rgb]
+        channels = [value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4 for value in channels]
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+    light, dark = sorted((luminance(first), luminance(second)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
 def role_of(classes: str) -> str | None:
     names = set(classes.split())
     if names & {"source", "pageno"}:
@@ -165,6 +186,18 @@ def find_defects(
             defects.append(Defect("overflow", f"文字「{label}」超出了它所在的色块，请减少文字或放大色块。", label))
         sizes = [run["size"] for run in item["runs"] if run.get("t", "").strip()]
         text_here = re.sub(r"\s+", "", _item_text(item))
+        if roles and item.get("ground") and role_of(item.get("cls", "")) != "source":
+            for run in item["runs"]:
+                if not run.get("t", "").strip():
+                    continue
+                ratio = contrast(run.get("color", ""), item["ground"])
+                need = 3.0 if run.get("size", 0) >= 24 else 4.5
+                if ratio is not None and ratio < need:
+                    defects.append(Defect(
+                        "legibility",
+                        f"文字「{label}」和背景的对比度只有 {ratio:.1f}:1（至少 {need:g}:1），投影上读不出来。"
+                        "换成和背景反差足够的颜色，或去掉它下面的底色。", label))
+                    break
         if roles and item.get("lines", 1) >= 2 and len(text_here) / item["lines"] < 3.0:
             # Two characters a line is not a line: the words have been squeezed into a column.
             defects.append(Defect(

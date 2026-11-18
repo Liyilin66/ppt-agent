@@ -15,3 +15,10 @@ def test_display_type_steps_down_body_type_never():
     page = PAGE.replace('<div class="r" style="grid-column:1/8;grid-row:6/8">y', '<div class="r" style="grid-column:1/8;grid-row:6/8"><p class="b">y</p>')
     smaller = autofix.step_down(page)
     assert 'class="d2"' in smaller and 'class="b"' in smaller
+
+
+def test_contrast_ratio():
+    from ppt_agent.v2.htmldeck.checks import contrast
+    assert round(contrast("rgb(26, 25, 22)", "rgb(26, 25, 22)"), 1) == 1.0
+    assert contrast("rgb(26, 25, 22)", "rgb(243, 238, 228)") > 14
+    assert contrast("rgb(111, 106, 94)", "rgb(243, 238, 228)") > 4.5   # the theme's caption grey reads

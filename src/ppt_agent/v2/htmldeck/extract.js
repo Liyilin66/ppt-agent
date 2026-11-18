@@ -54,6 +54,15 @@
     })(nodes);
     return runs;
   }
+  function backgroundOf(el) {
+    // The first ancestor that paints an opaque background: what the text is read against.
+    for (let e = el; e; e = e.parentElement) {
+      const bg = getComputedStyle(e).backgroundColor;
+      if (bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) return bg;
+      if (e === root) break;
+    }
+    return getComputedStyle(root).backgroundColor;
+  }
   function paintedAncestor(el) {
     for (let e = el; e && e !== root; e = e.parentElement) { const cs = getComputedStyle(e); if (painted(cs) && !clipsText(cs)) return e; }
     return root;
@@ -77,7 +86,8 @@
     items.push({kind: 'text', runs: runsOf(nodes), lines: tops.length, align, op: opacityOf(owner),
                 cls: owner.className || '', linePx: cs.lineHeight === 'normal' ? null : num(cs.lineHeight), glyphPx: tallest,
                 text: rectOf(tr), box: {x: ob.left - origin.left + pl, w: ob.width - pl - pr},
-                parent: rectOf(paintedAncestor(owner).getBoundingClientRect())});
+                parent: rectOf(paintedAncestor(owner).getBoundingClientRect()),
+                ground: backgroundOf(owner)});
   }
   function emitBox(el, cs) {
     const r = el.getBoundingClientRect();
