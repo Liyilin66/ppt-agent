@@ -1,0 +1,126 @@
+{
+ "per_run": {
+  "gpt-5.6-terra r1": {
+   "keep": {
+    "17": "P0",
+    "4": "P0",
+    "5": "P0",
+    "7": "P0"
+   },
+   "vetoed_versions": {
+    "17": [],
+    "4": [],
+    "5": [],
+    "7": []
+   },
+   "human_auc_overall": 0.37,
+   "human_auc_polish": 0.5,
+   "veto_wrong": false,
+   "veto_wrong_once": false,
+   "veto_right": false,
+   "wrong_vs_right": [
+    4.33,
+    4.86
+   ],
+   "cost": 0.6884
+  },
+  "gpt-5.6-terra r2": {
+   "keep": {
+    "17": "P0",
+    "4": "P0",
+    "5": "P0",
+    "7": "P0"
+   },
+   "vetoed_versions": {
+    "17": [],
+    "4": [
+     "P1.5"
+    ],
+    "5": [],
+    "7": []
+   },
+   "human_auc_overall": 0.38,
+   "human_auc_polish": 0.5,
+   "veto_wrong": false,
+   "veto_wrong_once": false,
+   "veto_right": false,
+   "wrong_vs_right": [
+    4.52,
+    4.76
+   ],
+   "cost": 0.6548
+  },
+  "gpt-6.2-sol r1": {
+   "keep": {
+    "17": "P0",
+    "4": "P0",
+    "5": "P2候选",
+    "7": "P0"
+   },
+   "vetoed_versions": {
+    "17": [
+     "P1.5"
+    ],
+    "4": [],
+    "5": [],
+    "7": []
+   },
+   "human_auc_overall": 0.42,
+   "human_auc_polish": 0.4,
+   "veto_wrong": true,
+   "veto_wrong_once": false,
+   "veto_right": false,
+   "wrong_vs_right": [
+    2.76,
+    4.48
+   ],
+   "cost": 1.8716
+  },
+  "gpt-6.2-sol r2": {
+   "keep": {
+    "17": "P0",
+    "4": "P0",
+    "5": "P2候选",
+    "7": "P0"
+   },
+   "vetoed_versions": {
+    "17": [
+     "P1.5"
+    ],
+    "4": [],
+    "5": [],
+    "7": []
+   },
+   "human_auc_overall": 0.31,
+   "human_auc_polish": 0.4,
+   "veto_wrong": true,
+   "veto_wrong_once": false,
+   "veto_right": false,
+   "wrong_vs_right": [
+    2.76,
+    4.38
+   ],
+   "cost": 1.8746
+  }
+ },
+ "within_model": {
+  "gpt-5.6-terra": {
+   "same_keep": 4,
+   "version_score_spearman": 0.67,
+   "version_score_mean_abs_diff": 0.15,
+   "single_page_mean_abs_diff": 0.04
+  },
+  "gpt-6.2-sol": {
+   "same_keep": 4,
+   "version_score_spearman": 0.97,
+   "version_score_mean_abs_diff": 0.07,
+   "single_page_mean_abs_diff": 0.04
+  }
+ },
+ "between_models": {
+  "gpt-5.6-terra vs gpt-6.2-sol": {
+   "same_keep_mean": 3.0,
+   "version_score_spearman_mean": 0.68
+  }
+ }
+}

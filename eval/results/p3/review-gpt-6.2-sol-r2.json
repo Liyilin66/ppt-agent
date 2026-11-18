@@ -1,0 +1,183 @@
+{
+ "model": "gpt-6.2-sol",
+ "round": 2,
+ "versions": {
+  "4": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.71,
+    "P1": 4.31,
+    "P1.5": 3.29,
+    "P2候选": 4.03
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "5": {
+   "keep": "P2候选",
+   "changed": true,
+   "overall": {
+    "P0": 3.86,
+    "P1": 3.97,
+    "P1.5": 3.86,
+    "P2候选": 4.54
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "7": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.69,
+    "P1": 3.14,
+    "P1.5": 4.69,
+    "P2候选": 4.69
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "17": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.34,
+    "P1": 3.29,
+    "P1.5": 3.11,
+    "P2候选": 4.2
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [
+     "评审指出：「自身安全 → 衍生安全」将两类风险画成单向演进关系，而资料原图表达的是风险分层。",
+     "评审指出：“自身安全 → 衍生安全”将并列的两类风险画成单向演进关系，与事实中的分类关系不符。"
+    ],
+    "P2候选": []
+   }
+  }
+ },
+ "human": {
+  "4": {
+   "overall": 4.43,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "6": {
+   "overall": 3.95,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "9": {
+   "overall": 4.19,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "10": {
+   "overall": 4.29,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "11": {
+   "overall": 4.24,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "12": {
+   "overall": 4.14,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "13": {
+   "overall": 4.29,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "17": {
+   "overall": 4.14,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "18": {
+   "overall": 4.29,
+   "polish": 4.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "5": {
+   "overall": 4.29,
+   "polish": 4.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "7": {
+   "overall": 4.29,
+   "polish": 4.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "14": {
+   "overall": 4.33,
+   "polish": 4.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "15": {
+   "overall": 4.1,
+   "polish": 4.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "19": {
+   "overall": 4.57,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  }
+ },
+ "veto": {
+  "wrong": {
+   "overall": 2.76,
+   "vetoes": [
+    "评审指出：主视觉及其图注用箭头将半年增量2.66亿指向2025年6月总量5.15亿，误画成同一指标的前后取值。",
+    "评审指出：主视觉用箭头将半年增量2.66亿指向6月总量5.15亿，误导为同一指标的前后取值。",
+    "评审指出：主视觉及其下方说明用箭头把半年新增2.66亿指向6月总量5.15亿，误将增量和总量表现为同一指标的前后取值。"
+   ],
+   "flagged_once": []
+  },
+  "right": {
+   "overall": 4.38,
+   "vetoes": [],
+   "flagged_once": []
+  }
+ },
+ "usage": {
+  "calls": 65,
+  "failures": 0,
+  "input_tokens": 302262,
+  "output_tokens": 18164,
+  "estimated_cost_usd": 1.8746,
+  "budget_usd": 15.0
+ }
+}

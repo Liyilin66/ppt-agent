@@ -1,0 +1,176 @@
+{
+ "model": "gpt-5.6-terra",
+ "round": 1,
+ "versions": {
+  "4": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.91,
+    "P1": 4.74,
+    "P1.5": 4.4,
+    "P2候选": 4.46
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "5": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.77,
+    "P1": 4.63,
+    "P1.5": 4.77,
+    "P2候选": 4.71
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "7": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.86,
+    "P1": 4.6,
+    "P1.5": 4.86,
+    "P2候选": 4.86
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "17": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.6,
+    "P1": 4.6,
+    "P1.5": 4.63,
+    "P2候选": 4.66
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  }
+ },
+ "human": {
+  "4": {
+   "overall": 4.81,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "6": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "9": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "10": {
+   "overall": 4.79,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "11": {
+   "overall": 4.95,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "12": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "13": {
+   "overall": 4.86,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "17": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "18": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "5": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "7": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "14": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "15": {
+   "overall": 4.86,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "19": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  }
+ },
+ "veto": {
+  "wrong": {
+   "overall": 4.33,
+   "vetoes": [],
+   "flagged_once": []
+  },
+  "right": {
+   "overall": 4.86,
+   "vetoes": [],
+   "flagged_once": []
+  }
+ },
+ "usage": {
+  "calls": 65,
+  "failures": 4,
+  "input_tokens": 286401,
+  "output_tokens": 9631,
+  "estimated_cost_usd": 0.6884,
+  "budget_usd": 15.0
+ }
+}

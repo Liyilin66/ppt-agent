@@ -1,0 +1,786 @@
+{
+ "summary": {
+  "P2基准": {
+   "pages": 14,
+   "overall": 4.06,
+   "polish": 4.11,
+   "legibility": 3.21,
+   "composition": 3.79,
+   "fit": 4.11,
+   "vetoed_pages": []
+  },
+  "P3-CNNIC": {
+   "pages": 11,
+   "overall": 4.18,
+   "polish": 4.0,
+   "legibility": 3.05,
+   "composition": 3.77,
+   "fit": 4.64,
+   "vetoed_pages": []
+  },
+  "P3-信通院": {
+   "pages": 13,
+   "overall": 4.09,
+   "polish": 4.15,
+   "legibility": 3.12,
+   "composition": 3.62,
+   "fit": 4.12,
+   "vetoed_pages": [
+    "11"
+   ]
+  },
+  "P3-CAC": {
+   "pages": 5,
+   "overall": 3.9,
+   "polish": 3.8,
+   "legibility": 2.9,
+   "composition": 2.9,
+   "fit": 4.3,
+   "vetoed_pages": []
+  }
+ },
+ "pages": {
+  "P2基准": {
+   "4": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.5,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 3.5,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文和页码说明字号偏小、灰度偏浅，投影时不易读；部分换行拆开了“同比”等词。",
+     "左栏底部的管理建议几乎贴到竖向分隔线，宜主动换行，留出右侧呼吸空间。"
+    ]
+   },
+   "5": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 4.0,
+     "fit": 4.5,
+     "legibility": 3.0,
+     "composition": 4.5,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏84%的视觉权重压过了标题中的核心数字316亿美元，且大模型融资说明漏了合计135亿美元。",
+     "右栏说明字号偏小、对比度偏低，“资本”被拆到两行，投影时不易扫读。"
+    ]
+   },
+   "6": {
+    "overall": 3.57,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 4.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右上红色“闭环”标题看起来只统领末栏，三个单向箭头也未表现回路；建议改为统领四栏的中性小标题，弱化顺序暗示。",
+     "末栏遗漏“大中型企业”的适用范围；底部管理建议用灰字呈现，投影时不够醒目。"
+    ]
+   },
+   "7": {
+    "overall": 3.79,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "表格便于横向对照，但省略了实时生产的使用限制和不同企业阶段的平台建设差异。",
+     "表格与底部决策原则之间留白偏大，可收紧间距，并放大、加深页脚来源文字。"
+    ]
+   },
+   "9": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "两栏正文偏小偏密，页脚来源字号更小、对比度偏低，远距离投影不易辨认。",
+     "底部红线紧贴左侧色块底边，又未与右栏对齐，容易被看成色块边框，削弱了对总结句的提示。"
+    ]
+   },
+   "10": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文及页码注释字号偏小、灰度偏浅，投影时不易辨认。",
+     "右栏只列出试点方向，未交代如何把品牌规范、产品知识和审核嵌入流程。"
+    ]
+   },
+   "11": {
+    "overall": 3.93,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左栏标题拆开了“零部件”，副标题也仅剩“能。”在次行；建议调整栏宽或手动换行。",
+     "右栏说明文字偏小、灰度偏浅，建议放大并加深，以改善投影可读性。"
+    ]
+   },
+   "12": {
+    "overall": 4.0,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 4.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 4.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏十格仅填九格，容易被读成恰好90%；建议改用明确表示门槛的标记。",
+     "左栏60%旁只写检测做法，建议直接标注「生产周期缩短60%」，避免读者自行拼接标题和数字。"
+    ]
+   },
+   "13": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "第一栏正文将“环节”拆行，末行只剩一个“节”字，建议缩短句子。",
+     "右上角灰色流程摘要与下方四段流程重复，字号偏小、对比度低，建议删去。"
+    ]
+   },
+   "14": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文和页码字号偏小、灰度偏浅，投影时不易辨认。",
+     "左栏结论把“识别”拆在两行，建议调整行宽或断行位置。"
+    ]
+   },
+   "15": {
+    "overall": 3.86,
+    "scores": {
+     "hierarchy": 3.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.5,
+     "composition": 3.5,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右上角红色「超90%」压过主标题，让受控试点的案例抢了投入优先级的主焦点。",
+     "页脚来源字号小、对比度低，投影时难以辨认。"
+    ]
+   },
+   "17": {
+    "overall": 3.57,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 3.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 3.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左栏标题把“个人”拆在两行，打断阅读；可调整栏宽或在“个人”前主动换行。",
+     "右侧金字塔内部的白字偏小，部分落在浅蓝渐变上，投影时难辨；应放大标签并提高对比度。"
+    ]
+   },
+   "18": {
+    "overall": 4.71,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 5.0,
+     "fit": 5.0,
+     "legibility": 4.0,
+     "composition": 5.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左下说明文字字号偏小，投影环境下阅读压力较大。",
+     "右下及底部的浅灰说明文字对投影场景略显偏小、偏淡，可适当放大或提高对比度。"
+    ]
+   },
+   "19": {
+    "overall": 4.36,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 5.0,
+     "fit": 4.0,
+     "legibility": 3.5,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "仅第五阶段上方使用红线，容易被误读为只强调上线关口，削弱治理贯穿五阶段的表达。",
+     "页脚来源字号偏小、对比度低，投影时难以辨认。"
+    ]
+   }
+  },
+  "P3-CNNIC": {
+   "3": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 3.5,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "主数字“2.66”与单位“亿人”隔得太远，单位容易被误读为下方数据的栏头。",
+     "底部三栏正文和右侧时间说明字号偏小、灰度偏浅，投影时不易读。"
+    ]
+   },
+   "4": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "柱图上方的指标说明在“生成式人工智”处断裂，单位和统计口径混排；建议精简为一条清楚的指标说明。",
+     "右栏行动建议字号偏小、对比度偏低，投影时容易被忽略；建议放大并加深文字。"
+    ]
+   },
+   "5": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文和页脚字号偏小、灰度偏浅，投影时不易辨认。",
+     "右栏内容集中在上半部，分隔线却延伸至近页底，使右下留白显得过重。"
+    ]
+   },
+   "6": {
+    "overall": 3.86,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 4.0
+    },
+    "vetoes": [],
+    "issues": [
+     "十格中四格全红，视觉上约为40%；建议将第四格填至65%，准确对应36.5%。",
+     "左侧标题在「覆盖」两字之间断行，建议调整栏宽或换行位置。"
+    ]
+   },
+   "7": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左栏图注偏小偏浅，且把“原文”拆到两行；建议缩短图注并提高对比度。",
+     "饼图标签字号偏小，建议放大，方便后排观众直接读取三项占比。"
+    ]
+   },
+   "8": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "图表上方的统计口径说明字号偏小、对比度偏低，投影时不易读清。",
+     "右栏只重申双强领先，宜补充第二梯队需靠差异化场景驱动持续使用的结论。"
+    ]
+   },
+   "9": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "图表说明和左侧类别标签偏小偏浅，建议加大字号并提高对比度。",
+     "右下结论与左下补充说明分散，建议将两者对齐整合，让图表到结论的阅读路径更顺。"
+    ]
+   },
+   "10": {
+    "overall": 4.07,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.5,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏导语与底部结论相隔过远，中间留白过大，建议收拢成一组。",
+     "首柱的红色标签在黑底上偏暗，投影时不易辨认，建议提高对比度。"
+    ]
+   },
+   "11": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左侧主数字的单位「件」过小且离「万」偏远，建议拉近并适度放大。",
+     "右侧四格的说明文字偏小，底部来源字色又偏浅，投影时宜分别增大字号和提高对比度。"
+    ]
+   },
+   "12": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左侧图注字号小、对比度低，且日期在“9月”之间断行；建议精简图注并将日期完整保留在同一行。",
+     "右栏结论横线比上方重点区左缘明显外伸，削弱对齐感；建议统一右栏左边界。"
+    ]
+   },
+   "13": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右侧图表标题字号偏小、对比偏弱，且将“所在地”拆在两行，投影时不易扫读。",
+     "地区图只展示京沪粤，未注明选取范围，也未呈现事实清单中的浙江和江苏。"
+    ]
+   }
+  },
+  "P3-信通院": {
+   "3": {
+    "overall": 3.93,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 3.5,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左侧柱状图清楚支撑规模增长，但右栏缺少基础模型、企业采用和独角兽数据，对「创新生态同步扩张」的论证不足。",
+     "图注离图表过远，左下形成大块空白；坐标刻度和图注字号偏小，投影时不易辨认。"
+    ]
+   },
+   "4": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "图注和年份标签偏小、对比度低，建议加深并放大。",
+     "右下栏只写了6笔，建议补上135亿美元，更完整地体现融资集中度。"
+    ]
+   },
+   "5": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 3.5,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏说明文字偏小、灰度偏浅，建议放大并加深；第02项末尾仅剩“系统。”另起一行。",
+     "左栏导语下方留白偏大，右栏四项相对紧凑，建议适当拉开条目间距，平衡两栏密度。"
+    ]
+   },
+   "6": {
+    "overall": 4.0,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 4.5,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "标题将核心词组「两端快」拆在两行，建议调整行宽或在引号前换行。",
+     "右栏正文偏浅偏小，「场景」还被拆行，只剩「景。」独占一行；建议精简文案并加深字色。"
+    ]
+   },
+   "7": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.5,
+     "fit": 3.0,
+     "legibility": 3.5,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "遗漏了人机协同基础，未交代人类与智能体各自擅长的任务。",
+     "中部箭头把筛选、模型与结果排成单一流程，未清楚呈现筛选计算量减少与周期缩短都是模型带来的收益。"
+    ]
+   },
+   "8": {
+    "overall": 3.71,
+    "scores": {
+     "hierarchy": 4.0,
+     "polish": 3.0,
+     "fit": 4.5,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 3.5,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏大号「4→1」与单位「个」分行且相距较远，应将单位缩小后贴在数字右侧。",
+     "右栏重量和强度数据字号偏小、灰字对比不足，且「18.8%」单独折行，投影时不易扫读。"
+    ]
+   },
+   "9": {
+    "overall": 4.64,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 5.0,
+     "fit": 4.5,
+     "legibility": 4.0,
+     "composition": 4.0,
+     "consistency": 5.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "底部“智能规划—智能仓储与运配—客服与营销”三项与上方指标缺少明确的联动关系，难以直观看出共同支撑核心结论。",
+     "说明文字和来源字号偏小，投影环境下可能影响阅读。"
+    ]
+   },
+   "10": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.5,
+     "fit": 4.5,
+     "legibility": 3.0,
+     "composition": 3.5,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左栏上方留白偏大，而右栏下方的图注与案例挨得较紧，两栏疏密失衡。",
+     "比例图下方的灰色说明字号偏小、对比度偏低，投影时不易读清60%的统计口径。"
+    ]
+   },
+   "11": {
+    "overall": 3.43,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 2.0
+    },
+    "vetoes": [
+     "评审指出：右侧柱图未标明截断基线，60%柱约为51%柱的2.8倍，而两数之比仅约1.18，明显夸大增幅。",
+     "评审指出：右侧柱图中，60%的柱约为51%柱的2.8倍高，与标注数值的比例明显不符，且未标示截断基线。"
+    ],
+    "issues": [
+     "右侧图注字号偏小、灰度偏浅，日期还被拆到两行，投影时难以读清。",
+     "右栏突出的是框架采用率，与训练成本的联系较间接；可改为突出图捕获正确率或训练加速倍数。"
+    ]
+   },
+   "12": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.5,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文偏小、灰度偏浅，建议放大字号并提高对比度。",
+     "右栏列出了部署示例，却未点明选型依据；建议在栏末用一句话收束任务复杂度、时延和资源约束。"
+    ]
+   },
+   "13": {
+    "overall": 4.29,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "底部三栏说明和来源字号偏小、灰度偏浅，投影时不易读清。",
+     "主区竖线落在底部中栏内部，分隔轴线与三栏网格错位。"
+    ]
+   },
+   "14": {
+    "overall": 4.07,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 3.5,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏说明字号偏小、灰度偏浅，投影时不易读；可收紧组间留白，放大说明文字。",
+     "右栏漏掉了「平台整合开发链路」，未交代治理范围扩展所涉及的开发至部署链路。"
+    ]
+   },
+   "15": {
+    "overall": 4.21,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.5,
+     "fit": 4.0,
+     "legibility": 3.0,
+     "composition": 4.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏将“第49–50页”与两项实质指标并列放大，易被误读为第三项指标；建议突出“持续治理链路”，将页码移至脚注。",
+     "右栏说明和底部来源字号偏小、灰度偏浅，投影时不易辨认。"
+    ]
+   }
+  },
+  "P3-CAC": {
+   "3": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏正文偏小、灰度偏浅，页码引注更小，投影时不易辨认。",
+     "左栏导语与红线结论之间留白过大，右栏却较密；可收紧左栏间距，适当加宽右栏。"
+    ]
+   },
+   "4": {
+    "overall": 4.0,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 4.5,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏说明字小且偏灰，《科学技术进步法》在“科”字后断行，建议加深字色并按完整法名换行。",
+     "底行的“四部”与法律清单相距过远，中间留白削弱了两者的关联，建议缩短间距。"
+    ]
+   },
+   "5": {
+    "overall": 4.14,
+    "scores": {
+     "hierarchy": 5.0,
+     "polish": 4.0,
+     "fit": 5.0,
+     "legibility": 3.0,
+     "composition": 3.0,
+     "consistency": 4.0,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "左侧两项责任之间留空过宽，压窄了文字栏，导致「个人信息处理者责任」的「任」字单独换行。",
+     "右栏说明文字偏细、对比度偏低，投影时不易读清。"
+    ]
+   },
+   "6": {
+    "overall": 3.64,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 3.0,
+     "fit": 4.0,
+     "legibility": 2.5,
+     "composition": 3.0,
+     "consistency": 3.5,
+     "accuracy": 5.0
+    },
+    "vetoes": [],
+    "issues": [
+     "右栏第二条分隔线贴住「整改」说明的字底，投影时容易看成划线。",
+     "左栏导语末尾「置。」孤立换行，下方又留下大片空白，左右视觉重量失衡。"
+    ]
+   },
+   "7": {
+    "overall": 3.57,
+    "scores": {
+     "hierarchy": 4.5,
+     "polish": 4.0,
+     "fit": 3.0,
+     "legibility": 3.0,
+     "composition": 2.5,
+     "consistency": 3.5,
+     "accuracy": 4.5
+    },
+    "vetoes": [],
+    "issues": [
+     "阶梯式缩进让左下留白过多，右下第03项却偏挤，标题在“责任”中间断行，正文偏小。",
+     "正文漏掉监督检查配合义务，未交代训练数据和算法机制的说明要求，以及提供技术、数据支持的义务。"
+    ]
+   }
+  }
+ }
+}

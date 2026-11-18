@@ -1,0 +1,179 @@
+{
+ "model": "gpt-5.6-terra",
+ "round": 2,
+ "versions": {
+  "4": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.89,
+    "P1": 4.63,
+    "P1.5": 4.14,
+    "P2候选": 4.17
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [
+     "评审指出：图表纵轴标注为“亿元”，而页面事实与标题为6233亿美元；单位矛盾。",
+     "评审指出：图表纵轴单位标为“亿元”，但页面事实与标题为“亿美元”，单位矛盾；右侧同时写“6233亿元/6233亿”与“6233亿美元”，同一指标单位不一致。"
+    ],
+    "P2候选": []
+   }
+  },
+  "5": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.71,
+    "P1": 4.34,
+    "P1.5": 4.71,
+    "P2候选": 4.97
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "7": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.81,
+    "P1": 4.43,
+    "P1.5": 4.81,
+    "P2候选": 4.81
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  },
+  "17": {
+   "keep": "P0",
+   "changed": false,
+   "overall": {
+    "P0": 4.69,
+    "P1": 4.89,
+    "P1.5": 4.49,
+    "P2候选": 4.51
+   },
+   "vetoes": {
+    "P0": [],
+    "P1": [],
+    "P1.5": [],
+    "P2候选": []
+   }
+  }
+ },
+ "human": {
+  "4": {
+   "overall": 4.86,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "6": {
+   "overall": 4.95,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "9": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "10": {
+   "overall": 4.64,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "11": {
+   "overall": 4.9,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "12": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "13": {
+   "overall": 4.86,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "17": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "18": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": false,
+   "vetoes": []
+  },
+  "5": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "7": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "14": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "15": {
+   "overall": 4.62,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  },
+  "19": {
+   "overall": 5.0,
+   "polish": 5.0,
+   "flagged_by_user": true,
+   "vetoes": []
+  }
+ },
+ "veto": {
+  "wrong": {
+   "overall": 4.52,
+   "vetoes": [],
+   "flagged_once": []
+  },
+  "right": {
+   "overall": 4.76,
+   "vetoes": [],
+   "flagged_once": []
+  }
+ },
+ "usage": {
+  "calls": 65,
+  "failures": 8,
+  "input_tokens": 268734,
+  "output_tokens": 9779,
+  "estimated_cost_usd": 0.6548,
+  "budget_usd": 15.0
+ }
+}
