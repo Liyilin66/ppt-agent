@@ -927,6 +927,17 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     # model call; the archetype mix is then fixed up front and pages can be
     # generated concurrently instead of one after another.
     packets = {slot.page_number: packet_for(slot) for slot in content_slots}
+    budget = None
+    if getattr(request, 'html_theme', None) and evidence_store is not None and type_roles:
+        # Pages the source can carry: a group of pages sharing too few facts keeps, moves or drops pages
+        # before anything is written, so no page exists only to retell another.
+        from ppt_agent.v2 import page_budget
+        budget = await page_budget.decide(client, checkpoints, content_slots, packets, evidence_store)
+        skeleton, packets = page_budget.apply(skeleton, packets, budget, evidence_store)
+        content_slots = sorted(skeleton.content_slots(), key=lambda slot: slot.page_number)
+        moved = sum(entry['decision'] == 'retarget' for entry in budget['decisions'].values())
+        progress(f"[content] page budget: {budget['supported_content_pages']} of {budget['requested_content_pages']} "
+                 f"content pages supported, {moved} moved to uncovered material")
     plan = plan_archetypes(content_slots, {
         number: has_numeric_evidence(packet.text if packet is not None else None)
         for number, packet in packets.items()
@@ -1388,7 +1399,7 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     content_numbers = {slot.page_number for slot in content_slots}
     layouts = layout_signature.conflicts(
         [layout_signature.of(page) for page in pages if page.page_number in content_numbers])
-    run = {'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
+    run = {'page_budget': budget, 'data_series': series_summary, 'fact_ledger': ledger.audit(), 'layout_repetition': layouts, 'html_design': html_summary, 'structural_numeric_cleanup': structural_removed, 'numeric_check_statistics': numeric_summary, 'content_statistics': statistics, 'request': request.model_dump(mode='json'), 'layout_engine': 'typeset', 'profile': profile.name,
            'usage': client.usage.snapshot(), 'stage_seconds': seconds,
            'outcomes': [item.model_dump(mode='json') for item in outcomes], 'typeset_pages': records,
            'planning_events': skeleton.planning_events,

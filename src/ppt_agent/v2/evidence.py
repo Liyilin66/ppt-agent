@@ -361,9 +361,14 @@ class EvidenceStore:
             web = [self.chunks[i] for i, _ in self.retriever.search(query, 8)
                    if self._docs[self.chunks[i]['doc_id']]['page_kind'] == 'web'][:1]
             candidates = candidates[:4 - len(web)] + web
+        return self.packet_of(candidates[:4], strategy=strategy, max_chars=max_chars, used=used)
+
+    def packet_of(self, chunks: list[dict], *, strategy: str = 'assigned', max_chars: int = 6500,
+                  used: Counter | None = None) -> EvidencePacket:
+        """A packet made of the given chunks, labelled by document and page as ``select`` labels them."""
         packet = EvidencePacket(strategy=strategy, page_counts={d['name']: len(d['pages']) for d in self.documents})
         blocks = []
-        for chunk in candidates[:4]:
+        for chunk in chunks:
             doc = self._docs[chunk['doc_id']]
             added = False
             for part in chunk['parts']:
