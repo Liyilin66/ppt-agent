@@ -215,11 +215,15 @@ def suspects(contents: dict[int, dict[str, Any]], *, window: int = WINDOW) -> li
             seen = set().union(*(figures(_text(contents[page])) for page in pages[:index]
                                  if 0 < later - page <= window))
             own = figures(_text(second))
-            nothing_new = len(own) >= SHARED_FIGURES and own <= seen
-            if same_focal or titles or len(shared) >= SHARED_FIGURES or (nothing_new and shared):
+            focal_shown = bool(figures(focal[1])) and figures(focal[1]) <= figures(_text(first))
+            # A page whose every figure is already on the pages just before it adds nothing new, even
+            # when it carries one figure only (CNNIC: four pages, one figure each, one story).
+            nothing_new = bool(own) and own <= seen and (len(own) >= SHARED_FIGURES or focal_shown)
+            if same_focal or titles or len(shared) >= SHARED_FIGURES or (nothing_new and shared) or focal_shown:
                 found.append({"pages": [earlier, later], "shared": sorted(shared),
                               "why": "焦点数字相同" if same_focal else "标题数字相同" if titles
-                              else "后页没有新数字" if nothing_new else "共用多个数字",
+                              else "后页没有新数字" if nothing_new
+                              else "后页的焦点数字前页已经讲过" if focal_shown else "共用多个数字",
                               "nothing_new": nothing_new})
     return found
 

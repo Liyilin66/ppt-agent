@@ -89,3 +89,10 @@ def test_same_focal_figure_on_two_detail_pages_is_repeated_without_asking():
     plan = {4: {"lead": "36.5%", "role": "detail"}, 5: {"lead": "18.8个百分点", "role": "detail"}}
     result = asyncio.run(cp.review(Never(), _Checkpoints(), contents, plan, set()))
     assert result["repeated"] == [[4, 5]] and list(result["rewrite"]) == [5]
+
+
+def test_one_figure_pages_retelling_their_neighbours_are_suspects():
+    contents = {3: _page("半年新增2.66亿用户", "2.66亿人", "5.15亿人"), 4: _page("普及率半年提升18.8个百分点", "18.8个百分点", "36.5%"),
+                5: _page("5.15亿用户奠定竞争基础", "5.15亿人"), 6: _page("36.5%普及率表明覆盖已广泛", "36.5%")}
+    pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
+    assert pairs[(3, 5)]["nothing_new"] and pairs[(4, 6)]["nothing_new"]
