@@ -20,6 +20,7 @@ NUMBER = re.compile(r"\d+(?:\.\d+)?")
 MEASURE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|％|个百分点|亿|万|倍|元|美元|人|家|个|项|款|笔)")
 WINDOW = 3          # pages apart that a reader still holds in mind
 SHARED_FIGURES = 2  # figures in common that make two pages a suspect pair
+FAR_SHARED = 3      # figures in common that make two distant pages one group of facts told twice
 FACTS_PER_PAGE = 16
 FACT_CHARS = 90
 
@@ -78,6 +79,9 @@ def facts(text: str | None, limit: int = FACTS_PER_PAGE) -> list[str]:
         if len(found) >= limit:
             break
     return found
+
+
+GROUP_REPEATED = "远处页面重复同一组数字"
 
 
 def figures(text: str | None) -> set[str]:
@@ -246,9 +250,15 @@ def suspects(contents: dict[int, dict[str, Any]], *, window: int = WINDOW) -> li
                 same = (focal[0] and focal[0] == focal[1]) or crossed \
                     or (figures(first.get("title")) & figures(second.get("title"))) \
                     or (first.get("title") or "").strip() == (second.get("title") or "").strip()
+                shared = figures(_text(first)) & figures(_text(second))
                 if same:
-                    found.append({"pages": [earlier, later], "shared": sorted(figures(_text(first)) & figures(_text(second))),
+                    found.append({"pages": [earlier, later], "shared": sorted(shared),
                                   "why": "焦点数字相同" if (focal[0] and focal[0] == focal[1]) or crossed else "标题相同或标题数字相同",
+                                  "nothing_new": False, "far": True})
+                elif len(shared) >= FAR_SHARED:
+                    # The same group of figures told again many pages later (CNNIC 57: p17 and p33 both list
+                    # 短视频 10.74亿 / 长视频 7.30亿 / 微短剧 6.64亿 / 3450万) reads as a page repeated.
+                    found.append({"pages": [earlier, later], "shared": sorted(shared), "why": GROUP_REPEATED,
                                   "nothing_new": False, "far": True})
                 continue
             focal = [(content.get("highlight") or {}).get("value") for content in (first, second)]
@@ -314,9 +324,14 @@ def to_rewrite(pair: list[int], contents: dict[int, dict[str, Any]], content_pla
 
 
 def instruction(page: int, other: int, contents: dict[int, dict[str, Any]],
-                content_plan: dict[int, dict[str, Any]], why: str) -> str:
+                content_plan: dict[int, dict[str, Any]], why: str, shared: list[str] | None = None) -> str:
     own = content_plan.get(page) or {}
     taken = contents[other]
+    if why == GROUP_REPEATED:
+        return (f"第 {other} 页（「{taken.get('title')}」）已经列过这组数字：{'、'.join(shared or [])}。"
+                f"本页最多保留其中一个作背景，不能做标题或焦点；改用本页证据里别页没用过的数字，"
+                f"讲策划给它的观点：「{own.get('claim') or '本页证据里别页没讲的那一面'}」"
+                + (f"，新增信息：「{own['increment']}」" if own.get('increment') else "") + "。")
     return (f"本页和第 {other} 页在讲同一个结论（{why}）。第 {other} 页已经讲了：「{taken.get('title')}」。"
             f"本页改为讲策划给它的观点：「{own.get('claim') or '本页证据里别页没讲的那一面'}」，"
             f"领衔事实：「{own.get('lead') or '本页证据里别页没用过的数字'}」；新增信息：「{own.get('increment') or ''}」。"
@@ -351,7 +366,7 @@ async def review(client, checkpoints, contents: dict[int, dict[str, Any]], conte
 
     async def decided(pair):
         roles = {(content_plan.get(page) or {}).get("role") for page in pair["pages"]}
-        if pair["why"] == "焦点数字相同" and not roles & {"summary", "judgement"}:
+        if pair["why"] in ("焦点数字相同", GROUP_REPEATED) and not roles & {"summary", "judgement"}:
             # Two pages leading with one figure is what the plan forbids; no judgement needed.
             return {**pair, "same": True, "by": "rule"}
         return await judged(pair)
@@ -366,7 +381,7 @@ async def review(client, checkpoints, contents: dict[int, dict[str, Any]], conte
         if page is None or page in rewrite:
             continue
         other = pair["pages"][0] if page == pair["pages"][1] else pair["pages"][1]
-        rewrite[page] = instruction(page, other, contents, content_plan, pair["why"])
+        rewrite[page] = instruction(page, other, contents, content_plan, pair["why"], pair.get("shared"))
     return {"suspects": found, "repeated": [pair["pages"] for pair in repeated],
             "rewrite": {page: text for page, text in sorted(rewrite.items())}}
 

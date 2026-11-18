@@ -152,3 +152,14 @@ def test_a_focal_figure_in_another_page_title_is_a_repeat_by_rule():
     contents = {14: _page("外卖增3748万人，竞争延展至场景价值", "3748万人"), 15: _page("外卖用户达6.30亿人，增长3748万", "6.30亿人")}
     pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
     assert pairs[(14, 15)]["why"] == "焦点数字相同"
+
+
+def test_a_group_of_figures_told_again_far_away_is_rewritten_by_rule():
+    contents = {17: _page("短视频新增3450万人", "3450万人", "10.74亿人", "7.30亿人", "6.64亿人"),
+                33: _page("视频转向分众运营", "97.1%", "10.74亿人", "7.30亿人", "6.64亿人"),
+                40: _page("网民规模11.25亿人", "11.25亿人", "10.74亿人")}
+    pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
+    assert pairs[(17, 33)]["why"] == cp.GROUP_REPEATED and (17, 40) not in pairs
+    plan = {17: {"lead": "3450万人"}, 33: {"claim": "视频分层运营", "lead": "97.1%"}}
+    out = asyncio.run(cp.review(None, _Checkpoints(), contents, plan, set()))
+    assert out["repeated"] == [[17, 33]] and "最多保留其中一个" in next(iter(out["rewrite"].values()))
