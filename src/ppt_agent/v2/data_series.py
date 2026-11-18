@@ -326,6 +326,10 @@ async def extract(client: Any, checkpoints: Any, evidence_text: str) -> dict[str
     name = "series/" + hashlib.sha1((evidence_text or "").encode("utf-8")).hexdigest()[:12] + ".json"
     saved = checkpoints.load(name) if checkpoints is not None else None
     if saved is not None:
+        # Whether a value is a forecast is read from its quote; a saved series is judged by the current rule.
+        for series in saved.get("series") or []:
+            for point in series.get("points") or []:
+                point["projected"] = bool(_FORECAST.search(_squash(point.get("quote") or "")))
         return saved
     result: dict[str, Any] = {"series": [], "rejected": [], "called": False}
     if len(_FIGURE.findall(_YEAR.sub("", evidence_text or ""))) >= MIN_NUMBERS and hasattr(client, "complete_json"):
