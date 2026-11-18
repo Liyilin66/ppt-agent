@@ -27,3 +27,18 @@ def test_quotes_that_pick_out_members_make_an_excerpt_and_never_a_share():
         {"label": "北京", "value": 38.2, "display": "38.2%", "quote": "北京最多，占38.2%", "ref": "r.md 第1页"},
         {"label": "广东", "value": 18.7, "display": "18.7%", "quote": "其次为广东，占18.7%", "ref": "r.md 第1页"}]), {})
     assert picked.coverage == "excerpt" and picked.kind == "category"
+
+
+def test_an_item_showing_a_series_value_takes_the_source_category_name():
+    from ppt_agent.v2.typeset_pipeline import name_categories
+    from ppt_agent.v2.visual.content import RichContent
+
+    content = RichContent(title="生活助手使用率达30.0%", source="r.pdf 第17页", items=[
+        {"heading": "办公提效", "value": "29.7%", "body": "会议纪要类用途"},
+        {"heading": "休闲娱乐", "value": "23.6%", "body": "娱乐用途"}])
+    series = DataSeries(metric="用途", unit="%", kind="category", points=[
+        {"label": "生成会议纪要、PPT", "value": 29.7, "display": "29.7%", "quote": "生成会议纪要、PPT 29.7%", "ref": "r.pdf 第17页"},
+        {"label": "休闲娱乐", "value": 23.6, "display": "23.6%", "quote": "休闲娱乐 23.6%", "ref": "r.pdf 第17页"}])
+    fixed, renamed = name_categories(content, [series])
+    assert fixed.items[0].heading == "生成会议纪要、PPT" and fixed.items[1].heading == "休闲娱乐"
+    assert renamed == [{"value": "29.7%", "was": "办公提效", "now": "生成会议纪要、PPT"}]

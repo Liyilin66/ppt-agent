@@ -223,10 +223,12 @@ async def design_page(
             return [defect for defect in found if defect.kind not in SOFT]
 
         best_here = (body, measured, defects)
-        candidates = [autofix.grow(body)]
+        grown = autofix.grow(body)
+        candidates = [grown, autofix.grow(grown)]
         if 'class="page compact' not in body:
-            candidates += [variant.replace('class="page', 'class="page compact', 1) for variant in (body, candidates[0])]
-        candidates += [autofix.step_down(variant) for variant in candidates]
+            candidates += [variant.replace('class="page', 'class="page compact', 1) for variant in (body, *candidates)]
+        smaller = [autofix.step_down(variant) for variant in candidates]
+        candidates += smaller + [autofix.step_down(variant) for variant in smaller]
         for variant in dict.fromkeys(candidate for candidate in candidates if candidate != body):
             try:
                 remeasured = await _measure(session, theme, font_css, variant, job=job)

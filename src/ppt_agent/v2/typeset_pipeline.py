@@ -878,6 +878,32 @@ def _skeleton_sections(skeleton) -> list[tuple[str, int]]:
     return [seen[index] for index in sorted(seen)]
 
 
+def name_categories(content, series_pool):
+    """Items whose figure is one category's value in a verified series, headed by that category's
+    name as the source gives it. Only a value found under exactly one category is matched."""
+
+    if getattr(content, 'archetype', None) != 'rich' or not series_pool:
+        return content, []
+    squash = lambda text: re.sub(r'[\s、，,（）()·：:\-—]', '', str(text or ''))
+    owners = {}
+    for series in series_pool:
+        if series.kind == 'time':
+            continue
+        for point in series.points:
+            owners.setdefault(squash(point.display), set()).add(point.label)
+    items, renamed = [], []
+    for item in content.items:
+        names = owners.get(squash(item.value)) if item.value else None
+        if names and len(names) == 1:
+            label = next(iter(names))
+            core = squash(re.sub(r'[（(][^）)]*[）)]', '', label))
+            if core and core not in squash(item.heading) + squash(item.body):
+                renamed.append({'value': item.value, 'was': item.heading, 'now': label})
+                item = item.model_copy(update={'heading': label[:18]})
+        items.append(item)
+    return (content.model_copy(update={'items': items}) if renamed else content), renamed
+
+
 async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, progress):
     # Lazy imports keep the orchestrator's delegation free of import cycles.
     from ppt_agent.v2.orchestrator import BuildResult, PageOutcome
@@ -1209,7 +1235,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                             'id': figure['id'], 'caption': source_figure.caption(figure), 'ref': figure['ref'],
                             'ratio': round(figure['width'] / figure['height'], 3), 'min_width': verdict.get('min_width')}
             content, record = results[number]
-            results[number] = (content.model_copy(update=update), record)
+            content = content.model_copy(update=update)
+            # A value of a verified series written on the page goes under the source's own name for
+            # its category ("生成会议纪要、PPT", not "办公提效"), whether or not the chart is drawn.
+            pool = [candidate['payload'] for candidate in candidates if candidate['id'].startswith('series:')]
+            content, renamed = name_categories(content, pool)
+            if renamed:
+                record = {**record, 'category_names_restored': renamed}
+            results[number] = (content, record)
         series_summary = {**data_series.summary(series_read, placed),
                           'tables_found': len(read_tables), 'tables_verified': sum(bool(table['rows']) for table in read_tables),
                           'source_figures': len(source_figures), 'pages_with_figure': sorted(shown),
