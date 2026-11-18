@@ -1243,7 +1243,11 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             content = content.model_copy(update=update)
             # A value of a verified series written on the page goes under the source's own name for
             # its category ("生成会议纪要、PPT", not "办公提效"), whether or not the chart is drawn.
-            pool = [candidate['payload'] for candidate in candidates if candidate['id'].startswith('series:')]
+            # (every verified series whose values sit on pages this page cites, offered here or not)
+            pool = [item for found in series_found.values() for item in found
+                    if all(len(place := point.ref.rsplit(' ', 1)) == 2 and re.fullmatch(r'第\d+页', place[1])
+                           and int(place[1][1:-1]) in source_figure._cited(content.source, place[0])
+                           for point in item.points)]
             content, renamed = name_categories(content, pool)
             if renamed:
                 record = {**record, 'category_names_restored': renamed}

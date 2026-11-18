@@ -200,7 +200,8 @@ async def _replay(session, theme, font_css, job: DesignJob, html: str, *, rechec
     except MeasureFailed:
         return result
     tier = str(job.content.get("tier") or "standard") if recheck else None
-    found = find_defects(measured, None, tier=tier) + (graphic_checks.find(body, job.content) if recheck else [])
+    found = find_defects(measured, None, tier=tier, roles=job.type_roles and not trusted) + (
+        graphic_checks.find(body, job.content) if recheck else [])
     hard = [defect.message for defect in found if defect.kind not in SOFT]
     if hard and not trusted:  # a signed-off page is not judged by rules written after it was signed
         result.defects = hard
