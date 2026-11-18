@@ -90,8 +90,8 @@ def normalise(verdict: Any) -> dict[str, Any]:
 
 MEASURED_CLAIM = (r"提速|加速|加快|放缓|领先|领跑|居首|首位|第一|最高|最快|最大|最多|最低|翻倍|倍增|超过|高于|低于|"
                   r"回升|反弹|下降|下滑|增速|增幅|带动|导致|由于|因为|拉动|驱动")
-CLAIM_FIELDS = ("title", "lead", "highlight", "statement")  # where the page states what it argues
-VERSION = "3"  # the reviewer's brief; a change asks every page again
+CLAIM_FIELDS = ("title", "lead", "highlight", "statement", "takeaway")  # where the page states what it argues
+VERSION = "4"  # the reviewer's brief; a change asks every page again
 
 
 def _squash(text: Any) -> str:
@@ -208,12 +208,13 @@ def summary(verdicts: dict[int, dict[str, Any]]) -> dict[str, Any]:
                          for n, v in sorted(verdicts.items()) if v.get("verdict") != "ok"}}
 
 
-REPHRASE = """你是严格的事实编辑。这一页的论点（标题、导语）被审稿指出了问题。只改标题和导语，让它们准确表述页面上已有的事实：
+REPHRASE = """你是严格的事实编辑。这一页的论点（标题、导语、结论句）被审稿指出了问题。只改标题、导语和结论句，让它们准确表述页面上已有的事实：
 - 只能用页面上已经出现的数字和事实，不新增任何数字，不改讲别的话题，标题讲的对象不变；
 - 删去没有数据支撑的比较、增速、排名、因果说法，或改成页面数据能直接支持的说法；
 - 不要把两个对象拼成一个论点：标题讲一个对象；
-- 标题不超过 26 个字，导语不超过 40 个字。
-只返回 JSON：{"title": "...", "lead": "..."}"""
+- 结论句可以是基于页面事实的判断或建议，但不能提到页面上没有数据的对象；
+- 标题不超过 26 个字，导语不超过 40 个字，结论句不超过 60 个字。
+只返回 JSON：{"title": "...", "lead": "...", "takeaway": "..."}"""
 
 
 def figures_of(text: Any) -> set[str]:
@@ -228,7 +229,7 @@ async def rephrase(client: Any, checkpoints: Any, number: int, content: dict[str
     """REPHRASE_CLAIM: a new title and lead for the findings, using only the page's own figures.
     Cached by its inputs, so a replay gets the same words. Returns {} when the proposal adds a figure."""
 
-    body = {key: value for key, value in view(content).items() if key not in ("title", "lead")}
+    body = {key: value for key, value in view(content).items() if key not in ("title", "lead", "takeaway")}
     findings = instruction(decision)
     key = hashlib.sha1((VERSION + json.dumps([view(content), findings], ensure_ascii=False, sort_keys=True)).encode()).hexdigest()[:16]
     name = f"typeset/claim_repair/{key}.json"
@@ -237,19 +238,24 @@ async def rephrase(client: Any, checkpoints: Any, number: int, content: dict[str
         try:
             saved = await client.complete_json(task="claim_rephrase", system=REPHRASE, max_output_tokens=800,
                                                user=json.dumps({"page": number, "title": content.get("title"),
-                                                                "lead": content.get("lead"), "page_facts": body,
+                                                                "lead": content.get("lead"), "takeaway": content.get("takeaway"),
+                                                                "page_facts": body,
                                                                 "findings": findings}, ensure_ascii=False))
         except Exception as exc:  # noqa: BLE001
             saved = {"error": str(exc)[:300]}
         if checkpoints is not None:
             checkpoints.save(name, saved)
     title, lead = str(saved.get("title") or "").strip(), str(saved.get("lead") or "").strip()
+    takeaway = str(saved.get("takeaway") or "").strip()
     if not title:
         return {}
     allowed = _bare(figures_of(body)) | _bare(figures_of(content.get("highlight")))
-    if not _bare(figures_of([title, lead])) <= allowed:
+    if not _bare(figures_of([title, lead, takeaway])) <= allowed:
         return {}  # a new figure: not a rephrasing
-    return {"title": title[:40], "lead": lead[:60] or None}
+    proposal = {"title": title[:40], "lead": lead[:60] or None}
+    if takeaway:
+        proposal["takeaway"] = takeaway[:70]
+    return proposal
 
 
 def content_hash(content: dict[str, Any]) -> str:
