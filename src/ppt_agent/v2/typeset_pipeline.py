@@ -902,8 +902,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     # Rendering rules a run was accepted under stay with it: a run begun before bars were drawn from
     # zero keeps PowerPoint's own axis, so resuming a signed-off deck does not change what was signed.
     bars_from_zero = previous_config.get('bars_from_zero', not (request.resume and bool(previous_config)))
+    type_roles = previous_config.get('type_roles', not (request.resume and bool(previous_config)))
     checkpoints.save('typeset_config.json', {'layout_engine': 'typeset', 'profile': profile.name,
-                                           'bars_from_zero': bars_from_zero,
+                                           'bars_from_zero': bars_from_zero, 'type_roles': type_roles,
                                            'html_theme': getattr(request, 'html_theme', None),
                                            'source_references': references, 'source_page_counts': page_counts,
                                            'source_display_names': document_names})
@@ -1244,10 +1245,13 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                               'deck_title': skeleton.deck_title, 'subtitle': skeleton.subtitle,
                               'sections': sections, 'section_index': slot.section_index,
                               'section_title': slot.section_title})
+        for job in jobs:
+            job.type_roles = type_roles
         try:
             html_pages, html_summary = await design_deck(
                 client, html_theme, jobs, fixed, checkpoints=checkpoints,
-                concurrency=request.concurrency, look=getattr(request, 'html_review', True), progress=progress)
+                concurrency=request.concurrency, look=getattr(request, 'html_review', True), progress=progress,
+                extra_css=html_themes.studio_roles_css() if type_roles and html_theme == 'studio' else '')
         except html_browser.BrowserUnavailable as exc:
             progress(f'[design] no browser available, using the layout engine instead: {exc}')
             html_summary = {'theme': html_theme, 'unavailable': str(exc)}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from importlib import resources
 from typing import Literal
 
@@ -156,3 +157,9 @@ def studio_example(form: str) -> str:
     """The hand-written sample for one visual form of the studio theme."""
 
     return _read(f"studio/{form}.html").strip()
+
+
+def studio_roles_css() -> str:
+    """Type-role sizes for runs begun under the P4 rules (see ``studio_roles.css``)."""
+
+    return (Path(__file__).parent / "studio_roles.css").read_text(encoding="utf-8")

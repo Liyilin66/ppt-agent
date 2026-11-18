@@ -24,7 +24,7 @@ MAX_REWRITES = 2  # for defects that must not ship
 MAX_POLISH = 2    # further tries once only soft defects are left
 # Worth another try, not worth losing the page.
 SOFT = frozenset({"sparse", "small_text"}) | AESTHETIC
-FIT = frozenset({"overflow", "off_canvas", "overlap"})  # too much for the space
+FIT = frozenset({"overflow", "off_canvas", "overlap", "legibility"})  # too much for the space
 DESIGN_TOKENS = 2600
 PRUNE = ("这一页的内容比版面装得下的多，换排法已经试过了。这一次请删减：只保留标题、焦点和最重要的三条事实"
          "（每条一句话），其余条目和次要说明整条删掉；结论只留一句。不要缩小字号。")
@@ -44,6 +44,9 @@ class DesignJob:
     idea: str = ""
     form: str | None = None  # studio theme: the visual form the deck plan assigned
     figure_file: str | None = None  # where the page's source figure is stored, when it has one
+    type_roles: bool = False  # minimum sizes by what text does (runs begun under the P4 rules)
+    all_items: list[dict[str, Any]] | None = None  # the content's items before a form's limit took some
+    all_notes: str | None = None
 
 
 @dataclass
@@ -170,7 +173,7 @@ async def design_page(
     tier = str(job.content.get("tier") or "standard") if studio else None
 
     def check(body: str, measured: Measured) -> list[Defect]:
-        found = find_defects(measured, allowed, tier=tier) + _required(job, measured)
+        found = find_defects(measured, allowed, tier=tier, roles=job.type_roles) + _required(job, measured)
         return found + (graphic_checks.find(body, job.content) if studio else [])
 
     system = prompts.system_prompt(theme)
@@ -210,17 +213,32 @@ async def design_page(
         result.trace.append({"attempt": result.attempts,
                              "kinds": sorted({defect.kind for defect in defects}),
                              "messages": [defect.message[:80] for defect in defects][:6]})
-        if any(defect.kind in FIT for defect in defects) and 'class="page compact' not in body:
-            # A little too tall: the same page with less air often fits, at no model cost.
-            tighter = body.replace('class="page', 'class="page compact', 1)
+        if not any(defect.kind in FIT for defect in defects):
+            return body, measured, defects
+        # A few pixels too tall or too wide: repaired by geometry, measured again, at no model cost.
+        # Room from empty rows first, then less air, then a smaller display figure; never smaller body text.
+        from ppt_agent.v2.htmldeck import autofix
+
+        def hard(found):
+            return [defect for defect in found if defect.kind not in SOFT]
+
+        best_here = (body, measured, defects)
+        candidates = [autofix.grow(body)]
+        if 'class="page compact' not in body:
+            candidates += [variant.replace('class="page', 'class="page compact', 1) for variant in (body, candidates[0])]
+        candidates += [autofix.step_down(variant) for variant in candidates]
+        for variant in dict.fromkeys(candidate for candidate in candidates if candidate != body):
             try:
-                remeasured = await _measure(session, theme, font_css, tighter, job=job)
+                remeasured = await _measure(session, theme, font_css, variant, job=job)
             except MeasureFailed:
-                return body, measured, defects
-            again = check(tighter, remeasured)
-            if not [defect for defect in again if defect.kind not in SOFT]:
-                return tighter, remeasured, again
-        return body, measured, defects
+                continue
+            again = check(variant, remeasured)
+            if len(hard(again)) < len(hard(best_here[2])):
+                best_here = (variant, remeasured, again)
+            if not hard(again):
+                result.trace[-1]["repaired"] = True
+                return variant, remeasured, again
+        return best_here
 
     rewrites, polish = MAX_REWRITES, MAX_POLISH
     while True:

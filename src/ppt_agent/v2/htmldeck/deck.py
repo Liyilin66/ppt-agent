@@ -55,6 +55,9 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
     for series in data.get("series") or []:
         for point in series["points"]:
             point.pop("quote", None)  # the proof stays with the content; the page shows the value
+        if series.get("coverage") == "unknown" and not series.get("of_total") and not series.get("selection"):
+            for name in ("coverage", "of_total", "selection"):
+                series.pop(name, None)  # a series read before coverage was judged reads as it did
     return DesignJob(
         page_number=page_number,
         archetype=archetype,
@@ -69,7 +72,33 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
     )
 
 
+# How many facts a form can carry as items, beside its main visual (P3: most first attempts that failed
+# overflowed). The items are in order of importance; those past the limit go to the speaker notes.
+FORM_ITEMS = {"poster": 3, "units": 3, "strip": 3, "statement": 2, "columns": 3, "split": 4, "ledger": 5,
+              "margin": 4, "matrix": 4, "stairs": 5, "flow": 5, "timeline": 5, "figure": 2, "table": 3}
+CHART_ITEMS = {"side": 3, "inset": 3, "full": 2, "band": 3}
+
+
+def _fit_items(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
+    if job.all_items is None:
+        job.all_items, job.all_notes = list(job.content.get("items") or []), job.notes
+    limit = (CHART_ITEMS.get(fingerprint.arrangement or "side", 3) if fingerprint.form == "chart"
+             else FORM_ITEMS.get(fingerprint.form))
+    items = job.all_items
+    if limit is None or len(items) <= limit or "items" not in job.content:
+        job.content = {**job.content, "items": items} if "items" in job.content else job.content
+        job.notes = job.all_notes
+        return
+    kept, moved = items[:limit], items[limit:]
+    job.content = {**job.content, "items": kept}
+    extra = "；".join(" ".join(str(item.get(key)) for key in ("heading", "value", "body") if item.get(key))
+                     for item in moved)
+    job.notes = ((job.all_notes + "\n") if job.all_notes else "") + "页面未展开的要点：" + extra
+
+
 def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
+    if job.type_roles:
+        _fit_items(job, fingerprint)  # runs begun under the P4 rules only: saved pages keep their content
     job.form = fingerprint.form
     job.idea = prompts.studio_idea(fingerprint.form, fingerprint.focus, fingerprint.ratio,
                                    core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path,
@@ -196,6 +225,7 @@ async def design_deck(
     concurrency: int = 6,
     look: bool = True,
     progress: Callable[[str], None] = lambda message: None,
+    extra_css: str = "",
 ) -> tuple[dict[int, PageResult], dict[str, Any]]:
     """Return a result per page number, and a summary for the run report.
 
@@ -205,6 +235,8 @@ async def design_deck(
     if not hasattr(client, "complete_text"):
         raise browser.BrowserUnavailable("this model client cannot return plain text")
     theme = themes.get(theme_name)
+    if extra_css:
+        theme = dataclasses.replace(theme, css=theme.css + extra_css)  # rules the run was begun under
     font_css, real_fonts = office_font_css()
     plan: list[layout_plan.Fingerprint] = []
     accepted = set((checkpoints.load(ACCEPTED) or {}).get("pages", [])) if checkpoints is not None else set()

@@ -99,12 +99,38 @@ def _ordinal(token: str) -> bool:
     return bool(re.fullmatch(r"0\d|\d", digits))
 
 
+# Type on a projected slide, by what it does (sizes in CSS px; 1px = 0.75pt on the 1280-wide page).
+# Body text and the notes beside it must be read from the back of a room; labels and the source line
+# may be smaller. Display figures and titles are large by design and are not listed.
+ROLE_MIN_PX = {"body": 18.6, "secondary": 16.0, "caption": 14.6, "label": 14.0, "source": 12.0}
+ROLE_NAMES = {"body": "正文", "secondary": "辅助说明", "caption": "图注", "label": "标签", "source": "来源"}
+HARD_ROLES = {"body", "secondary", "caption"}
+_DISPLAY = {"d1", "d2", "d3", "d4", "t1", "t2", "t3", "q1", "h", "fig", "num", "key", "call", "unit", "nm",
+            "title", "cover-title", "section-title", "section-no", "quote", "arrow"}
+
+
+def role_of(classes: str) -> str | None:
+    names = set(classes.split())
+    if names & {"source", "pageno"}:
+        return "source"
+    if names & _DISPLAY:
+        return None
+    if names & {"k", "kicker"}:
+        return "label"
+    if "c" in names:
+        return "caption"
+    if names & {"s", "lead", "label", "cover-sub"}:
+        return "secondary"
+    return "body"
+
+
 def find_defects(
     measured: Measured,
     allowed: set[Decimal] | None = None,
     *,
     require_fill: bool = True,
     tier: str | None = None,
+    roles: bool = False,
 ) -> list[Defect]:
     """``tier`` (visual / standard / deep) also asks for the aesthetic checks,
     which judge a designed content page against the density it was planned at."""
@@ -138,6 +164,19 @@ def find_defects(
                 or rect["y"] + rect["h"] > parent["y"] + parent["h"] + TOLERANCE):
             defects.append(Defect("overflow", f"文字「{label}」超出了它所在的色块，请减少文字或放大色块。", label))
         sizes = [run["size"] for run in item["runs"] if run.get("t", "").strip()]
+        if roles and sizes:
+            role = role_of(item.get("cls", ""))
+            least = ROLE_MIN_PX.get(role)
+            if least is not None and min(sizes) < least - 0.05:
+                pt = min(sizes) * 0.75
+                if role in HARD_ROLES:
+                    defects.append(Defect(
+                        "legibility",
+                        f"{ROLE_NAMES[role]}「{label}」只有 {pt:.1f}pt，投影看不清（至少 {least * 0.75:.1f}pt）。"
+                        "不要缩小字号：删掉次要的话、把条目合并，或换一种更宽松的排法。", label))
+                else:
+                    defects.append(Defect("small_text", f"{ROLE_NAMES[role]}「{label}」只有 {pt:.1f}pt，偏小。", label))
+            continue
         if sizes and min(sizes) < MIN_TEXT_PX - 0.01:
             defects.append(Defect("small_text", f"文字「{label}」只有 {min(sizes):.0f} 像素，太小。请减少内容，不要缩小字号。", label))
 

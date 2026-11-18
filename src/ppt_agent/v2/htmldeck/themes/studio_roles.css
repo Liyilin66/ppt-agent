@@ -1,0 +1,5 @@
+/* P4 type roles for runs begun under them: labels readable on a projector, and the compact
+   fallback tightens spacing and display type only - body text is never shrunk to fit. */
+.page .k,.page .kicker{font-size:14px}
+.compact .b{font-size:19px;line-height:1.55}
+.compact .s{font-size:17px;line-height:1.5}
