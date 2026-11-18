@@ -71,3 +71,9 @@ def test_a_ratio_is_not_a_selection():
     quote = "我国网民使用手机上网的比例达99.6%；使用台式电脑上网的比例为32.5%"
     assert not completeness.SELECTING.search(quote) and not completeness.RANKING.search(quote)
     assert completeness.SELECTING.search("例如北京、上海")
+
+
+def test_a_share_with_slivers_is_drawn_as_bars():
+    pie = {"kind": "share", "points": [{"value": 47.1}, {"value": 34.0}, {"value": 18.9}]}
+    slivers = {"kind": "share", "points": [{"value": 73.6}, {"value": 18.3}, {"value": 6.3}, {"value": 1.8}]}
+    assert charts.kind_for(pie) == "pie" and charts.kind_for(slivers) == "bar"

@@ -29,7 +29,13 @@ def kind_for(series: dict[str, Any]) -> str | None:
     if kind == "distribution":
         return "column"
     if kind == "share":
-        return "pie" if WHOLE[0] <= sum(point["value"] for point in points) <= WHOLE[1] else None
+        if not WHOLE[0] <= sum(point["value"] for point in points) <= WHOLE[1]:
+            return None
+        # A pie with slivers cannot label them without overlap (CNNIC 57 p20): many parts, or parts under
+        # 5%, are compared as bars - the same values, read one by one.
+        if len(points) > 6 or min(point["value"] for point in points) < 5:
+            return "bar"
+        return "pie"
     return None
 
 
