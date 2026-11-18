@@ -1193,6 +1193,10 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 produce(by_number[page], revision=text,
                         current=results[page][0].model_dump(mode='json', exclude_none=True))
                 for page, text in sorted(rewrites.items())))
+            # A recovered page keeps its recovery record through an overlap rewrite.
+            rewritten = [(page, (content, {**record, **{key: results[page][1][key] for key in ('content_status', 'content_failure')
+                                                        if key in results[page][1] and key not in record}}))
+                         for page, (content, record) in rewritten]
             results.update(dict(rewritten))
             overlap = await deck_content.review(
                 client, checkpoints, {number: content.model_dump(mode='json', exclude_none=True)
