@@ -48,6 +48,8 @@ SERIES_SYSTEM = (
     "- label 是这个值对应的时间或对象，用原文的说法（如 2022年、2024年上半年、GPT-3）。\n"
     "- 预测、计划、目标值把 projected 设为 true。\n"
     "- metric 写清指标的完整定义（谁的、什么的），scope 写口径或主体（如 全球、中国），period 写时间范围。\n"
+    "- 标着「图中坐标配对」的段落，是资料里一张图的标签和数值按它们在页面上的位置一一配好的，每行「标签 数值」；"
+    "用它时 quote 照抄那一行，label 照抄行里的标签。它只说明这张图画了什么，指标、口径和时间要从图题和正文里找。\n"
     "- 找不到就返回空列表。空结果是正确答案，不要凑。\n"
     '只输出 JSON：{"series":[{"metric":"","unit":"","kind":"time|category|share|distribution","period":"","scope":"",'
     '"points":[{"label":"","value":0,"display":"","quote":"","projected":false}]}]}'
@@ -80,7 +82,9 @@ def _locate(quote: str, blocks: list[tuple[str, int, str]]) -> str | None:
             return f"{name} 第{page}页"
     # A sentence can run over a page break.
     ordered = sorted(set((name, page) for name, page, _ in blocks))
-    by_page = {(name, page): text for name, page, text in blocks}
+    by_page: dict[tuple[str, int], str] = {}
+    for name, page, text in blocks:
+        by_page.setdefault((name, page), text)  # a figure's paired text is not the page's running text
     for name, page in ordered:
         if (name, page + 1) in by_page and wanted in _squash(by_page[(name, page)] + by_page[(name, page + 1)]):
             return f"{name} 第{page}-{page + 1}页"
@@ -244,9 +248,19 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
         if len(unique) < 2:
             drop(series, "不足两个值")
             continue
+        from ppt_agent.v2.relations import series_classes
+
+        classes = series_classes(unique)
+        if len(classes) > 1:
+            # A total beside an increase, a rate beside a change in it: not one measure, whatever the metric says.
+            drop(series, "序列里混了不同种类的量：" + "、".join(sorted(classes)))
+            continue
+        kind = series["kind"]
+        if kind == "share" and not 99.0 <= sum(point["value"] for point in unique) <= 101.0:
+            kind = "category"  # parts that do not make a whole (several answers allowed) are compared, not split
         try:
             kept.append(DataSeries(
-                metric=str(series.get("metric") or "")[:36], unit=unit[:10], kind=series["kind"],
+                metric=str(series.get("metric") or "")[:36], unit=unit[:10], kind=kind,
                 period=(str(series.get("period") or "")[:28] or None),
                 scope=(str(series.get("scope") or "")[:30] or None), points=unique, omitted=omitted))
         except ValidationError as error:
@@ -322,6 +336,24 @@ async def extract(client: Any, checkpoints: Any, evidence_text: str) -> dict[str
     if checkpoints is not None and "error" not in result:
         checkpoints.save(name, result)
     return result
+
+
+def prune(items: list[DataSeries]) -> list[DataSeries]:
+    """Drop a series whose every value is in a fuller one: it is the same figure with values
+    missing (running text names five purposes, the figure beside it all seven)."""
+
+    def values(item: DataSeries) -> set[tuple[str, str]]:
+        return {(_squash(point.display), point.ref.split(" ")[0]) for point in item.points}
+
+    kept = []
+    for item in items:
+        mine = values(item)
+        if any(mine < values(other) for other in items if other is not item):
+            continue
+        if any(mine == values(other) and signature(other) != signature(item) for other in kept):
+            continue  # the same values under another wording
+        kept.append(item)
+    return kept
 
 
 def assign(found: dict[int, list[DataSeries]], contents: dict[int, dict[str, Any]]) -> dict[int, list[DataSeries]]:

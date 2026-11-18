@@ -554,6 +554,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     empty_sources = 0
     attempts = 0
     numeric_failures = []
+    relation_failures = []
     numeric_candidate = None
     trims = []
     source_trims = []
@@ -602,6 +603,16 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
             if parsed.archetype == 'chart' and len(parsed.categories) < 3:
                 raise ValueError('chart needs at least 3 comparable values in one unit; use metrics for fewer')
             from ppt_agent.v2.evidence_check import check_content_numbers, number_contexts
+            if rich_tier and evidence is not None:
+                # Two true figures and a false line between them: an arrow from an increase to a total,
+                # a doubling that is not one, a cause the source never gives.
+                from ppt_agent.v2.relations import check_content as check_relations
+                relation_problems = check_relations(parsed.model_dump(mode='json', exclude_none=True), evidence.text)
+                if relation_problems:
+                    relation_failures.append({'attempt': attempts, 'problems': relation_problems})
+                    if attempts < 2:
+                        raise ValueError('Relations between figures are not supported by the source:\n'
+                                         + '\n'.join(relation_problems))
             parsed, repaired = repair_citation(parsed, evidence)
             if repaired:
                 source_trims.append({'attempt': attempts, 'added': repaired})
@@ -652,7 +663,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     record = {'page_number': slot.page_number, 'attempts': attempts, 'fallback': fallback,
               'validation_errors': errors, 'archetype': parsed.archetype,
               'source_invalid_attempts': invalid_sources, 'source_empty_attempts': empty_sources, 'source_trimmed': source_trims,
-              'trimmed_items': trims,
+              'trimmed_items': trims, 'relation_check': relation_failures,
               'evidence': evidence.to_dict() if evidence is not None else None,
               'numeric_check': {'blocked_attempts': len(numeric_failures), 'failures': numeric_failures,
                                 'passed_after_retry': bool(numeric_failures and not fallback),
@@ -934,9 +945,26 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         from ppt_agent.v2 import data_series
         from ppt_agent.v2.visual.content import DataSeries
 
+        # Figures' labels and values paired by their place on the page (v2.figure_text). A run that
+        # read its series before this existed keeps them: its pages, some signed off, were built on them.
+        from ppt_agent.v2 import figure_text
+        pairing = checkpoints.load('typeset/figure_pairs.json')
+        if pairing is None:
+            pairing = {'on': not (request.resume and (checkpoints.root / 'series').is_dir())}
+            checkpoints.save('typeset/figure_pairs.json', pairing)
+        pdfs = {Path(path).name: path for path in request.source_paths if str(path).lower().endswith('.pdf')}
+
+        def series_evidence(packet):
+            if packet is None or not pairing['on']:
+                return packet.text if packet is not None else ''
+            extra = [figure_text.blocks(pdfs[name], pages) for name, pages in packet.allowed_pages.items()
+                     if name in pdfs]
+            return '\n'.join([packet.text, *[block for block in extra if block]])
+
         async def read_series(slot):
             async with semaphore:
-                return slot.page_number, await data_series.extract(client, checkpoints, packets[slot.page_number].text)
+                return slot.page_number, await data_series.extract(client, checkpoints,
+                                                                  series_evidence(packets[slot.page_number]))
 
         extracted = dict(await asyncio.gather(*(read_series(slot) for slot in content_slots)))
         series_read = list(extracted.values())
@@ -1088,9 +1116,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         async def brief_page(number):
             content = dumps[number]
             candidates = []
-            for item in series_found.get(number, []) + [
+            for item in data_series.prune(series_found.get(number, []) + [
                     item for table, item in table_series
-                    if table['page'] in source_figure._cited(content.get('source'), table['document'])]:
+                    if table['page'] in source_figure._cited(content.get('source'), table['document'])]):
                 candidates.append({'id': series_id(item), 'type': '核对过的数据序列', 'metric': item.metric,
                                    'scope': item.scope, 'period': item.period,
                                    'values': {point.label: point.display for point in item.points}, 'payload': item})
