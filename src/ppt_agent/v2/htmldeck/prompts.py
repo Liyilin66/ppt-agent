@@ -78,12 +78,30 @@ def system_prompt(theme: themes.HtmlTheme) -> str:
     return guide + SYSTEM_SUFFIX.format(label=theme.label, mood=theme.mood)
 
 
-def studio_idea(form: str, focus: str, ratio: str, *, core_visual: str = "", reading_path: str = "") -> str:
+ARRANGEMENT_WORDS = {
+    "full": "构图：图表是页面的主体，占满版心宽度（10 到 12 列、4 到 5 行）。不要单独的大数字栏：焦点数字（d3）和一句结论"
+            "作为注释写在图表上方、靠近它所指的那个数据的位置；其余说明最多两条，排成图表下面的一行。放不下的条目整条删掉（图表已经画出了它们的数），不要缩小字号。",
+    "band": "构图：上中下三段。最上面一行是焦点数字（d2）和一句话结论并排；中间是横贯整个版心的图表带"
+            "（12 列、3 到 4 行）；最下面两到三条说明分栏排开，每条一两句。放不下的条目整条删掉，不要缩小字号。",
+    "inset": "构图：文字领衔。左边 7 到 8 列依次是焦点数字、结论和说明；图表缩小到 4 到 5 列、3 到 4 行，"
+             "嵌在右侧偏下，作为文字的佐证。",
+}
+
+
+def studio_idea(form: str, focus: str, ratio: str, *, core_visual: str = "", reading_path: str = "",
+                arrangement: str = "") -> str:
     """The composition this page was assigned by the deck-wide plan, in words."""
 
     side = "左" if focus == "left" else "右"
     width = {"even": "主要视觉和其余内容大致各占一半", "wide": "主要视觉占大约三分之二的宽度",
              "narrow": "主要视觉只占大约三分之一的宽度，其余留给文字"}[ratio]
+    if arrangement in ARRANGEMENT_WORDS:
+        # The form's own one-line description is the side-by-side arrangement; it would contradict this one.
+        parts = [f"{form}——原生图表（数据已核对）。", ARRANGEMENT_WORDS[arrangement],
+                 "示范页是图表在一侧的排法，这一页不要照它的网格排。"]
+        if core_visual:
+            parts.append(f"读者第一眼应该看到：{core_visual}。")
+        return "".join(parts)
     parts = [f"{form}——{themes.STUDIO_FORMS[form]}。", f"主要视觉放在{side}侧；{width}。"]
     if core_visual:
         parts.append(f"读者第一眼应该看到：{core_visual}。")
@@ -106,6 +124,15 @@ def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
     series = charts.chartable(content)
     if series is None:
         return []
+    if (content.get("visual") or {}).get("role") == "supporting" and "文字领衔" in idea:
+        return [
+            "这一页要放一张图表作为论据（数据已逐个核对过原文）。它不是主角：页面第一眼是文字栏最上面的焦点数字（d2 或 d3）。"
+            "其余条目最多再写两条，每条一句话，放不下就删。把下面两行原样放进图表所在的区域，data-chart 里一个字符都不要改，"
+            "图注用类名 c，写在图表的正上方：\n"
+            f'<div class="c">{charts.caption(series)}</div>\n'
+            f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
+            "图表已经画出了每个数值，文字不要再逐个重复。"
+        ]
     if (content.get("visual") or {}).get("role") == "supporting":
         # Evidence for a claim about another measure: present, and second to the page's own figure.
         return [
@@ -121,7 +148,7 @@ def _chart_brief(content: dict[str, Any], idea: str) -> list[str]:
         return []
     return [
         "这一页要画的图表（数据已逐个核对过原文）。把下面两行原样放进页面，data-chart 里一个字符都不要改，"
-        "图注用类名 c，写在图表的正上方；图表区域至少占 6 列、4 行：\n"
+        "图注用类名 c，写在图表的正上方；图表区域至少占 6 列、3 行（按上面的构图）：\n"
         f'<div class="c">{charts.caption(series)}</div>\n'
         f"<div class=\"chart\" data-chart='{charts.attr(series)}'></div>\n"
         "图表已经画出了每个数值，旁边的文字不要再逐个重复这些数，只写它说明了什么。"

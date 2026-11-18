@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from ppt_agent.v2.htmldeck.charts import chartable
@@ -53,10 +53,42 @@ class Fingerprint:
     core_visual: str = ""   # what the reader sees first
     reading_path: str = ""  # the order the eye is led through
     reason: str = ""
+    arrangement: str = ""   # how a chart or source figure sits on the page (see ARRANGEMENTS)
 
     @property
     def structure(self) -> tuple[str, str, str]:
         return self.form, self.focus, self.ratio
+
+
+# How a page built around its chart is composed. Not templates: each is a division of the
+# space and a place for the eye to land, chosen from what the data and the claim need, and
+# turned so two chart pages near each other are not composed alike (the chart type alone
+# does not make two pages different).
+ARRANGEMENTS = ("side", "full", "band", "inset")
+
+
+def arrangements_for(content: dict[str, Any]) -> list[str]:
+    """Arrangements the page's chart can honestly take, best first."""
+
+    series = (content.get("series") or [None])[0] or {}
+    points = len(series.get("points") or [])
+    kind = series.get("kind")
+    if (content.get("visual") or {}).get("role") == "supporting":
+        return ["inset", "side"]  # evidence for another figure: never the body of the page
+    if kind == "share":
+        # A pie is round: it does not span a band, and with many slices it cannot shrink to an inset.
+        return ["side", "inset"] if points <= 3 else ["side", "full"]
+    if points >= 6 or (kind == "time" and points >= 5):
+        return ["full", "band", "side"]  # many values need the width
+    return ["band", "side", "full"]
+
+
+def arrangement(page: int, content: dict[str, Any], earlier: list["Fingerprint"]) -> str:
+    """The best arrangement not used by the last two chart pages before this one."""
+
+    options = arrangements_for(content)
+    recent = [item.arrangement for item in earlier if item.form == "chart" and item.page < page][-2:]
+    return next((option for option in options if option not in recent), options[0])
 
 
 def _percent(value: str | None) -> float | None:
@@ -198,6 +230,8 @@ def resolve(proposed: dict[int, dict[str, Any]], contents: dict[int, dict[str, A
         if chosen is None:  # every allowed form was used a page or two ago: take the one used longest ago
             chosen = max(options(), key=lambda option: min(
                 [page - item.page for item in plan if item.form == option.form] or [999]))
+        if chosen.form == "chart":
+            chosen = replace(chosen, arrangement=arrangement(page, content, plan))
         plan.append(chosen)
     return plan
 
@@ -217,7 +251,9 @@ def repair(saved: list[Fingerprint], contents: dict[int, dict[str, Any]]) -> lis
             supporting = (contents[item.page].get("visual") or {}).get("role") == "supporting"
             plan[index] = Fingerprint(page=item.page, form=allowed[0],
                                       focus="right" if last is not None and last.focus == "left" else "left",
-                                      ratio="narrow" if supporting and allowed[0] == "chart" else "wide")
+                                      ratio="narrow" if supporting and allowed[0] == "chart" else "wide",
+                                      arrangement=arrangement(item.page, contents[item.page], plan[:index])
+                                      if allowed[0] == "chart" else "")
             continue
         if item.form in allowed:
             continue

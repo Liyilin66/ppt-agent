@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import json
 from typing import Any, Callable
 
-from ppt_agent.v2.htmldeck import browser, graphic_checks, layout_plan, prompts, review, sanitize, signature, themes
+from ppt_agent.v2.htmldeck import browser, composition, graphic_checks, layout_plan, prompts, review, sanitize, signature, themes
 from ppt_agent.v2.htmldeck.browser import MeasureFailed
 from ppt_agent.v2.htmldeck.checks import find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
@@ -71,7 +72,8 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
 def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
     job.form = fingerprint.form
     job.idea = prompts.studio_idea(fingerprint.form, fingerprint.focus, fingerprint.ratio,
-                                   core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path)
+                                   core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path,
+                                   arrangement=fingerprint.arrangement)
 
 
 def _plain_rows(job: DesignJob) -> list[tuple[str, str, str]]:
@@ -298,8 +300,24 @@ async def design_deck(
                 if checkpoints is not None:
                     checkpoints.save(f"html/failed_{job.page_number:03d}.json",
                                      {"html": result.html, "defects": result.defects, "idea": job.idea})
+                if job.form == "chart":
+                    # The page's verified data is kept: try the chart arranged another way, the
+                    # side-by-side arrangement last, before any form without the chart.
+                    index = next(i for i, item in enumerate(plan) if item.page == job.page_number)
+                    tried = plan[index].arrangement or "side"
+                    others = [option for option in layout_plan.arrangements_for(contents[job.page_number])
+                              if option != tried]
+                    for option in sorted(others, key=lambda option: option == "side")[:2]:
+                        plan[index] = dataclasses.replace(plan[index], arrangement=option)
+                        _apply(job, plan[index])
+                        async with gate:
+                            again = await design_page(client, session, theme, font_css, job, look=look)
+                        again.attempts += result.attempts
+                        result = again
+                        if result.ok:
+                            break
                 # The content did not fit this form: compose it another way before giving up on design.
-                for form in _other_forms(job.page_number)[:OTHER_FORMS]:
+                for form in ([] if result.ok else _other_forms(job.page_number)[:OTHER_FORMS]):
                     _recompose(job, form)
                     async with gate:
                         again = await design_page(client, session, theme, font_css, job, look=look)
@@ -388,6 +406,81 @@ async def design_deck(
                                   if not by_page[later].content.get("visual")})[: max(2, len(jobs) // 5)]
             await asyncio.gather(*(redo(by_page[number], "和另一页的版面轮廓几乎相同", new_form=True)
                                    for number in later_pages))
+
+            # Composition, not chart type: pages near each other divided and weighted alike, charts included.
+            def compositions() -> dict[int, composition.Composition]:
+                return {number: composition.of(result.page) for number, result in results.items()
+                        if number in by_page and result.ok and not result.templated}
+
+            async def rearrange(job: DesignJob, partner: int) -> None:
+                index = next(i for i, item in enumerate(plan) if item.page == job.page_number)
+                current = plan[index]
+                theirs = next((item.arrangement for item in plan if item.page == partner), "")
+                def drawn(page_job: DesignJob | None, planned: str) -> str:
+                    # A page replayed from an earlier run was drawn to the idea it was saved with.
+                    if page_job is None:
+                        return planned or "side"
+                    return next((name for name, words in prompts.ARRANGEMENT_WORDS.items() if words in page_job.idea),
+                                "side")
+
+                near = [number for number in by_page if number != job.page_number
+                        and abs(number - job.page_number) <= composition.WINDOW and results[number].ok]
+                taken = {drawn(job, current.arrangement), drawn(by_page.get(partner), theirs)}
+                taken |= {drawn(by_page[number], "") for number in near if by_page[number].form == "chart"}
+                options = [option for option in layout_plan.arrangements_for(contents[job.page_number])
+                           if option not in taken]
+                if not options:
+                    return
+                before = results[job.page_number]
+                def nearest(page) -> float:
+                    # Turning away from one neighbour must not turn into another.
+                    return min([composition.distance(composition.of(page), composition.of(results[number].page))
+                                for number in near] or [1.0])
+
+                gap_before = nearest(before.page)
+                tried, kept, after, gap_after = [], False, before, 0.0
+                for option in options[:2]:  # a second arrangement if the first cannot be drawn
+                    tried.append(option)
+                    plan[index] = dataclasses.replace(current, arrangement=option)
+                    _apply(job, plan[index])
+                    async with gate:
+                        after = await design_page(client, session, theme, font_css, job, look=look)
+                    gap_after = nearest(after.page) if after.ok else 0.0
+                    kept = after.ok and gap_after > gap_before and len(after.aesthetic) <= len(before.aesthetic)
+                    if kept:
+                        break
+                    if checkpoints is not None and not after.ok:
+                        checkpoints.save(f"html/failed_{job.page_number:03d}_{option}.json",
+                                         {"html": after.html, "defects": after.defects, "idea": job.idea})
+                if kept:
+                    results[job.page_number] = after
+                    if checkpoints is not None:
+                        checkpoints.save(f"html/page_{job.page_number:03d}.json",
+                                         {"html": after.html, "content": _fingerprint(job),
+                                          "attempts": before.attempts + after.attempts, "idea": job.idea,
+                                          "review_problems": [f"和第 {partner} 页构图相同"]})
+                else:
+                    plan[index] = current
+                    _apply(job, current)
+                redesigned.append({"page": job.page_number, "why": f"和第 {partner} 页构图相同", "kept": kept,
+                                   "form": job.form, "arrangement": tried,
+                                   "distance": [gap_before, round(gap_after, 3)]})
+                progress(f"[design] page {job.page_number} recomposed ({'/'.join(tried)}, kept={kept})")
+
+            done = {entry["page"] for entry in redesigned}
+            targets: dict[int, int] = {}
+            for earlier, later, _ in composition.close_pairs(compositions()):
+                page, partner = (later, earlier) if later not in held else (earlier, later)
+                if page in held or page in done or page in targets:
+                    continue
+                if by_page[page].form != "chart" and by_page[page].content.get("visual"):
+                    continue  # a page built around its source figure keeps its form; nothing else to turn
+                targets[page] = partner
+            chosen = dict(list(targets.items())[: max(2, len(jobs) // 5)])
+            await asyncio.gather(*(
+                rearrange(by_page[page], partner) if by_page[page].form == "chart"
+                else redo(by_page[page], f"和第 {partner} 页的构图（空间分割、重心、比例）几乎相同", new_form=True)
+                for page, partner in chosen.items()))
             if look:
                 # The whole deck at a glance: which pages look alike, which one is weakest.
                 sheet = contact_sheet({number: result.screenshot_png for number, result in results.items()
@@ -435,5 +528,7 @@ async def design_deck(
             redesigned=redesigned,
             silhouettes=final,
             lookalike_pairs=[list(pair) for pair in signature.lookalikes(final)],
+            composition=composition.rhythm({job.page_number: composition.of(results[job.page_number].page)
+                                            for job in jobs if results[job.page_number].ok}),
         )
     return results, summary
