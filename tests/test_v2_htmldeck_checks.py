@@ -111,3 +111,13 @@ def test_fix7_orphan_repeated_figure_and_glyph_overlap():
                '<p style="position:absolute;left:260px;top:40px;font-size:24px;white-space:nowrap;margin:0">'
                '2025年12月生成式人工智能用户规模说明文字</p></div>')
     assert "overlap" in _defects(collide, allowed=numbers_in("6.02 2025 12"), roles=True)
+
+
+@needs_browser
+def test_a_one_character_unit_stacked_under_its_figure_is_split():
+    body = ('<div class="tall"><div class="d1" style="font-size:150px;line-height:1.05">29.4</div>'
+            '<div class="unit" style="font-size:24px">个</div></div>')
+    assert "split_unit" in _defects(body, allowed=numbers_in("29.4"), roles=True)
+    whole = ('<div class="tall"><div class="d1" style="font-size:150px;line-height:1.05">29.4</div>'
+             '<div class="unit" style="font-size:24px">万户家庭宽带接入</div></div>')
+    assert "split_unit" not in _defects(whole, allowed=numbers_in("29.4"), roles=True)

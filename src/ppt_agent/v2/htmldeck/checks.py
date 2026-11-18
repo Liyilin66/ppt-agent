@@ -241,6 +241,15 @@ def find_defects(
                 ubox = _line_rect(unit)
                 same_line = ubox["y"] < box["y"] + box["h"] and box["y"] < ubox["y"] + ubox["h"]
                 gap = ubox["x"] - (box["x"] + box["w"])
+                below = (not same_line and abs(ubox["x"] - box["x"]) < 12
+                         and -6 <= ubox["y"] - (box["y"] + box["h"]) < size * 0.5)
+                if below and len(_item_text(unit).strip()) <= 2:
+                    # "29.4" with "个" on a line of its own under it: a one-character unit is part of the figure.
+                    defects.append(Defect(
+                        "split_unit",
+                        f"单位「{_item_text(unit).strip()}」只有一两个字，却单独放在数字「{_short(_item_text(figure))}」下面一行。"
+                        "把它和数字放在同一行（同一个 rowx 里，或直接写进数字的元素）。", _item_text(unit)))
+                    continue
                 if same_line and gap > max(40.0, size * 0.6):
                     defects.append(Defect(
                         "split_unit",
