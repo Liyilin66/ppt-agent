@@ -559,7 +559,9 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
     trims = []
     source_trims = []
     parsed = None
-    for _ in range(2):
+    # A page that cannot be written becomes a placeholder; the richer page model gets one more try.
+    tries = 3 if rich_tier else 2
+    for _ in range(tries):
         attempts += 1
         try:
             payload = await client.complete_json(task='page_content', system=system, user=user, context=context)
@@ -610,7 +612,7 @@ async def generate_content(client, checkpoints, slot, brief, profile, *,
                 relation_problems = check_relations(parsed.model_dump(mode='json', exclude_none=True), evidence.text)
                 if relation_problems:
                     relation_failures.append({'attempt': attempts, 'problems': relation_problems})
-                    if attempts < 2:
+                    if attempts < tries:
                         raise ValueError('Relations between figures are not supported by the source:\n'
                                          + '\n'.join(relation_problems))
             parsed, repaired = repair_citation(parsed, evidence)
