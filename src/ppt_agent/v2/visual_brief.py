@@ -155,3 +155,39 @@ async def unrelated_items(client: Any, checkpoints: Any, page: int, content: dic
     if checkpoints is not None:
         checkpoints.save(name, result)
     return result
+
+
+# Words every page of a report about AI and the internet shares: they bind nothing to anything.
+GENERIC = set("人工 工智 智能 生成 成式 中国 我国 全国 用户 比例 规模 数量 增长 同比 年度 占比 应用 产品 服务 相关 领域 "
+              "行业 产业 企业 互联 联网 网络 网民 发展 主要 整体 总体 人数 提升 达到 截至 年底 月底 上半 下半".split())
+
+
+def _terms(text: str) -> set[str]:
+    import re
+
+    chunks = re.findall(r"[一-鿿]+|[A-Za-z]{2,}", text or "")
+    bigrams = {chunk[i:i + 2] for chunk in chunks if re.match(r"[一-鿿]", chunk) for i in range(len(chunk) - 1)}
+    words = {chunk.lower() for chunk in chunks if re.match(r"[A-Za-z]", chunk)} - {"ai", "app", "apps"}
+    return (bigrams - GENERIC) | words
+
+
+def binding(content: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """How a chart is bound to the page's claim, decided from data, not from a model's opinion:
+    direct (it holds the figure the page is about), evidenced (the page cites its values and it measures
+    what the title is about), or topic (same report, different subject: not evidence)."""
+
+    import re
+
+    values = list((candidate.get("values") or {}).values())
+    head = " ".join(str(part) for part in (content.get("title"), (content.get("highlight") or {}).get("value"))
+                    if part)
+    squash = lambda text: re.sub(r"\s+", "", str(text or ""))
+    if any(value and squash(value) in squash(head) for value in values):
+        return {"relation": "direct", "why": "图表包含本页焦点数字"}
+    # The chart's subject is its metric and its categories ("50-59岁", "农村网民", "短视频").
+    subject = " ".join([str(candidate.get("metric") or "")] + [str(label) for label in (candidate.get("values") or {})])
+    shared = _terms(subject) & _terms(
+        " ".join(str(part) for part in (content.get("title"), (content.get("highlight") or {}).get("text")) if part))
+    if shared:
+        return {"relation": "evidenced", "why": "图表与标题讲同一对象：" + "、".join(sorted(shared))[:30]}
+    return {"relation": "topic", "why": "图表衡量的是另一件事，与本页论点只是同一主题"}

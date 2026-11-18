@@ -1253,6 +1253,14 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             async with semaphore:
                 choice = await visual_brief.decide(client, checkpoints, number, content, candidates)
             chosen = next((candidate for candidate in candidates if candidate['id'] == choice['use']), None)
+            if chosen is not None and chosen['id'].startswith('series:') and type_roles:
+                # The final gate is the data: a chart that measures another subject is not evidence, whatever
+                # the brief or the second look said.
+                bound = visual_brief.binding(content, chosen)
+                choice = {**choice, 'binding': bound}
+                if bound['relation'] == 'topic':
+                    choice = {**choice, 'use': 'none', 'rejected': {'id': chosen['id'], 'why': bound['why']}}
+                    chosen = None
             if chosen is not None:
                 async with semaphore:
                     check = await visual_brief.supports(client, checkpoints, number, content, chosen, choice)

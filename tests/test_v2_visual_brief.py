@@ -109,3 +109,18 @@ def test_a_visual_the_second_check_rejects_is_not_used():
     verdict = asyncio.run(visual_brief.supports(No(), None, 11, {"title": "54天466次中断推高训练成本"},
                                                 {"id": "series:x", "metric": "使用PyTorch的论文比例"}, {"claim": "中断推高成本"}))
     assert verdict == {"supports": False, "why": "PyTorch 占比与训练中断无关"}
+
+
+def test_a_chart_is_bound_by_its_data_not_by_its_topic():
+    from ppt_agent.v2.visual_brief import binding
+
+    page20 = {"title": "AI服务备案新增增长87.4%", "highlight": {"value": "87.4%", "text": "2025年新增备案生成式AI服务数量同比增长"},
+              "items": [{"heading": "工业企业采用提升", "value": "47.5%"}]}
+    industry = {"metric": "中国工业企业应用大模型及智能体的比例", "values": {"2024年": "9.6%", "2025年": "47.5%"}}
+    assert binding(page20, industry)["relation"] == "topic"
+    funding = {"title": "2024年上半年AI融资达316亿美元", "highlight": {"value": "316亿美元", "text": "AI融资金额"},
+               "items": [{"heading": "占比提升", "value": "12.1%", "body": "AI融资占全行业融资比例由4.5%升至12.1%"}]}
+    share = {"metric": "AI融资占全行业融资比例", "values": {"2022年": "4.5%", "2024年上半年": "12.1%"}}
+    assert binding(funding, share)["relation"] == "evidenced"
+    direct = {"metric": "备案服务数量同比增长", "values": {"2025年": "87.4%", "2024年": "50%"}}
+    assert binding(page20, direct)["relation"] == "direct"
