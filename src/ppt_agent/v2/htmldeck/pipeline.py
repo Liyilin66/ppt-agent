@@ -223,8 +223,17 @@ async def design_page(
             return [defect for defect in found if defect.kind not in SOFT]
 
         best_here = (body, measured, defects)
+        # The space is solved from what was measured: each region gets the rows its content takes.
+        cells = autofix.regions(body)
+        overflow = {}
+        for clip in measured.clipped:
+            if clip.get("region") and clip.get("over", 0) > 2:
+                index = autofix.region_of(clip, cells)
+                if index is not None:
+                    overflow[index] = max(overflow.get(index, 0), clip["over"])
+        solved = autofix.solve(body, overflow) if job.type_roles else None
         grown = autofix.grow(body)
-        candidates = [grown, autofix.grow(grown)]
+        candidates = ([solved, autofix.grow(solved)] if solved else []) + [grown, autofix.grow(grown)]
         if 'class="page compact' not in body:
             candidates += [variant.replace('class="page', 'class="page compact', 1) for variant in (body, *candidates)]
         smaller = [autofix.step_down(variant) for variant in candidates]
@@ -239,6 +248,7 @@ async def design_page(
                 best_here = (variant, remeasured, again)
             if not hard(again):
                 result.trace[-1]["repaired"] = True
+                result.trace[-1]["solved"] = solved is not None and variant in (solved, autofix.grow(solved))
                 return variant, remeasured, again
         return best_here
 

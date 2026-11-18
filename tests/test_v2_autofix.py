@@ -22,3 +22,19 @@ def test_contrast_ratio():
     assert round(contrast("rgb(26, 25, 22)", "rgb(26, 25, 22)"), 1) == 1.0
     assert contrast("rgb(26, 25, 22)", "rgb(243, 238, 228)") > 14
     assert contrast("rgb(111, 106, 94)", "rgb(243, 238, 228)") > 4.5   # the theme's caption grey reads
+
+
+def test_the_solver_gives_an_overflowing_region_its_rows_and_moves_the_one_below():
+    page = ('<div class="page"><div class="r" style="grid-column:1/13;grid-row:1/2">k</div>'
+            '<div class="r" style="grid-column:1/8;grid-row:2/4">big</div>'
+            '<div class="r" style="grid-column:1/8;grid-row:4/6">items</div>'
+            '<div class="r" style="grid-column:8/13;grid-row:2/7">side</div>'
+            '<div class="r bot" style="grid-column:1/13;grid-row:8/9">call</div></div>')
+    solved = autofix.solve(page, {1: 60})   # "big" is 60px too tall: one more row
+    assert autofix.regions(solved) == [(1, 13, 1, 2), (1, 8, 2, 5), (1, 8, 5, 7), (8, 13, 2, 7), (1, 13, 8, 9)]
+    assert autofix.solve(page, {1: 300}) is None   # four more rows: the items would reach the foot
+
+
+def test_a_measured_rectangle_maps_to_its_region():
+    cells = [(1, 13, 1, 2), (1, 8, 2, 4)]
+    assert autofix.region_of({"x": 76, "y": 125.5}, cells) == 1

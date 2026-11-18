@@ -13,6 +13,7 @@ Each repair is kept only if the page then has fewer hard defects.
 
 from __future__ import annotations
 
+import math
 import re
 
 ROWS, COLUMNS = 8, 12
@@ -63,3 +64,62 @@ def step_down(html: str) -> str:
         if pattern.search(html):
             return pattern.sub(rf"\g<1>{smaller}", html)
     return html
+
+
+# --- the row solver: rows sized by measurement, not by the designer's guess -------------------
+
+PAGE_TOP, PAGE_LEFT, ROW_PX, COLUMN_PX = 50.0, 76.0, 75.5, 96.0
+LAST_LINE = ROWS + 1   # grid lines run 1..9
+
+
+def region_of(rect: dict[str, float], cells: list[tuple[int, int, int, int]]) -> int | None:
+    """Which region a measured rectangle is, by the grid cell it starts in."""
+
+    column = round((rect["x"] - PAGE_LEFT) / COLUMN_PX) + 1
+    row = round((rect["y"] - PAGE_TOP) / ROW_PX) + 1
+    for index, (c0, c1, r0, r1) in enumerate(cells):
+        if c0 == column and r0 == row:
+            return index
+    return None
+
+
+def solve(html: str, overflow: dict[int, float]) -> str | None:
+    """Rows re-allocated so every region holds its measured content: a region that overflows by
+    N px gets ceil(N / row) more rows, the regions below it in its columns move down, regions
+    anchored to the foot stay there. ``None`` when the page cannot hold it all."""
+
+    cells, anchored = regions(html), _anchored(html)
+    if not cells:
+        return None
+    need = [(r1 - r0) + (math.ceil(overflow[index] / ROW_PX - 0.05) if overflow.get(index, 0) > 2 else 0)
+            for index, (_, _, r0, r1) in enumerate(cells)]
+    order = sorted(range(len(cells)), key=lambda index: (cells[index][2], cells[index][0]))
+    placed: dict[int, tuple[int, int]] = {}
+    for index in order:
+        c0, c1, r0, r1 = cells[index]
+        if anchored[index]:
+            top = LAST_LINE - need[index]          # a foot region keeps its foot
+        else:
+            above = [placed[other][1] for other in placed
+                     if not anchored[other] and cells[other][2] < r0 or (cells[other][2] == r0 and other < index)
+                     if cells[other][0] < c1 and c0 < cells[other][1] and not anchored[other]]
+            top = max([r0] + above)
+        placed[index] = (top, top + need[index])
+    # Nothing past the last line, and nothing on top of a foot region.
+    for index, (top, bottom) in placed.items():
+        if bottom > LAST_LINE or top < 1:
+            return None
+        for other, (o_top, o_bottom) in placed.items():
+            if other != index and cells[other][0] < cells[index][1] and cells[index][0] < cells[other][1] \
+                    and top < o_bottom and o_top < bottom:
+                return None
+    solved = [(c0, c1, placed[index][0], placed[index][1]) for index, (c0, c1, _, _) in enumerate(cells)]
+    if solved == cells:
+        return None
+    index_iter = iter(solved)
+
+    def replace(match: re.Match) -> str:
+        c0, c1, r0, r1 = next(index_iter)
+        return f"{match.group(1)}grid-column:{c0}/{c1};grid-row:{r0}/{r1}"
+
+    return _CELL.sub(replace, html)
