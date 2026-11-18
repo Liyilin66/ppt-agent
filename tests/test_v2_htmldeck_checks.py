@@ -121,3 +121,13 @@ def test_a_one_character_unit_stacked_under_its_figure_is_split():
     whole = ('<div class="tall"><div class="d1" style="font-size:150px;line-height:1.05">29.4</div>'
              '<div class="unit" style="font-size:24px">万户家庭宽带接入</div></div>')
     assert "split_unit" not in _defects(whole, allowed=numbers_in("29.4"), roles=True)
+
+
+@needs_browser
+def test_fix8_small_stacked_unit_and_undeclared_half_bleed():
+    stacked = ('<div class="tall"><div class="d1" style="font-size:230px;line-height:1.1">15.97</div>'
+               '<div class="unit" style="font-size:24px">万亿元</div></div>')
+    assert "split_unit" in _defects(stacked, allowed=numbers_in("15.97"), roles=True)
+    panel = ('<div class="tall" style="position:relative"><div style="position:absolute;right:-60px;top:100px;width:600px;'
+             'height:300px;background:#1a1916"></div></div>')
+    assert "off_canvas" in _defects(panel, allowed=numbers_in(""), roles=True)

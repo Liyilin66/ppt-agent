@@ -1313,47 +1313,74 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 return claim_audit.decide(verdicts[number], results[number][0].model_dump(mode='json', exclude_none=True))
 
             failing = [number for number in numbers if decided(number)['rewrite'] and number not in signed]
-            before_audit = {number: (results[number], verdicts[number]) for number in failing}
-            before_dump = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()
-                           if number in numbers}
-            from ppt_agent.v2 import content_plan as deck_content
-            if failing:
-                def taken(number):
-                    # Figures of this page's evidence that other pages already show: a rewrite must not reach for them.
-                    own = deck_content.figures(getattr(packets.get(number), 'text', '') or '')
-                    elsewhere = set().union(*(deck_content.figures(json.dumps(results[other][0].model_dump(mode='json'), ensure_ascii=False))
-                                              for other in numbers if other != number))
-                    return sorted(own & elsewhere - deck_content.figures(json.dumps(results[number][0].model_dump(mode='json'), ensure_ascii=False)))
+            defects = []
 
-                rewritten = await asyncio.gather(*(
-                    produce(by_number[number], revision=claim_audit.instruction(decided(number), taken(number)),
-                            current=results[number][0].model_dump(mode='json', exclude_none=True))
-                    for number in failing))
-                results.update(dict(rewritten))
-                await recover_failed('after claim audit')
-                verdicts.update(await audited(failing))
-                # A rewrite must not tell another page's facts again (round 7: the 政务 page, rewritten, took the
-                # 备案 growth rates the page before it shows). Such a rewrite is undone and the page reported.
-                dumped = {number: content.model_dump(mode='json', exclude_none=True) for number, (content, _) in results.items()
-                          if number in numbers}
-                repeated_by_rewrite = {}
-                # Any repeat the rewrites created: a suspect pair that was not one before them.
-                old_pairs = {tuple(pair['pages']) for pair in deck_content.suspects(before_dump)}
-                for pair in deck_content.suspects(dumped):
-                    hit = set(pair['pages']) & set(failing)
-                    if hit and tuple(pair['pages']) not in old_pairs:
-                        for number in hit:
-                            repeated_by_rewrite[number] = pair
-                for number, pair in repeated_by_rewrite.items():
-                    (content, record), verdicts[number] = before_audit[number]
-                    results[number] = (content, {**record, 'claim_audit_reverted': pair})
-                if repeated_by_rewrite:
-                    progress(f"[content] claim audit: rewrite undone on {sorted(repeated_by_rewrite)}: it repeated another page")
+            def moved_out(content, indices):
+                """REMOVE_ITEM: the unrelated items go to the notes; the page is not rewritten for them."""
+                if not indices:
+                    return content
+                moved = [content.items[index] for index in indices]
+                kept = [item for index, item in enumerate(content.items) if index not in indices]
+                note = '与本页论点无关、移出页面的事实：' + '；'.join(
+                    ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                return content.model_copy(update={'items': kept, 'speaker_notes': (
+                    (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
+
+            async def repair(number):
+                # Minimal, located repairs instead of a new page: unrelated items out, then the claim (title and
+                # lead) rephrased from the page's own facts, verified by the audit; one more try, then a person.
+                content, record = results[number]
+                before = claim_audit.content_hash(content.model_dump(mode='json', exclude_none=True))
+                decision = decided(number)
+                content = moved_out(content, decision['move_items'])
+                steps, verdict = [], verdicts[number]
+                for attempt in (1, 2):
+                    dumped = content.model_dump(mode='json', exclude_none=True)
+                    proposal = await claim_audit.rephrase(client, checkpoints, number, dumped, decision)
+                    if not proposal:
+                        steps.append({'attempt': attempt, 'op': 'REPHRASE_CLAIM', 'result': 'rejected: added a figure or failed'})
+                        continue
+                    candidate = content.model_copy(update=proposal)
+                    verdict = await claim_audit.audit_page(auditor, checkpoints, number,
+                                                           candidate.model_dump(mode='json', exclude_none=True),
+                                                           getattr(packets.get(number), 'text', '') or '')
+                    decision = claim_audit.decide(verdict, candidate.model_dump(mode='json', exclude_none=True))
+                    steps.append({'attempt': attempt, 'op': 'REPHRASE_CLAIM', 'proposal': proposal,
+                                  'verdict': verdict.get('verdict'), 'still': decision['rewrite']})
+                    content = moved_out(candidate, decision['move_items'])
+                    if not decision['rewrite']:
+                        break
+                after = claim_audit.content_hash(content.model_dump(mode='json', exclude_none=True))
+                status = 'VERIFIED_FIXED' if not decision['rewrite'] else 'NEEDS_REVIEW'
+                defects.append({'defect_id': f'claim-{number:03d}', 'slide_id': f'p{number:03d}', 'defect_type': 'claim_evidence',
+                                'findings': decided(number)['rewrite'], 'ops': steps, 'before_hash': before, 'after_hash': after,
+                                'resolved': status})
+                return number, (content, record), verdict
+
+            if failing:
+                from ppt_agent.v2 import content_plan as deck_content
+                before = {number: (results[number], verdicts[number]) for number in failing}
+                old_pairs = {tuple(pair['pages']) for pair in deck_content.suspects(
+                    {n: c.model_dump(mode='json', exclude_none=True) for n, (c, _) in results.items() if n in numbers})}
+                repaired = await asyncio.gather(*(repair(number) for number in failing))
+                for number, result, verdict in repaired:
+                    results[number] = result
+                    verdicts[number] = verdict
+                # A repair must not make two pages repeat each other; such a repair is undone (rolled back).
+                for pair in deck_content.suspects({n: c.model_dump(mode='json', exclude_none=True)
+                                                   for n, (c, _) in results.items() if n in numbers}):
+                    for number in set(pair['pages']) & set(failing):
+                        if tuple(pair['pages']) not in old_pairs:
+                            (content, record), verdicts[number] = before[number]
+                            results[number] = (content, {**record, 'claim_audit_reverted': pair})
+                            for defect in defects:
+                                if defect['slide_id'] == f'p{number:03d}':
+                                    defect.update(resolved='NEEDS_REVIEW', rolled_back=pair)
             decisions = {number: decided(number) for number in numbers}
             for number in numbers:
                 content, record = results[number]
                 decision = decisions[number]
-                if decision['move_items'] and number not in signed:
+                if decision['move_items'] and number not in signed and number not in failing:
                     # An unrelated fact among the items goes to the notes; the page is not rewritten for it.
                     moved = [content.items[index] for index in decision['move_items']]
                     kept = [item for index, item in enumerate(content.items) if index not in decision['move_items']]
@@ -1368,7 +1395,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 results[number] = (content, record)
                 checkpoints.save(f'typeset/final/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             audit_summary = claim_audit.summary(verdicts)
-            audit_summary.update(rewritten=failing, still_failing=[n for n in numbers if decisions[n]['rewrite']],
+            checkpoints.save('typeset/defects.json', defects)
+            audit_summary.update(rewritten=failing, repairs={d['slide_id']: d['resolved'] for d in defects}, still_failing=[n for n in numbers if decisions[n]['rewrite']],
                                  items_moved={str(n): decisions[n]['move_items'] for n in numbers if decisions[n]['move_items']},
                                  minor={str(n): decisions[n]['minor'] for n in numbers if decisions[n]['minor']})
             checkpoints.save('typeset/claim_audit.json', audit_summary)

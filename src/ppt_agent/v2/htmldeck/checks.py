@@ -244,6 +244,14 @@ def find_defects(
                 gap = ubox["x"] - (box["x"] + box["w"])
                 below = (not same_line and abs(ubox["x"] - box["x"]) < 12
                          and -6 <= ubox["y"] - (box["y"] + box["h"]) < size * 0.5)
+                unit_size = max((run["size"] for run in unit["runs"] if run.get("t", "").strip()), default=0)
+                if below and unit_size and unit_size < 0.15 * size:
+                    # "15.97" at 230px over "万亿元" at 24px: the unit is too small to read as part of the figure.
+                    defects.append(Defect(
+                        "split_unit",
+                        f"单位「{_item_text(unit).strip()}」（{unit_size:.0f}px）放在 {size:.0f}px 的数字「{_short(_item_text(figure))}」下面，"
+                        f"小到读不出是同一个数。把单位放到数字右侧同一行，或至少放大到 {0.15 * size:.0f}px。", _item_text(unit)))
+                    continue
                 if below and len(_item_text(unit).strip()) <= 2:
                     # "29.4" with "个" on a line of its own under it: a one-character unit is part of the figure.
                     defects.append(Defect(
@@ -377,6 +385,17 @@ def find_defects(
                         "tight", f"文字「{_short(_item_text(item))}」贴在下面色块的上沿（只隔 {gap:.0f} 像素），读起来像压在上面。"
                         "给它们之间留出至少一行的空隙。", _item_text(item)))
                     break
+        for panel in panels:
+            # A filled panel runs to one edge of the slide and not the other: neither inside the content
+            # margins nor a deliberate full-bleed band (round 7: a dark panel to the right edge only).
+            left, right = panel["x"] <= TOLERANCE, panel["x"] + panel["w"] >= CANVAS_WIDTH - TOLERANCE
+            rgb = _rgb(panel.get("bg") or "")
+            dark = rgb is not None and max(rgb) < 90
+            declared = any(name.startswith("bleed") for name in panel.get("cls", "").split())  # the theme's own bleed
+            if dark and left != right and panel["w"] < 0.9 * CANVAS_WIDTH and not declared:
+                defects.append(Defect(
+                    "off_canvas", f"深色色块（{panel['w']:.0f}×{panel['h']:.0f}）一侧伸到页面{'左' if left else '右'}边缘，另一侧没有："
+                    "既不在内容边距里，也不是整条的满版色带。把它收回到内容区（左右各留出页边距）。"))
         for figure in texts:
             size = max((run["size"] for run in figure["runs"] if run.get("t", "").strip()), default=0)
             if size < 48:

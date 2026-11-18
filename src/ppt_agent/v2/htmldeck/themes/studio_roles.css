@@ -5,3 +5,6 @@
 .compact .s{font-size:17px;line-height:1.5}
 /* The proportion bar's .fill is black; the plain ledger's "ledger fill" (grow to fill) must not be. */
 .ledger.fill{background:none}
+/* A display figure never wraps; its cell in a row must not shrink below it, or the figure spills into the
+   next cell ("6.02亿人" 29px into its label, "3958亿GB" 0.5px from it). The other cell gives way instead. */
+.rowx>:has(>.d1,>.d2,>.d3,>.d4){flex-shrink:0;min-width:max-content}

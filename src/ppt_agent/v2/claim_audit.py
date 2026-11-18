@@ -206,3 +206,51 @@ def summary(verdicts: dict[int, dict[str, Any]]) -> dict[str, Any]:
             "findings": {str(n): {key: v.get(key) for key in ("claim", "unsupported", "instruction")}
                          | {"unrelated": [f for f in v.get("facts") or [] if f.get("relation") == "unrelated"]}
                          for n, v in sorted(verdicts.items()) if v.get("verdict") != "ok"}}
+
+
+REPHRASE = """你是严格的事实编辑。这一页的论点（标题、导语）被审稿指出了问题。只改标题和导语，让它们准确表述页面上已有的事实：
+- 只能用页面上已经出现的数字和事实，不新增任何数字，不改讲别的话题，标题讲的对象不变；
+- 删去没有数据支撑的比较、增速、排名、因果说法，或改成页面数据能直接支持的说法；
+- 不要把两个对象拼成一个论点：标题讲一个对象；
+- 标题不超过 26 个字，导语不超过 40 个字。
+只返回 JSON：{"title": "...", "lead": "..."}"""
+
+
+def figures_of(text: Any) -> set[str]:
+    return {re.sub(r"\s+", "", match) for match in re.findall(r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|个|款|人|倍|小时|GB)?", _flat(text))}
+
+
+def _bare(figures: set[str]) -> set[str]:
+    return {re.match(r"\d+(?:\.\d+)?", figure).group() for figure in figures if re.match(r"\d+(?:\.\d+)?", figure)}
+
+
+async def rephrase(client: Any, checkpoints: Any, number: int, content: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    """REPHRASE_CLAIM: a new title and lead for the findings, using only the page's own figures.
+    Cached by its inputs, so a replay gets the same words. Returns {} when the proposal adds a figure."""
+
+    body = {key: value for key, value in view(content).items() if key not in ("title", "lead")}
+    findings = instruction(decision)
+    key = hashlib.sha1((VERSION + json.dumps([view(content), findings], ensure_ascii=False, sort_keys=True)).encode()).hexdigest()[:16]
+    name = f"typeset/claim_repair/{key}.json"
+    saved = checkpoints.load(name) if checkpoints is not None else None
+    if saved is None:
+        try:
+            saved = await client.complete_json(task="claim_rephrase", system=REPHRASE, max_output_tokens=800,
+                                               user=json.dumps({"page": number, "title": content.get("title"),
+                                                                "lead": content.get("lead"), "page_facts": body,
+                                                                "findings": findings}, ensure_ascii=False))
+        except Exception as exc:  # noqa: BLE001
+            saved = {"error": str(exc)[:300]}
+        if checkpoints is not None:
+            checkpoints.save(name, saved)
+    title, lead = str(saved.get("title") or "").strip(), str(saved.get("lead") or "").strip()
+    if not title:
+        return {}
+    allowed = _bare(figures_of(body)) | _bare(figures_of(content.get("highlight")))
+    if not _bare(figures_of([title, lead])) <= allowed:
+        return {}  # a new figure: not a rephrasing
+    return {"title": title[:40], "lead": lead[:60] or None}
+
+
+def content_hash(content: dict[str, Any]) -> str:
+    return hashlib.sha1(json.dumps(view(content), ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
