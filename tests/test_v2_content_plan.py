@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from ppt_agent.v2 import content_plan as cp
 
@@ -28,7 +29,7 @@ def test_suspects_same_focal_figure_nearby_only():
                 12: _page("普及率达36.5%", "36.5%")}
     pairs = [pair["pages"] for pair in cp.suspects(contents)]
     assert [4, 5] in pairs and [4, 6] not in pairs
-    assert not any(12 in pair for pair in pairs)  # too far apart to read as a repeat
+    assert [4, 12] in pairs and [6, 12] not in pairs  # far apart: only the plain signs count
 
 
 def test_rewrite_the_page_straying_from_its_plan_and_never_a_signed_page():
@@ -96,3 +97,28 @@ def test_one_figure_pages_retelling_their_neighbours_are_suspects():
                 5: _page("5.15亿用户奠定竞争基础", "5.15亿人"), 6: _page("36.5%普及率表明覆盖已广泛", "36.5%")}
     pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
     assert pairs[(3, 5)]["nothing_new"] and pairs[(4, 6)]["nothing_new"]
+
+
+def test_a_repeat_far_down_the_deck_is_still_a_suspect():
+    contents = {17: _page("外卖以3748万人增量领跑典型应用", "3748万人"), 22: _page("外卖以3748万人新增领跑应用增长", "3748万人"),
+                30: _page("短视频覆盖率升至95.4%", "95.4%")}
+    pairs = {tuple(pair["pages"]): pair for pair in cp.suspects(contents)}
+    assert pairs[(17, 22)]["why"] == "焦点数字相同" and (17, 30) not in pairs
+
+
+def test_a_long_deck_is_planned_in_batches_that_see_each_other():
+    from types import SimpleNamespace
+
+    calls = []
+
+    class Planner:
+        async def complete_json(self, **kwargs):
+            asked = json.loads(kwargs["user"])
+            calls.append(len(asked["already_planned"]))
+            return {"pages": [{"page": entry["page"], "claim": f"c{entry['page']}", "lead": "", "owns": []}
+                              for entry in asked["pages"]]}
+
+    slots = [SimpleNamespace(page_number=n, brief=None, section_title="s") for n in range(3, 40)]
+    packets = {n: SimpleNamespace(text="", chunk_ids=[f"c{n}"]) for n in range(3, 40)}
+    planned = asyncio.run(cp.plan(Planner(), _Checkpoints(), slots, packets))
+    assert len(planned) == 37 and calls == [0, 12, 24, 36]

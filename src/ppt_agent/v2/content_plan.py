@@ -35,6 +35,7 @@ PLAN_SYSTEM = (
     "3. 两页的证据讲的是同一件事时，把它们分成不同的角度（例如一页讲规模、一页讲结构，一页讲现状、一页讲原因），"
     "角度必须来自各自的证据，不能编造。\n"
     "4. 观点和领衔事实只能来自该页自己的证据句；不要自己计算合计、差值或倍数。\n"
+    "already_planned 是前面已经定好的页：本批的页不能重复它们的观点，不能领衔或拥有它们已用的数字。\n"
     "5. 各页的 owns 互不重叠。几页共用一份证据时，把证据里的事实分组分给它们；"
     "宁可让一页讲一组别页都没用的事实（例如构成、人群、原因），也不要让它复述别页。\n"
     "6. 一页的价值不只来自独有的数字。role 写这一页在叙事里的任务：detail（用自己的事实论证一个观点）；"
@@ -142,8 +143,15 @@ def _clean(entry: dict[str, Any]) -> dict[str, Any]:
 NARRATIVE = ("summary", "judgement", "visual")  # tasks that give a page its place without figures of its own
 
 
+BATCH = 12  # pages planned in one call: 37 at once overran the reply limit and the plan came back empty
+
+
 async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]:
-    """Each page's claim, lead fact and increment; cached at ``typeset/content_plan.json``."""
+    """Each page's claim, lead fact and increment; cached at ``typeset/content_plan.json``.
+
+    A long deck is planned a batch at a time; each batch sees what the earlier ones settled, so no
+    two pages lead with one fact across batches either. A batch whose call fails is tried again and,
+    failing that, recorded in ``failures`` - never silently left out."""
 
     saved = checkpoints.load("typeset/content_plan.json")
     numbers = sorted(slot.page_number for slot in slots)
@@ -152,43 +160,54 @@ async def plan(client, checkpoints, slots, packets) -> dict[int, dict[str, Any]]
             and saved.get("evidence", evidence) == evidence:
         return {int(page): entry for page, entry in saved["pages"].items()}
     digest = _digest(slots, packets)
-    user = json.dumps(digest, ensure_ascii=False)
     result: dict[int, dict[str, Any]] = {}
     found: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
     rounds = 0
-    for _ in range(2):
-        rounds += 1
-        try:
-            reply = await client.complete_json(task="content_plan", system=PLAN_SYSTEM, user=user,
-                                               max_output_tokens=6000, context={"pages": digest})
-        except Exception:  # noqa: BLE001 - pages are still written, from their own evidence
-            break
-        entries = reply.get("pages") if isinstance(reply, dict) else None
-        unsupported = []
-        result = {entry["page"]: _clean(entry) for entry in entries or []
-                  if isinstance(entry, dict) and entry.get("page") in numbers}
-        for page, entry in result.items():
-            packet = packets.get(page)
-            own = figures(packet.text if packet is not None else "")
-            missing = owned_figures(entry) - own
-            if missing:
-                # A lead the page's evidence does not hold (often a sum the planner worked out)
-                # would make the page argue a number the source never gives.
-                unsupported.append({"page": page, "lead": entry["lead"], "not_in_evidence": sorted(missing)})
-                entry.update(lead="", claim="", owns=[], unsupported_lead=True)
-            if entry["role"] == "summary" and not _summary_slot(next(
-                    (slot for slot in slots if slot.page_number == page), None)):
-                entry["role"] = "detail"  # only a page the outline made a summary may restate others
-        found = conflicts(result)
-        if not found and not unsupported:
-            break
-        user += ("\n上一版策划有问题，请改正后整套重新输出："
-                 + ("\n这些页领衔了同一个数字，让每个数字只有一页领衔：" + json.dumps(found, ensure_ascii=False) if found else "")
-                 + ("\n这些页的领衔事实里有证据中没有的数字（不能自己计算合计或差值）：" + json.dumps(unsupported, ensure_ascii=False)
-                    if unsupported else ""))
+    for start in range(0, len(digest), BATCH):
+        batch = digest[start:start + BATCH]
+        wanted = {entry["page"] for entry in batch}
+        earlier = [{"page": page, "claim": entry["claim"], "lead": entry["lead"], "owns": entry["owns"]}
+                   for page, entry in sorted(result.items())]
+        user = json.dumps({"already_planned": earlier, "pages": batch}, ensure_ascii=False)
+        part: dict[int, dict[str, Any]] = {}
+        for attempt in range(3):
+            rounds += 1
+            try:
+                reply = await client.complete_json(task="content_plan", system=PLAN_SYSTEM, user=user,
+                                                   max_output_tokens=8000, context={"pages": batch})
+            except Exception as error:  # noqa: BLE001 - tried again below, then recorded
+                failures.append({"pages": sorted(wanted), "attempt": attempt + 1, "error": str(error)[:160]})
+                continue
+            entries = reply.get("pages") if isinstance(reply, dict) else None
+            part = {entry["page"]: _clean(entry) for entry in entries or []
+                    if isinstance(entry, dict) and entry.get("page") in wanted}
+            unsupported = []
+            for page, entry in part.items():
+                packet = packets.get(page)
+                missing = owned_figures(entry) - figures(packet.text if packet is not None else "")
+                if missing:
+                    # A lead the page's evidence does not hold (often a sum the planner worked out)
+                    # would make the page argue a number the source never gives.
+                    unsupported.append({"page": page, "lead": entry["lead"], "not_in_evidence": sorted(missing)})
+                    entry.update(lead="", claim="", owns=[], unsupported_lead=True)
+                if entry["role"] == "summary" and not _summary_slot(next(
+                        (slot for slot in slots if slot.page_number == page), None)):
+                    entry["role"] = "detail"  # only a page the outline made a summary may restate others
+            found = conflicts({**result, **part})
+            if not found and not unsupported and len(part) == len(wanted):
+                break
+            user += ("\n上一版策划有问题，请改正后把这一批重新输出："
+                     + (f"\n缺了这些页：{sorted(wanted - set(part))}" if len(part) < len(wanted) else "")
+                     + ("\n这些页领衔了同一个数字，让每个数字只有一页领衔：" + json.dumps(found, ensure_ascii=False) if found else "")
+                     + ("\n这些页的领衔事实里有证据中没有的数字（不能自己计算合计或差值）：" + json.dumps(unsupported, ensure_ascii=False)
+                        if unsupported else ""))
+        result.update(part)
+    missing_pages = sorted(set(numbers) - set(result))
     checkpoints.save("typeset/content_plan.json", {"evidence": evidence,
                                                    "pages": {str(k): v for k, v in sorted(result.items())},
-                                                   "conflicts_left": found, "rounds": rounds})
+                                                   "conflicts_left": found, "rounds": rounds,
+                                                   "failures": failures, "unplanned_pages": missing_pages})
     return result
 
 
@@ -218,9 +237,17 @@ def suspects(contents: dict[int, dict[str, Any]], *, window: int = WINDOW) -> li
     pages = sorted(contents)
     for index, later in enumerate(pages):
         for earlier in pages[:index]:
-            if later - earlier > window:
-                continue
             first, second = contents[earlier], contents[later]
+            if later - earlier > window:
+                # Far apart, only the plain signs: the same focal figure, title figures or title.
+                focal = [figures((content.get("highlight") or {}).get("value")) for content in (first, second)]
+                same = (focal[0] and focal[0] == focal[1]) or (figures(first.get("title")) & figures(second.get("title"))) \
+                    or (first.get("title") or "").strip() == (second.get("title") or "").strip()
+                if same:
+                    found.append({"pages": [earlier, later], "shared": sorted(figures(_text(first)) & figures(_text(second))),
+                                  "why": "焦点数字相同" if focal[0] and focal[0] == focal[1] else "标题相同或标题数字相同",
+                                  "nothing_new": False, "far": True})
+                continue
             focal = [(content.get("highlight") or {}).get("value") for content in (first, second)]
             same_focal = bool(focal[0]) and figures(focal[0]) and figures(focal[0]) == figures(focal[1])
             titles = figures(first.get("title")) & figures(second.get("title"))

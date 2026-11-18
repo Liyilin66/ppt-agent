@@ -1042,7 +1042,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
     if rich and evidence_store is not None:
         from ppt_agent.v2 import content_plan as deck_content
         page_plans = await deck_content.plan(client, checkpoints, content_slots, packets)
-        progress(f'[content] {len(page_plans)} page claims planned across the deck')
+        unplanned = sorted({slot.page_number for slot in content_slots} - set(page_plans))
+        progress(f'[content] {len(page_plans)} page claims planned across the deck'
+                 + (f'; NOT planned: {unplanned} (see typeset/content_plan.json failures)' if unplanned else ''))
 
     async def produce(slot, revision=None, current=None):
         assigned = plan[slot.page_number]
@@ -1121,8 +1123,8 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
         return slot.page_number, (content, record)
 
     results = dict(await asyncio.gather(*(produce(slot) for slot in content_slots)))
-    if page_plans:
-        # Pages that still argue one conclusion twice: the later (or straying) one is rewritten once.
+    if rich and evidence_store is not None:
+        # Pages that still argue one conclusion twice (checked even where planning failed): the later (or straying) one is rewritten once.
         signed = set((checkpoints.load('html/accepted.json') or {}).get('pages', []))
         by_number = {slot.page_number: slot for slot in content_slots}
         overlap = await deck_content.review(

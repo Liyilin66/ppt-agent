@@ -127,7 +127,7 @@ async def decide(client: Any, checkpoints: Any, slots: list[Any], packets: dict[
         try:
             reply = await client.complete_json(task="page_budget", system=BUDGET_SYSTEM,
                                                user=json.dumps(asked, ensure_ascii=False),
-                                               max_output_tokens=3000, context={"pages": numbers})
+                                               max_output_tokens=6000, context={"pages": numbers})
         except Exception as error:  # noqa: BLE001 - the outline stands as planned
             reply = {"error": str(error)[:120]}
         result["decisions"] = validate(reply, over, spare)
