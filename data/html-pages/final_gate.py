@@ -40,8 +40,12 @@ for slide in slides:
         continue
     problems = []
     for found in drawn.get(str(final), []):
-        problems.append(f"orphan「{found['orphan']}」after「{found['after']}」" if "orphan" in found
-                        else f"collision: {' / '.join(found['lines'])}")
+        if "orphan" in found:
+            problems.append(f"orphan「{found['orphan']}」after「{found['after']}」")
+        elif "tight" in found:
+            problems.append(f"tight ({found['gap_pt']}pt): {' / '.join(found['tight'])}")
+        else:
+            problems.append(f"collision: {' / '.join(found['lines'])}")
     problems += [f"chart: {verdict}" for verdict in charts.get(final, []) if verdict != "matches the verified series"]
     if slide.get("status") == "NEEDS_CONTENT_REVIEW":
         problems.append("content: needs review (claim audit or recovery)")
