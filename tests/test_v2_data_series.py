@@ -189,3 +189,27 @@ def test_a_series_goes_to_the_one_page_that_talks_about_it():
     assert list(placed) == [6]  # the page that leads with the figure
     assert list(data_series.assign({4: series, 5: series}, pages)) == [5]
     assert data_series.assign({4: series}, pages) == {}
+
+
+def test_a_measured_change_to_a_year_is_not_a_forecast():
+    from ppt_agent.v2.data_series import verify
+    evidence = "[r.pdf | pdf p58]\n中国工业企业应用大模型及智能体的比例，从2024年的9.6%提升到2025年的47.5%。"
+    quote = "中国工业企业应用大模型及智能体的比例，从2024年的9.6%提升到2025年的47.5%"
+    raw = [{"metric": "工业企业应用大模型比例", "unit": "%", "kind": "time", "points": [
+        {"label": "2024年", "value": 9.6, "display": "9.6%", "quote": quote},
+        {"label": "2025年", "value": 47.5, "display": "47.5%", "quote": quote}]}]
+    kept, _ = verify(raw, evidence)
+    assert kept and not any(point.projected for point in kept[0].points)
+    raw[0]["points"][1]["projected"] = True   # the model calls it a forecast; the source does not
+    kept, rejected = verify(raw, evidence)
+    assert any("状态无法核实" in entry["why"] for entry in rejected)
+
+
+def test_a_table_column_of_different_metrics_is_not_a_series():
+    from ppt_agent.v2.tables import series_of
+    table = {"label": "表 1", "title": "互联网基础资源", "ref": "r.pdf 第11页", "headers": ["分类", "单位", "2025 年 12 月"],
+             "rows": [["IPv4", "个", "356,499,695"], ["IPv6", "块/32", "70,215"], ["IPv6 活跃用户数", "亿", "8.50"],
+                      ["我国域名", "个", "32,304,927"]]}
+    assert series_of(table) == []
+    same_unit = {**table, "rows": [row for row in table["rows"] if row[1] == "个"]}
+    assert series_of(same_unit) == []   # one unit, but each row is its own metric at a date

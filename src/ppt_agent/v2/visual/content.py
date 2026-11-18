@@ -211,6 +211,7 @@ class DataSeries(StrictModel):
     # Whether these are all the members the source gives (a whole distribution or ranking) or a
     # selection of them ("北京最多，其次上海和广东" out of 27 regions). An excerpt is drawn as an
     # excerpt and named so; it is never a share of a whole.
+    measure: str | None = Field(default=None, max_length=12)  # total / increment / share / growth / points
     coverage: Literal["complete", "excerpt", "unknown"] = "unknown"
     of_total: int | None = Field(default=None, ge=2)
     selection: str | None = Field(default=None, max_length=30)

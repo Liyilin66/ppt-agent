@@ -150,6 +150,9 @@ def _figure(cell: str) -> tuple[float, str] | None:
     return float(match.group().replace(",", "")), text[match.end():]
 
 
+_DATE_HEADER = re.compile(r"(?:19|20)\d{2}\s*年|\d{4}[.\-/]\d{1,2}|\d{1,2}\s*月|季度|上半年|下半年")
+
+
 def series_of(table: dict[str, Any]) -> list[dict[str, Any]]:
     """Each column of a verified table that is one measure in one unit, as a
     series across the table's rows. Nothing is computed and no row is left out."""
@@ -157,8 +160,16 @@ def series_of(table: dict[str, Any]) -> list[dict[str, Any]]:
     headers, rows = table["headers"], table["rows"]
     if not rows:
         return []
+    # A unit column means each row is measured in its own unit: rows of different units never share an axis.
+    unit_column = next((column for column, header in enumerate(headers) if re.sub(r"\s+", "", header) in ("单位", "计量单位")), None)
+    if unit_column is not None and len({re.sub(r"\s+", "", row[unit_column]) for row in rows}) > 1:
+        return []
     numeric = {column for column in range(len(headers))
-               if all(_figure(row[column]) for row in rows) and len({_figure(row[column])[1] for row in rows}) == 1}
+               if column != unit_column and all(_figure(row[column]) for row in rows)
+               and len({_figure(row[column])[1] for row in rows}) == 1
+               # A column headed by a date holds each row's own measure at that date (表1: IPv4 addresses,
+               # domains, ports...): a list of different metrics, not one metric across categories.
+               and not _DATE_HEADER.search(headers[column])}
     # The rows are named by the left-most column whose cells are all different.
     names = next((column for column in range(len(headers))
                   if column not in numeric and len({row[column] for row in rows}) == len(rows)), None)
@@ -166,7 +177,7 @@ def series_of(table: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     made = []
     for column in sorted(numeric):
-        unit = _figure(rows[0][column])[1]
+        unit = _figure(rows[0][column])[1] or (re.sub(r"\s+", "", rows[0][unit_column]) if unit_column is not None else "")
         made.append({
             "metric": f"{headers[column]}（{table['label']} {table['title']}）"[:36], "unit": unit[:10], "kind": "category",
             "scope": headers[names][:30], "period": None,

@@ -26,7 +26,9 @@ MIN_LEFT = 3       # a comparison cut down to two is a different comparison
 _PAGE = re.compile(r"^\[(?P<name>[^|\]]+?)\s*\|\s*(?P<kind>[^\]]*?)\s*p(?P<page>\d+)\]\s*$", re.M)
 _FIGURE = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 _YEAR = re.compile(r"(?:19|20)\d{2}")
-_FORECAST = re.compile(r"预计|预测|预期|有望|计划|目标|将达|将增|将超|到20\d{2}年")
+# Only words that say a value is not yet observed. "提升到2025年的47.5%" is a measurement; a date after
+# "到" or "截至" says nothing about whether the value was observed.
+_FORECAST = re.compile(r"预计|预测|预期|有望|计划|目标值|目标为|将达|将增|将超|将突破|将实现|规划")
 _BEFORE = "约超近逾达至少多于不足低高过"   # qualifiers a source puts before a figure
 _AFTER = re.compile(r"^(?:余|多|来)")        # ...and straight after it: 80余种
 _TAIL = re.compile(r"(?:以上|以下|左右|上下)$")
@@ -46,7 +48,7 @@ SERIES_SYSTEM = (
     "- 不要计算，不要补全原文没有的年份或类别，不要把「约为 2022 年的 9 倍」这样的话换算成数值。\n"
     "- display 写原文里的数字和单位（如 4.5%、316亿美元），value 是其中的数字，unit 是单位。\n"
     "- label 是这个值对应的时间或对象，用原文的说法（如 2022年、2024年上半年、GPT-3）。\n"
-    "- 预测、计划、目标值把 projected 设为 true。\n"
+    "- 只有原文明确说是预计、预测、计划、目标的值才把 projected 设为 true；「提升到 2025 年」「截至 2025 年」是实测。\n"
     "- metric 写清指标的完整定义（谁的、什么的），scope 写口径或主体（如 全球、中国），period 写时间范围。\n"
     "- 标着「图中坐标配对」的段落，是资料里一张图的标签和数值按它们在页面上的位置一一配好的，每行「标签 数值」；"
     "用它时 quote 照抄那一行，label 照抄行里的标签。它只说明这张图画了什么，指标、口径和时间要从图题和正文里找。\n"
@@ -206,9 +208,15 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
                 if earlier and earlier[-1] not in label:
                     drop(series, f"数值前最近的年份是 {earlier[-1]}，不是这个标签的年份", point)
                     continue
+            explicit = bool(_FORECAST.search(_squash(quote)))
+            if point.get("projected") and not explicit:
+                # Called a forecast with no forecast word in the source: its status cannot be checked,
+                # and neither the observed nor the forecast drawing may be used for it.
+                drop(series, "标为预测，但原文没有预测措辞，状态无法核实", point)
+                continue
             points.append({"label": label[:20], "value": value, "display": _squash(display)[:16],
                            "quote": quote.strip()[:160], "ref": ref,
-                           "projected": bool(point.get("projected")) or bool(_FORECAST.search(_squash(quote))),
+                           "projected": explicit,
                            "_anchor": anchor, "_at": at})
         omitted: list[str] = []
         if len(points) < len(proposed):
@@ -261,6 +269,7 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
         try:
             kept.append(DataSeries(
                 metric=str(series.get("metric") or "")[:36], unit=unit[:10], kind=kind,
+                measure=next(iter(classes)) if len(classes) == 1 else None,
                 period=(str(series.get("period") or "")[:28] or None),
                 scope=(str(series.get("scope") or "")[:30] or None), points=unique, omitted=omitted))
         except ValidationError as error:

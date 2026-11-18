@@ -56,7 +56,7 @@ def job_for(content: Any, *, page_number: int, section_index: int | None,
         for point in series["points"]:
             point.pop("quote", None)  # the proof stays with the content; the page shows the value
         if series.get("coverage") == "unknown" and not series.get("of_total") and not series.get("selection"):
-            for name in ("coverage", "of_total", "selection"):
+            for name in ("coverage", "of_total", "selection", "measure"):
                 series.pop(name, None)  # a series read before coverage was judged reads as it did
     return DesignJob(
         page_number=page_number,
