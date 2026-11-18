@@ -214,6 +214,7 @@ def summary(verdicts: dict[int, dict[str, Any]]) -> dict[str, Any]:
             "ok": sorted(n for n, v in verdicts.items() if v.get("verdict") == "ok"),
             "fix": sorted(n for n, v in verdicts.items() if v.get("verdict") == "fix"),
             "error": sorted(n for n, v in verdicts.items() if v.get("verdict") == "error"),
+            "error_messages": {str(n): v.get("error") for n, v in verdicts.items() if v.get("verdict") == "error"},
             "findings": {str(n): {key: v.get(key) for key in ("claim", "unsupported", "instruction")}
                          | {"unrelated": [f for f in v.get("facts") or [] if f.get("relation") == "unrelated"]}
                          for n, v in sorted(verdicts.items()) if v.get("verdict") != "ok"}}
