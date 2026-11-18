@@ -123,6 +123,27 @@ def create_v2_model_client():
     return build_v2_client(config, usage=usage)
 
 
+DEFAULT_REVIEW_MODEL = "gpt-6.2-sol"
+
+
+def create_v2_review_client():
+    """The blind reviewer: another model than the designer's (``PPT_AGENT_REVIEW_MODEL``).
+
+    In the P3 calibration the designer's own model reviewing its pages scored nearly
+    everything 5/5 and missed a false arrow twice; a different model agreed with itself
+    across rounds and vetoed it. Same endpoint and key; newer models take ``low``
+    reasoning, not ``none``."""
+
+    config = v2_provider_config_from_env()
+    review_model = os.environ.get("PPT_AGENT_REVIEW_MODEL") or DEFAULT_REVIEW_MODEL
+    effort = os.environ.get("PPT_AGENT_REVIEW_REASONING_EFFORT") or "low"
+    config = config.model_copy(update={"model": review_model, "reasoning_effort": effort})
+    config.resolved_api_key()
+    config, _ = ensure_v2_pricing(config)
+    usage = V2UsageMeter(budget_usd=env_float("PPT_AGENT_V2_BUDGET_USD", DEFAULT_V2_BUDGET_USD))
+    return build_v2_client(config, usage=usage)
+
+
 def artifact_name_for_path(output_dir: Path, artifact_path: Path) -> str | None:
     try:
         relative_path = artifact_path.relative_to(output_dir)
