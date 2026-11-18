@@ -28,13 +28,17 @@ _FIGURE = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 _YEAR = re.compile(r"(?:19|20)\d{2}")
 # Only words that say a value is not yet observed. "提升到2025年的47.5%" is a measurement; a date after
 # "到" or "截至" says nothing about whether the value was observed.
-_FORECAST = re.compile(r"预计|预测|预期|有望|计划|目标值|目标为|将达|将增|将超|将突破|将实现|规划")
+_FORECAST = re.compile(r"预计|预测|预期|有望|计划|目标值|目标为|将达|将增|将超|将突破|将实现|规划"
+                       # English reports (IEA): checked on text with its spaces removed ("setto")
+                       r"|expected|projected|forecast|anticipated|setto|will|scenario|STEPS|outlook", re.I)
 _BEFORE = "约超近逾达至少多于不足低高过"   # qualifiers a source puts before a figure
 _AFTER = re.compile(r"^(?:余|多|来)")        # ...and straight after it: 80余种
 _TAIL = re.compile(r"(?:以上|以下|左右|上下)$")
-_WHEN = re.compile(r"(?:19|20)\d{2}|\d{1,2}月|季度|Q[1-4]|上半年|下半年|年初|年底|世纪")
+_WHEN = re.compile(r"(?:19|20)\d{2}|\d{1,2}月|季度|Q[1-4]|H[12]|上半年|下半年|年初|年底|世纪"
+                   r"|January|February|March|April|May|June|July|August|September|October|November|December|quarter")
 # A category is a thing being measured, not another measure or a change in one.
-_MEASURE = re.compile(r"率$|比例|占比|数量|次数|周期|成本|规模|能耗|排放|时间|时长|效率|增加|减少|缩短|提升|提高|下降|降低|增长|节省")
+_MEASURE = re.compile(r"率$|比例|占比|数量|次数|周期|成本|规模|能耗|排放|时间|时长|效率|增加|减少|缩短|提升|提高|下降|降低|增长|节省"
+                      r"|(?i:\bshare\b|\brate\b|growth|increase|decrease|decline)")
 
 SERIES_SYSTEM = (
     "你在为一页演示文稿找可以画成图表的数据。只从给出的原文里找「同一个指标、同一个单位、两个及以上取值」的组合："
@@ -96,11 +100,13 @@ def _locate(quote: str, blocks: list[tuple[str, int, str]]) -> str | None:
 def _number(display: str) -> tuple[str, str] | None:
     """The figure in a display string and the unit that follows it."""
 
-    text = _squash(display).lstrip(_BEFORE)
-    match = _FIGURE.match(text)
+    # Read before spaces are removed: "23 000 2023 USD" is 23000 in 2023 dollars, not 230002023.
+    raw = (display or "").replace("％", "%").strip().lstrip(_BEFORE).strip()
+    match = re.match(r"\d+(?:,\d{3}(?!\d))*(?:[ \u00a0\u202f]\d{3}(?![\d,.]))*(?:\.\d+)?", raw)
     if not match:
         return None
-    return match.group(), _TAIL.sub("", _AFTER.sub("", text[match.end():]))
+    figure = re.sub(r"[\s\u202f]", "", match.group())
+    return figure, _TAIL.sub("", _AFTER.sub("", _squash(raw[match.end():])))
 
 
 def approximate(display: str) -> bool:

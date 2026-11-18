@@ -19,3 +19,11 @@ def test_english_measures():
 def test_weight_puts_both_languages_on_one_scale():
     assert weight("我国网民规模达十一亿人") == 11
     assert weight("Electric car sales grew strongly") == 10
+
+
+def test_series_read_english_figures_and_forecasts():
+    from ppt_agent.v2.data_series import _FORECAST, _WHEN, _number, _squash
+
+    assert _number("23 000 2023 USD") == ("23000", "2023USD")
+    assert _FORECAST.search(_squash("Electric car sales are set to exceed 20 million in 2025"))
+    assert _WHEN.search("Q1 2025") and _WHEN.search("first quarter")
