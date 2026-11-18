@@ -38,3 +38,17 @@ def test_the_solver_gives_an_overflowing_region_its_rows_and_moves_the_one_below
 def test_a_measured_rectangle_maps_to_its_region():
     cells = [(1, 13, 1, 2), (1, 8, 2, 4)]
     assert autofix.region_of({"x": 76, "y": 125.5}, cells) == 1
+
+
+def test_measured_rows_give_back_spare_rows_and_the_regions_below_move_up():
+    page = ('<div class="page"><div class="r" style="grid-column:1/13;grid-row:1/2">k</div>'
+            '<div class="r" style="grid-column:1/8;grid-row:2/6">focal</div>'
+            '<div class="r" style="grid-column:1/8;grid-row:6/8">items</div>'
+            '<div class="r bot" style="grid-column:1/13;grid-row:8/9">call</div></div>')
+    def text(y, h):
+        return {"kind": "text", "text": {"x": 100, "y": y, "w": 200, "h": h}}
+    items = [text(60, 20), text(130, 140), text(430, 200)]   # focal takes 2 rows, items need 3
+    rows = autofix.measured_rows(page, items)
+    assert rows[1] == 2 and rows[2] == 3
+    solved = autofix.solve(page, {}, rows)
+    assert autofix.regions(solved)[1:3] == [(1, 8, 2, 4), (1, 8, 4, 7)]

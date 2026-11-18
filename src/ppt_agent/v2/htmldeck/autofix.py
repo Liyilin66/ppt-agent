@@ -83,7 +83,36 @@ def region_of(rect: dict[str, float], cells: list[tuple[int, int, int, int]]) ->
     return None
 
 
-def solve(html: str, overflow: dict[int, float]) -> str | None:
+def cell_rect(cell: tuple[int, int, int, int]) -> tuple[float, float, float, float]:
+    c0, c1, r0, r1 = cell
+    return (PAGE_LEFT + (c0 - 1) * COLUMN_PX, PAGE_TOP + (r0 - 1) * ROW_PX,
+            PAGE_LEFT + (c1 - 1) * COLUMN_PX - 24, PAGE_TOP + (r1 - 1) * ROW_PX)
+
+
+def measured_rows(html: str, items: list[dict]) -> dict[int, int]:
+    """Rows each text region's content takes, from where its text actually landed: overflowing regions
+    grow, regions with spare rows give them back. Regions holding a chart, picture or table keep their rows:
+    those fill whatever room they are given."""
+
+    cells = regions(html)
+    needs: dict[int, int] = {}
+    for index, cell in enumerate(cells):
+        x0, y0, x1, y1 = cell_rect(cell)
+
+        def inside(rect):
+            cx, cy = rect["x"] + rect["w"] / 2, rect["y"] + min(rect["h"], 40) / 2
+            return x0 - 4 <= cx <= x1 + 4 and y0 - 4 <= cy <= y1 + 4
+
+        if any(item["kind"] in ("chart", "table", "image") and inside(item) for item in items):
+            continue
+        bottoms = [item["text"]["y"] + item["text"]["h"] for item in items
+                   if item["kind"] == "text" and item.get("text") and inside(item["text"])]
+        if bottoms:
+            needs[index] = max(1, math.ceil((max(bottoms) - y0 + 6) / ROW_PX - 0.05))
+    return needs
+
+
+def solve(html: str, overflow: dict[int, float], rows: dict[int, int] | None = None) -> str | None:
     """Rows re-allocated so every region holds its measured content: a region that overflows by
     N px gets ceil(N / row) more rows, the regions below it in its columns move down, regions
     anchored to the foot stay there. ``None`` when the page cannot hold it all."""
@@ -91,7 +120,8 @@ def solve(html: str, overflow: dict[int, float]) -> str | None:
     cells, anchored = regions(html), _anchored(html)
     if not cells:
         return None
-    need = [(r1 - r0) + (math.ceil(overflow[index] / ROW_PX - 0.05) if overflow.get(index, 0) > 2 else 0)
+    need = [(rows or {}).get(index, (r1 - r0) + (math.ceil(overflow[index] / ROW_PX - 0.05)
+                                                  if overflow.get(index, 0) > 2 else 0))
             for index, (_, _, r0, r1) in enumerate(cells)]
     order = sorted(range(len(cells)), key=lambda index: (cells[index][2], cells[index][0]))
     placed: dict[int, tuple[int, int]] = {}
@@ -103,7 +133,9 @@ def solve(html: str, overflow: dict[int, float]) -> str | None:
             above = [placed[other][1] for other in placed
                      if not anchored[other] and cells[other][2] < r0 or (cells[other][2] == r0 and other < index)
                      if cells[other][0] < c1 and c0 < cells[other][1] and not anchored[other]]
-            top = max([r0] + above)
+            # Measured rows: a region follows the one above it in its columns (moving up into rows that one
+            # gave back), but never above where the designer started it unless something above it moved.
+            top = max(above) if rows is not None and above else max([r0] + above)
         placed[index] = (top, top + need[index])
     # Nothing past the last line, and nothing on top of a foot region.
     for index, (top, bottom) in placed.items():

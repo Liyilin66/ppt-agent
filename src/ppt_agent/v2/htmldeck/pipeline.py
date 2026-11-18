@@ -232,7 +232,12 @@ async def design_page(
                 index = autofix.region_of(clip, cells)
                 if index is not None:
                     overflow[index] = max(overflow.get(index, 0), clip["over"])
-        solved = autofix.solve(body, overflow) if job.type_roles else None
+        solved = None
+        if job.type_roles:
+            # Every text region sized to its measured content (growing or giving back rows), then the rest
+            # moved to follow; failing that, only the overflowing regions grown.
+            solved = autofix.solve(body, overflow, autofix.measured_rows(body, measured.items)) \
+                or autofix.solve(body, overflow)
         result.trace[-1]["solver"] = ("no overflow measured" if not overflow else
                                       "infeasible: the page cannot hold it" if solved is None else "solved")
         grown = autofix.grow(body)
