@@ -80,3 +80,13 @@ def test_a_grid_of_ten_does_not_draw_96_8_as_a_whole():
     content = {"highlight": {"value": "60%", "text": "合成数据占比"}}
     page = ('<div class="page"><div class="r"><div class="units">' + '<i class="u on"></i>' * 6 + '<i class="u"></i>' * 4 + '</div></div></div>')
     assert find_graphic(page, content) == []
+
+
+def test_a_display_figure_keeps_its_unit_on_its_line():
+    from ppt_agent.v2.htmldeck.graphic_checks import find as find_graphic
+    content = {"highlight": {"value": "3162万个", "text": "千兆端口"}}
+    apart = ('<div class="page"><div class="r"><div class="d1">3162</div></div>'
+             '<div class="r"><p class="k">万个</p></div></div>')
+    together = '<div class="page"><div class="r"><div class="rowx"><div class="d1">3162</div><div class="unit">万个</div></div></div></div>'
+    assert "split_unit" in [d.kind for d in find_graphic(apart, content)]
+    assert "split_unit" not in [d.kind for d in find_graphic(together, content)]

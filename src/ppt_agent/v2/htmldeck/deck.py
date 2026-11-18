@@ -8,7 +8,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
-from ppt_agent.v2.htmldeck import browser, composition, graphic_checks, layout_plan, prompts, review, sanitize, signature, themes
+from ppt_agent.v2.htmldeck import browser, composition, text_budget, graphic_checks, layout_plan, prompts, review, sanitize, signature, themes
 from ppt_agent.v2.htmldeck.browser import MeasureFailed
 from ppt_agent.v2.htmldeck.checks import find_defects
 from ppt_agent.v2.htmldeck.convert import ConvertError, to_page
@@ -103,6 +103,11 @@ def _apply(job: DesignJob, fingerprint: layout_plan.Fingerprint) -> None:
     job.idea = prompts.studio_idea(fingerprint.form, fingerprint.focus, fingerprint.ratio,
                                    core_visual=fingerprint.core_visual, reading_path=fingerprint.reading_path,
                                    arrangement=fingerprint.arrangement)
+    if job.type_roles:
+        # The space first: what the form's text area holds, told before the page is written.
+        plan = text_budget.budget(job.content, fingerprint.form, fingerprint.arrangement)
+        if plan is not None:
+            job.idea += text_budget.words(plan)
 
 
 def _plain_rows(job: DesignJob) -> list[tuple[str, str, str]]:

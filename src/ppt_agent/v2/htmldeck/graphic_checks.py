@@ -169,6 +169,11 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
         + [str(cell) for row in content.get("rows") or [] for cell in row]
         + [str(metric.get("value") or "") for metric in content.get("metrics") or [] if isinstance(metric, dict)]
         + [str(content.get("title") or "")]))
+    unit_values = [re.sub(r"\s+", "", str(value)) for value in
+                   [(content.get("highlight") or {}).get("value")] + [item.get("value") for item in content.get("items") or []
+                                                                     if isinstance(item, dict)]
+                   + [point.get("display") for series in content.get("series") or [] for point in series.get("points") or []]
+                   if value]
     # The source's own name for a category goes with its value wherever the value is written out.
     for series in content.get("series") or []:
         if series.get("kind") == "time":
@@ -237,6 +242,20 @@ def find(html: str, content: dict[str, Any]) -> list[Defect]:
                     "unsupported",
                     f"大字「{shown[:16]}」不是这一页内容里的数据（焦点数字、条目数值或图表数据）。"
                     "大字只能放这些值；出处、页码和其他数字用小字写在出处或说明里。"))
+
+        # A display figure's unit stands on its line, not in another region (CNNIC 57 p12: "3162" | "万个").
+        if {"d1", "d2", "d3", "d4"} & set(node.classes):
+            bare = re.fullmatch(r"[约超近]?(\d+(?:,\d{3})*(?:\.\d+)?)", re.sub(r"\s+", "", node.text))
+            if bare:
+                number = bare.group(1).replace(",", "")
+                units = {match.group(2) for value in unit_values for match in [re.fullmatch(
+                    r"[约超近]?(\d+(?:\.\d+)?)\s*([^\d\s].{0,5})", value)] if match and match.group(1) == number}
+                line = re.sub(r"\s+", "", node.parent.text if node.parent is not None else "")
+                if units and not any(number + unit in line.replace(",", "") for unit in units):
+                    defects.append(Defect(
+                        "split_unit",
+                        f"大字「{bare.group(0)}」没有带单位（{'/'.join(sorted(units))}）。单位用 unit 类紧跟在大字后面、"
+                        "放在同一个 rowx 里，不要放到别的区域或别的行。"))
 
         if node.has("chart") and "data-chart" in node.attrs:
             try:

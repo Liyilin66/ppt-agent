@@ -903,8 +903,15 @@ def name_categories(content, series_pool):
             label = next(iter(names))
             core = squash(re.sub(r'[（(][^）)]*[）)]', '', label))
             if core and core not in squash(item.heading):  # the heading names the category, not a paraphrase of it
-                renamed.append({'value': item.value, 'was': item.heading, 'now': label})
-                item = item.model_copy(update={'heading': label[:18]})
+                if 3 <= len(label) <= 18:
+                    renamed.append({'value': item.value, 'was': item.heading, 'now': label})
+                    item = item.model_copy(update={'heading': label})
+                else:
+                    # A one-word category ("男") or a long one does not make a heading: the heading stays, and
+                    # the source's name for the value leads the body.
+                    body = f"{label}：{item.body or ''}"[:90]
+                    renamed.append({'value': item.value, 'was': item.heading, 'now': f'正文前加「{label}」'})
+                    item = item.model_copy(update={'body': body})
         items.append(item)
     return (content.model_copy(update={'items': items}) if renamed else content), renamed
 
