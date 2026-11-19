@@ -286,7 +286,10 @@ def find_defects(
             if names & FIGURE_CLASSES or names & {"t1", "t2", "title", "kicker", "source", "pageno"}:
                 continue
             said = _item_text(item).strip()
-            for number in numbers_in(said):
+            figures = {n for n in numbers_in(said) if not (1900 <= n <= 2100 and n == n.to_integral_value())}
+            if len(figures) != 1:
+                continue  # "由73.0%升至80.1%" compares two values: it says something the figure alone does not
+            for number in figures:
                 if number in shown and said not in shown[number]:
                     shown[number].append(said)
         for number, places in shown.items():
