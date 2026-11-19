@@ -27,3 +27,17 @@ def test_series_read_english_figures_and_forecasts():
     assert _number("23 000 2023 USD") == ("23000", "2023USD")
     assert _FORECAST.search(_squash("Electric car sales are set to exceed 20 million in 2025"))
     assert _WHEN.search("Q1 2025") and _WHEN.search("first quarter")
+
+
+def test_a_currency_before_the_amount_is_its_unit():
+    from ppt_agent.v2.data_series import verify
+
+    text = "[gevo.pdf | report p50]\\nIn 2024 the truck cost USD 40 400, and in 2030 it is expected to cost USD 31 200. In 2027 it costs USD 35 000."
+    text = text.replace("\\\\n", "\\n")
+    raw = [{"kind": "time", "metric": "truck cost", "unit": "USD", "points": [
+        {"label": "2024", "display": "40 400", "value": 40400, "quote": "In 2024 the truck cost USD 40 400"},
+        {"label": "2027", "display": "35 000", "value": 35000, "quote": "In 2027 it costs USD 35 000"},
+        {"label": "2030", "display": "31 200", "value": 31200, "projected": True,
+         "quote": "in 2030 it is expected to cost USD 31 200"}]}]
+    kept, rejected = verify(raw, text)
+    assert not [r for r in rejected if "单位" in r["why"] or "数字和单位" in r["why"]], rejected

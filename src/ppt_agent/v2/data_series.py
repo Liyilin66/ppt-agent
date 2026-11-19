@@ -193,7 +193,9 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
             if not isinstance(point.get("value"), (int, float)) or abs(float(point["value"]) - value) > 1e-9:
                 drop(series, "value 和 display 里的数字不一致", point)
                 continue
-            if suffix != unit:
+            # English writes a currency before the amount ("USD 40 400"): the unit then precedes the figure.
+            before_unit = not suffix and unit and (unit + figure) in _squash(quote)
+            if suffix != unit and not before_unit:
                 drop(series, f"单位「{suffix}」和序列单位「{unit}」不一致", point)
                 continue
             ref = _locate(quote, blocks)
@@ -201,7 +203,8 @@ def verify(raw: list[dict[str, Any]], evidence_text: str) -> tuple[list[DataSeri
                 drop(series, "引文不是原文里的原话", point)
                 continue
             at = _value_at(figure, quote)
-            if at is None or not _AFTER.sub("", _squash(quote)[at + len(figure):]).startswith(unit):
+            if at is None or not (before_unit and _squash(quote)[:at].endswith(unit)
+                                  or _AFTER.sub("", _squash(quote)[at + len(figure):]).startswith(unit)):
                 drop(series, "引文里没有这个数字和单位", point)
                 continue
             anchor = _anchor(label, quote)
