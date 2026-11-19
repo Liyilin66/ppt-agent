@@ -78,20 +78,32 @@ SUPPORT_SYSTEM = (
 )
 
 
+FIGURE_SUPPORT_SYSTEM = (
+    "你是审稿人。下面是一页幻灯片的论点和页面内容，以及准备原样放在这一页上的一张资料原图（带原图注和出处，读者知道它是报告自己的图）。"
+    "原图不需要直接量出论点里的那个数字；判断的是：它讲的是不是同一个对象（同一市场、同一类指标、相近的时间），"
+    "和论点一致而不矛盾，读者看了能看到页面所描述的那个局面。换了对象或话题、和论点矛盾、只是同一章节里的另一张图，都判 false。"
+    '只输出 JSON：{"supports":true 或 false,"why":"不超过40个字"}'
+)
+
+
 async def supports(client: Any, checkpoints: Any, page: int, content: dict[str, Any],
                    candidate: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
     """A second, separate judgement that the chosen visual evidences the claim (CAICT p11: a chart of
     PyTorch's share beside "54 days, 466 interruptions" was chosen as supporting)."""
 
     shown = {key: value for key, value in candidate.items() if key not in ("payload", "id")}
-    asked = json.dumps({"claim": brief.get("claim"), "page": _digest(content), "visual": shown},
-                       ensure_ascii=False, sort_keys=True)
+    # A source figure is quoted as the report's own picture: it has to be about the page, not measure its
+    # claim (P5: every IEA figure chosen for a page was refused for not measuring the title's number).
+    figure = str(candidate.get("id") or "").startswith("figure:") and candidate.get("type") == "资料原图（原样放上页面）"
+    asked = json.dumps({"claim": brief.get("claim"), "page": _digest(content), "visual": shown,
+                        **({"mode": "source_figure"} if figure else {})}, ensure_ascii=False, sort_keys=True)
     name = f"briefs/support_{page:03d}_{hashlib.sha1(asked.encode('utf-8')).hexdigest()[:10]}.json"
     saved = checkpoints.load(name) if checkpoints is not None else None
     if saved is not None:
         return saved
     try:
-        reply = await client.complete_json(task="visual_support", system=SUPPORT_SYSTEM, user=asked,
+        reply = await client.complete_json(task="visual_support", system=FIGURE_SUPPORT_SYSTEM if figure else SUPPORT_SYSTEM,
+                                           user=asked,
                                            max_output_tokens=300, context={"page": page})
     except Exception as error:  # noqa: BLE001 - unasked is not supported
         return {"supports": False, "why": "未能核对：" + str(error)[:40]}
