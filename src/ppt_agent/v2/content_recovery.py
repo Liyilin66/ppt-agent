@@ -187,3 +187,54 @@ def summary(records: dict[int, dict[str, Any]]) -> dict[str, Any]:
 
 def dumps(diagnosis: dict[str, Any]) -> str:
     return json.dumps(diagnosis, ensure_ascii=False)
+
+
+def _holds(text: Any, value: str) -> bool:
+    match = re.match(r"[约超近]?(\d+(?:[.,]\d+)*)(.*)", _squash(value))
+    if not match:
+        return False
+    number, unit = match.group(1), match.group(2)[:1]
+    return bool(re.search(rf"(?<![\d.,]){re.escape(number)}(?![\d.,]){re.escape(unit)}", _squash(str(text or ""))))
+
+
+def quarantine(content: dict[str, Any], values: list[str], fallback_title: str) -> tuple[dict[str, Any], list[str]]:
+    """The page without the figures its number check rejected (P5 P0).
+
+    A page whose recovery failed used to keep its last attempt as it was, so a figure the model had
+    added up ("2030年印度需年增5万个公共充电点", IEA) stood in the title of a slide that was only marked
+    for review. Items carrying such a figure go to the notes, marked unverified; a focal figure carrying
+    one is dropped; a clause of the title, lead or closing line carrying one is cut. The page still needs
+    a person, who finds every removed figure in the notes."""
+
+    if not values:
+        return content, []
+    content = json.loads(json.dumps(content, ensure_ascii=False))
+    removed: list[str] = []
+
+    def hit(text: Any) -> list[str]:
+        return [value for value in values if _holds(text, value)]
+
+    items = []
+    for item in content.get("items") or []:
+        found = hit(json.dumps(item, ensure_ascii=False))
+        if found:
+            removed.append(" ".join(str(item.get(key)) for key in ("heading", "value", "body") if item.get(key)))
+        else:
+            items.append(item)
+    if "items" in content:
+        content["items"] = items
+    if content.get("highlight") and hit(json.dumps(content["highlight"], ensure_ascii=False)):
+        removed.append(str(content["highlight"].get("value") or ""))
+        content["highlight"] = None
+    for field in ("title", "lead", "takeaway", "statement"):
+        text = content.get(field)
+        if not isinstance(text, str) or not hit(text):
+            continue
+        kept = [part for part in re.split(r"(?<=[，,；;。])", text) if part and not hit(part)]
+        removed.append(text)
+        joined = "".join(kept).strip("，,；; ")
+        content[field] = joined or (fallback_title if field == "title" else None)
+    if removed:
+        note = "未核实（核对未通过：模型计算或找不到出处），已移出页面：" + "；".join(removed)
+        content["speaker_notes"] = ((content.get("speaker_notes") or "") + "\n" + note).strip()
+    return content, removed

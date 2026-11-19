@@ -65,3 +65,16 @@ def test_renumber_changes_only_the_footer_number():
         {'type': 'rich_text', 'id': 'b', 'frame': {'x': 1191, 'y': 679, 'w': 80, 'h': 17}, 'runs': [{'text': '18'}]}]})
     out = renumber(page, 17)
     assert [e.runs[0].text for e in out.elements] == ['18', '17'] and out.page_number == 17
+
+
+def test_quarantine_takes_rejected_figures_off_the_page():
+    from ppt_agent.v2.content_recovery import quarantine
+
+    page = {"title": "2030年印度需年增5万个公共充电点", "highlight": {"value": "5万个/年", "label": "年增"},
+            "items": [{"heading": "存量", "value": "不足300万辆"}, {"heading": "计算", "value": "37.5万"}],
+            "takeaway": "补能网络要先行，年增5万个才够。"}
+    clean, removed = quarantine(page, ["5万", "37.5万"], "印度充电网络")
+    assert clean["title"] == "印度充电网络" and clean["highlight"] is None
+    assert [i["value"] for i in clean["items"]] == ["不足300万辆"]
+    assert clean["takeaway"] == "补能网络要先行"
+    assert "37.5万" in clean["speaker_notes"] and "5万个/年" in clean["speaker_notes"]

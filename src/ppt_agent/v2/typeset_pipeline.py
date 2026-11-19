@@ -1192,7 +1192,16 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             title = content_recovery.title_for(planned, content.title)
             if title != content.title and content.title == (by_number[number].section_title or '')[:40]:
                 content = content.model_copy(update={'title': title})
-            record = {**record, 'content_status': 'NEEDS_CONTENT_REVIEW', 'content_failure': diagnosis}
+            # What failed the check does not stay on the page: it goes to the notes, marked unverified (P5 P0).
+            dumped, removed = content_recovery.quarantine(content.model_dump(mode='json'), list(diagnosis.get('values') or {}),
+                                                          (by_number[number].section_title or content.title or '')[:40])
+            if removed:
+                try:
+                    content = type(content).model_validate(dumped)
+                except ValueError:
+                    pass  # the page cannot stand without them; it stays for review as it is
+            record = {**record, 'content_status': 'NEEDS_CONTENT_REVIEW', 'content_failure': diagnosis,
+                      'quarantined': removed}
             checkpoints.save(f'typeset/final/content_{number:03d}.json', {'content': content.model_dump(mode='json'), 'record': record})
             return number, (content, record)
 
