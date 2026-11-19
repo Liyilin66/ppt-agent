@@ -238,3 +238,29 @@ def quarantine(content: dict[str, Any], values: list[str], fallback_title: str) 
         note = "未核实（核对未通过：模型计算或找不到出处），已移出页面：" + "；".join(removed)
         content["speaker_notes"] = ((content.get("speaker_notes") or "") + "\n" + note).strip()
     return content, removed
+
+
+# The writer saying it has nothing to say: "页面未提供两三轮车渗透率数据", "证据不足以判断…".
+_NO_EVIDENCE = re.compile(r"未提供|未给出|证据不足|无法判断|无法确认|不足以判断|缺少[^，。]{0,10}数据|没有[^，。]{0,8}(?:数据|证据)"
+                          r"|not provided|insufficient evidence|no data", re.I)
+
+
+def invalid(content: dict[str, Any], record: dict[str, Any]) -> str | None:
+    """Why a content page has lost what makes it a page, or ``None``.
+
+    After failed number checks, recovery and removed figures, a page can be left with a heading and
+    nothing under it (BOND 100-page run, slide 19: the section name and "01"), or with the writer's own
+    note that the evidence is missing next to a claim that needs it (IEA 50-page run, slide 14: "页面未提供
+    两三轮车渗透率数据" beside "两三轮车渗透率领先"). Such a page is removed, not shown for review."""
+
+    facts = [item for item in content.get("items") or [] if item]
+    shows = facts or (content.get("highlight") or {}).get("value") or content.get("series") or content.get("figure") \
+        or content.get("rows") or content.get("diagram")
+    said = " ".join(str(content.get(field) or "") for field in ("title", "lead", "takeaway", "statement"))
+    if not shows and _NO_EVIDENCE.search(said):
+        return "INVALID_CONTENT: the page says its evidence is missing and shows no fact"
+    if not shows and record.get("fallback") and record.get("content_status") == "NEEDS_CONTENT_REVIEW":
+        return "INVALID_CONTENT: number checks failed and recovery left no fact on the page"
+    if not said.strip() and not shows:
+        return "INVALID_CONTENT: nothing left on the page"
+    return None

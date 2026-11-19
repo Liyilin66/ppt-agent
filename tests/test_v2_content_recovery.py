@@ -78,3 +78,21 @@ def test_quarantine_takes_rejected_figures_off_the_page():
     assert [i["value"] for i in clean["items"]] == ["不足300万辆"]
     assert clean["takeaway"] == "补能网络要先行"
     assert "37.5万" in clean["speaker_notes"] and "5万个/年" in clean["speaker_notes"]
+
+
+def test_a_page_left_with_no_fact_is_invalid():
+    from ppt_agent.v2.content_recovery import invalid
+
+    # BOND 100-page run, slide 19: a fallback statement and nothing else.
+    bond = {"archetype": "statement", "title": "ARR爬坡速度揭示人工智能产品的商业化强度",
+            "statement": "ARR爬坡速度揭示人工智能产品的商业化强度"}
+    assert invalid(bond, {"fallback": True, "content_status": "NEEDS_CONTENT_REVIEW"})
+    # IEA 50-page run, slide 14: the writer's own "no data" note beside an unsupported claim.
+    iea = {"archetype": "statement", "title": "两三轮车渗透率", "lead": "页面未提供两三轮车渗透率数据",
+           "statement": "两三轮车渗透率领先，轻型车规模更具战略价值"}
+    assert invalid(iea, {"fallback": True, "content_status": "NEEDS_CONTENT_REVIEW"})
+    # A real statement page that passed its checks stays.
+    good = {"archetype": "statement", "title": "电动车进入主流", "statement": "电动车已占全球新车销量的五分之一"}
+    assert invalid(good, {"content_status": "CONTENT_VALID"}) is None
+    assert invalid({"title": "x", "items": [{"heading": "a", "body": "b"}]}, {"fallback": True,
+                   "content_status": "NEEDS_CONTENT_REVIEW"}) is None

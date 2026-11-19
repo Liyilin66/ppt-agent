@@ -1435,6 +1435,23 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
             progress(f"[content] source states a figure two ways on page(s) {sorted(held)}: "
                      + '; '.join(f"{f['figure']} (p{f['page']}) vs {f['other']} (p{f['other_page']})"
                                  for found in held.values() for f in found))
+    if type_roles:
+        # A content page left with no fact to show is removed and the deck renumbered, not shown for review
+        # (scale test: a 100-page run kept a slide holding only its section name and "01").
+        from ppt_agent.v2 import content_recovery as _recovery
+        invalid = {}
+        for number, (content, record) in results.items():
+            if record.get('content_status') == 'PAGE_REMOVED':
+                continue
+            why = _recovery.invalid(content.model_dump(mode='json', exclude_none=True), record)
+            if why:
+                invalid[number] = why
+                results[number] = (content, {**record, 'content_status': 'PAGE_REMOVED', 'removed_because': why})
+        if invalid:
+            original_slots = original_slots or list(skeleton.slots)
+            content_slots = [slot for slot in content_slots if slot.page_number not in invalid]
+            skeleton = skeleton.model_copy(update={'slots': [slot for slot in skeleton.slots if slot.page_number not in invalid]})
+            progress(f"[content] removed page(s) {sorted(invalid)}: no fact left to show ({'; '.join(sorted(set(invalid.values())))})")
     series_summary = None
     if rich and evidence_store is not None:
         # What each page shows is decided from what the page claims (v2.visual_brief), among the
