@@ -13,7 +13,7 @@ from ppt_agent.runtime import load_dotenv_file
 from ppt_agent.v2.orchestrator import BuildRequest, build_deck_async
 from ppt_agent.v2.providers import provider_config_from_env
 
-ROOT=Path('/Users/jay/Documents/ppt-agent')
+ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'data/evaluation/step3b'
 MODEL='gpt-5.6-terra'
 

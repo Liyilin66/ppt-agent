@@ -92,13 +92,13 @@ For a local workflow handoff, prepare a job package that can be used from a sepa
 1. Install or clone ppt-master locally, for example:
 
 ```text
-/Users/jay/Documents/ppt-master
+<ppt-master 目录>
 ```
 
 2. Set the local ppt-master root:
 
 ```bash
-export PPT_MASTER_DIR="/Users/jay/Documents/ppt-master"
+export PPT_MASTER_DIR="<ppt-master 目录>"
 ```
 
 3. Prepare the package:
@@ -118,26 +118,26 @@ uv run python scripts/prepare_ppt_master_package.py \
 Check the local ppt-master checkout before preparing or running a package:
 
 ```bash
-uv run python scripts/check_ppt_master_setup.py --ppt-master-dir /Users/jay/Documents/ppt-master
+uv run python scripts/check_ppt_master_setup.py --ppt-master-dir <ppt-master 目录>
 ```
 
 For machine-readable output:
 
 ```bash
-uv run python scripts/check_ppt_master_setup.py --ppt-master-dir /Users/jay/Documents/ppt-master --json
+uv run python scripts/check_ppt_master_setup.py --ppt-master-dir <ppt-master 目录> --json
 ```
 
 If the directory does not exist, clone the official repository:
 
 ```bash
-cd /Users/jay/Documents
+cd <你的工作目录>
 git clone https://github.com/hugohe3/ppt-master.git
 ```
 
 If the directory already exists but may be old, inspect and update it manually:
 
 ```bash
-cd /Users/jay/Documents/ppt-master
+cd <ppt-master 目录>
 git status
 git pull
 ```
@@ -148,11 +148,11 @@ ppt-agent does not automatically update ppt-master. This avoids silently changin
 
 The Web UI can show the PPT Master handoff package after a successful long deck run.
 
-1. Set `PPT_MASTER_DIR`, or prepare packages with a local ppt-master root such as `/Users/jay/Documents/ppt-master`.
+1. Set `PPT_MASTER_DIR`, or prepare packages with a local ppt-master root such as `<ppt-master 目录>`.
 2. Run the 30-page long deck flow in the Web UI.
 3. After success, open the `PPT Master 渲染包` section.
 4. Download `run_prompt.md`, `source.md`, `manifest.json`, and `README.md`.
-5. In `/Users/jay/Documents/ppt-master`, use Claude Code, Codex, or CodeBuddy to execute the generated `run_prompt.md`.
+5. In `<ppt-master 目录>`, use Claude Code, Codex, or CodeBuddy to execute the generated `run_prompt.md`.
 6. ppt-agent does not automatically run ppt-master in this stage.
 
 ## PPT Master Output Registration
@@ -195,11 +195,11 @@ It checks the job package, checks the local ppt-master checkout, creates `ppt_ma
 uv run python scripts/prepare_ppt_master_execution.py \
   --job-id <job_id> \
   --job-dir data/jobs/<job_id> \
-  --ppt-master-dir /Users/jay/Documents/ppt-master
+  --ppt-master-dir <ppt-master 目录>
 ```
 
 3. Open the Web UI `PPT Master 执行桥` section and download `PPT Master Execution Plan`.
-4. In `/Users/jay/Documents/ppt-master`, let Claude Code, Codex, or CodeBuddy read the plan and `run_prompt.md`.
+4. In `<ppt-master 目录>`, let Claude Code, Codex, or CodeBuddy read the plan and `run_prompt.md`.
 5. The external ppt-master workflow should write:
 
 ```text
@@ -238,7 +238,7 @@ Run from the CLI:
 uv run python scripts/bootstrap_ppt_master_project.py \
   --job-id <job_id> \
   --job-dir data/jobs/<job_id> \
-  --ppt-master-dir /Users/jay/Documents/ppt-master
+  --ppt-master-dir <ppt-master 目录>
 ```
 
 The scaffold is written under:
@@ -272,7 +272,7 @@ After SVG slides exist, run the Local Runner:
 uv run python scripts/run_ppt_master_local_export.py \
   --job-id <job_id> \
   --job-dir data/jobs/<job_id> \
-  --ppt-master-dir /Users/jay/Documents/ppt-master
+  --ppt-master-dir <ppt-master 目录>
 ```
 
 ## PPT Master Local Runner v0
@@ -296,7 +296,7 @@ Run from the CLI:
 uv run python scripts/run_ppt_master_local_export.py \
   --job-id <job_id> \
   --job-dir data/jobs/<job_id> \
-  --ppt-master-dir /Users/jay/Documents/ppt-master
+  --ppt-master-dir <ppt-master 目录>
 ```
 
 The Web UI also has a `PPT Master 本地导出` button.

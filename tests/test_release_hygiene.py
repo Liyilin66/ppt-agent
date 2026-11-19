@@ -56,3 +56,22 @@ def test_release_checklist_exists_and_mentions_required_checks() -> None:
 def test_gitignore_covers_demo_regeneration_output_dir() -> None:
     gitignore_text = _repo_file(".gitignore").read_text(encoding="utf-8")
     assert "examples/demo_ai_agent_pm/output/" in gitignore_text
+
+
+def test_no_tracked_text_carries_a_local_user_path() -> None:
+    # Every doc, script and source file, not only the three above (scripts and design notes leaked it).
+    # Signed baselines under eval/baselines are frozen records of past runs and are left as they were.
+    root = _repo_file()
+    marker = "/Users/" + "jay"
+    leaked = []
+    for folder in ("", "docs", "examples", "scripts", "src", "webui"):
+        base = root / folder
+        if not base.is_dir():
+            continue
+        files = base.glob("*.md") if folder == "" else base.rglob("*")
+        for path in files:
+            if path.suffix not in {".md", ".py", ".js", ".html", ".toml", ".json"} or "output" in path.parts:
+                continue
+            if marker in path.read_text(encoding="utf-8", errors="ignore"):
+                leaked.append(str(path.relative_to(root)))
+    assert not leaked, f"Local absolute path leaked into {leaked}"

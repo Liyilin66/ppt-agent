@@ -19,7 +19,7 @@ from ppt_agent.v2.planning import ContentBrief
 from ppt_agent.v2.providers import OpenAICompatClient, UsageMeter, extract_json_payload, provider_config_from_env
 
 
-ROOT = Path('/Users/jay/Documents/ppt-agent')
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = ROOT / 'data/evaluation/long-input/runs/run1'
 
 

@@ -10,7 +10,7 @@ from ppt_agent.v2.search import TavilySearchProvider
 from ppt_agent.v2.evidence_check import check_content_numbers
 from ppt_agent.v2.typeset_pipeline import content_adapter,cited_evidence
 from ppt_agent.v2.evidence import EvidencePacket
-ROOT=Path('/Users/jay/Documents/ppt-agent');OUT=ROOT/'data/evaluation/evidence-check';RUN=OUT/'T2'
+ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'data/evaluation/evidence-check';RUN=OUT/'T2'
 async def main():
  if RUN.exists():raise RuntimeError('One real run only; do not retry an existing run.')
  RUN.mkdir(parents=True);load_dotenv_file(str(ROOT/'.env'))

@@ -16,7 +16,7 @@ from ppt_agent.v2.providers import OpenAICompatClient, provider_config_from_env
 from ppt_agent.v2 import orchestrator
 from ppt_agent.v2.orchestrator import BuildRequest, build_deck_async
 from ppt_agent.v2.search import TavilySearchProvider
-ROOT = Path('/Users/jay/Documents/ppt-agent')
+ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'data/evaluation/generalization'
 RUN = OUT / 'main-run'
 SOURCE = ROOT / 'eval/sources/caict_ai_2024.pdf'

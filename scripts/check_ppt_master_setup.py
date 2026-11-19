@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Sequence
 
 from ppt_agent.ppt_master_integration import check_ppt_master_setup
 
 
-DEFAULT_PPT_MASTER_DIR = Path("/Users/jay/Documents/ppt-master")
+DEFAULT_PPT_MASTER_DIR = Path(os.environ.get("PPT_MASTER_DIR") or Path.home() / "Documents" / "ppt-master")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,23 +1,23 @@
 # PPT Agent Workspace Design QA
 
-- source visual truth path: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-workspace-target.png`
-- implementation screenshot path: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-workspace-implementation.png`
-- mobile screenshot path: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-workspace-mobile.png`
-- page-count feedback source: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-page-count-feedback.png`
-- corrected 100-page create screenshot: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-100-page-create.png`
-- corrected mobile create screenshot: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-100-page-create-mobile.png`
-- latest runtime feedback: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-runtime-feedback.png`
-- latest form feedback: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-form-feedback.png`
-- live preview and custom-page implementation: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-live-preview-and-custom-pages.png`
-- unified 1-100 page create form: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-unified-create-1-100.png`
+- source visual truth path: `docs/design/ppt-agent-workspace-target.png`
+- implementation screenshot path: `docs/design/ppt-agent-workspace-implementation.png`
+- mobile screenshot path: `docs/design/ppt-agent-workspace-mobile.png`
+- page-count feedback source: `docs/design/ppt-agent-page-count-feedback.png`
+- corrected 100-page create screenshot: `docs/design/ppt-agent-100-page-create.png`
+- corrected mobile create screenshot: `docs/design/ppt-agent-100-page-create-mobile.png`
+- latest runtime feedback: `docs/design/ppt-agent-runtime-feedback.png`
+- latest form feedback: `docs/design/ppt-agent-form-feedback.png`
+- live preview and custom-page implementation: `docs/design/ppt-agent-live-preview-and-custom-pages.png`
+- unified 1-100 page create form: `docs/design/ppt-agent-unified-create-1-100.png`
 - viewport: desktop `1380 x 751`; mobile `390 x 844`
 - state: real long-deck job `02619bd8da5e49449f3b940a0f84771c`, quality gate failed, PPT Master recovery output registered, 30 slides
 
 ## Comparison Evidence
 
-- full-view comparison: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-workspace-comparison.png`
-- focused progress, preview, and delivery comparison: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-workspace-comparison-focus.png`
-- page-count correction comparison: `/Users/jay/Documents/ppt-agent/docs/design/ppt-agent-page-count-comparison.png`
+- full-view comparison: `docs/design/ppt-agent-workspace-comparison.png`
+- focused progress, preview, and delivery comparison: `docs/design/ppt-agent-workspace-comparison-focus.png`
+- page-count correction comparison: `docs/design/ppt-agent-page-count-comparison.png`
 - The final implementation preserves the selected target's project navigation, five-stage progress, four task metrics, real slide storyboard, source coverage, editable chapter allocation, delivery rail, and narrative health hierarchy.
 - The implementation intentionally shows the real 30-page recovery state instead of the target mock's idealized 100-page success state.
 
