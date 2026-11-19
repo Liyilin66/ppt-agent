@@ -162,7 +162,9 @@ def test_no_page_repeats_the_structure_of_any_earlier_page_too_soon():
             close_forms += other.form == item.form and gap <= SAME_FORM_GAP
             close_structures += other.structure == item.structure and gap <= SAME_STRUCTURE_GAP
     # The softer rules give way only when the content allows little else; it must stay rare.
-    assert close_forms <= 3 and close_structures <= 5, (close_forms, close_structures)
+    # One more close structure than before split was limited to two-way comparisons: a meaningless dark
+    # half is worse than a structure seen again a few pages later.
+    assert close_forms <= 3 and close_structures <= 6, (close_forms, close_structures)
     report = audit(plan)
     assert report["forms_used"] >= 7 and report["largest_form_share"] <= 0.25
-    assert report["distinct_structures"] >= 16
+    assert report["distinct_structures"] >= 15  # split now takes only two-way comparisons (see above)

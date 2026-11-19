@@ -197,6 +197,16 @@ def contact_sheet(shots: dict[int, bytes], columns: int = 5, width: int = 380) -
     return out.getvalue()
 
 
+MAX_DARK_BLOCKS = 3
+
+
+def _dark_bleed(html: str) -> bool:
+    """Whether a page carries a dark colour field bled to the page edge."""
+
+    return any({"ink", "redf"} & set(names.split()) and any(name.startswith("bleed") for name in names.split())
+               for names in re.findall(r'class="([^"]*)"', html or ""))
+
+
 def _fingerprint(job: DesignJob, idea: str | None = None) -> str:
     """Identifies the content and form a saved page was designed for.
 
@@ -594,6 +604,13 @@ async def design_deck(
                 rearrange(by_page[page], partner) if by_page[page].form == "chart"
                 else redo(by_page[page], f"和第 {partner} 页的构图（空间分割、重心、比例）几乎相同", new_form=True)
                 for page, partner in chosen.items()))
+            # A dark block bled to the page edge is a strong accent: a few in a deck, not one every few pages
+            # (CNNIC 57 had four, IEA three in 22 slides, each a heavy mass the rest of the deck does not have).
+            heavy = [number for number in sorted(by_page) if results[number].ok and _dark_bleed(results[number].html)]
+            await asyncio.gather(*(
+                redo(by_page[number], f"整套里深色出血色块已经用了 {len(heavy)} 次：这一页不要用深色色块（ink、redf），"
+                                      "用细线、留白和字号分组", new_form=by_page[number].form == "split")
+                for number in heavy[MAX_DARK_BLOCKS:]))
             if look:
                 # The whole deck at a glance: which pages look alike, which one is weakest.
                 sheet = contact_sheet({number: result.screenshot_png for number, result in results.items()

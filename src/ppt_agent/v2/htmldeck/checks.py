@@ -279,6 +279,16 @@ def find_defects(
             for number in numbers:
                 if not (1900 <= number <= 2100 and number == number.to_integral_value()):  # a year is no figure
                     shown.setdefault(number, []).append(text_here)
+        # ...and a figure shown as data, said again in a caption, note or conclusion ("3162万个" large, then
+        # "10G PON端口达3162万个" under it): the reader reads the same thing twice. The title may state it.
+        for item in texts:
+            names = set(item.get("cls", "").split())
+            if names & FIGURE_CLASSES or names & {"t1", "t2", "title", "kicker", "source", "pageno"}:
+                continue
+            said = _item_text(item).strip()
+            for number in numbers_in(said):
+                if number in shown and said not in shown[number]:
+                    shown[number].append(said)
         for number, places in shown.items():
             if len(places) >= 2:
                 defects.append(Defect(
@@ -396,6 +406,25 @@ def find_defects(
                 defects.append(Defect(
                     "off_canvas", f"深色色块（{panel['w']:.0f}×{panel['h']:.0f}）一侧伸到页面{'左' if left else '右'}边缘，另一侧没有："
                     "既不在内容边距里，也不是整条的满版色带。把它收回到内容区（左右各留出页边距）。"))
+        for panel in panels:
+            # A large dark block mostly empty: a heavy mass with a few words at its corners (CNNIC p29:
+            # "应用场景" at the top, two lines at the bottom, nothing between).
+            rgb = _rgb(panel.get("bg") or "")
+            field = set(panel.get("cls", "").split()) & {"ink", "redf"}  # the studio theme's colour fields
+            if not field or rgb is None or max(rgb) >= 90 or panel["w"] * panel["h"] < 0.08 * CANVAS_WIDTH * CANVAS_HEIGHT:
+                continue
+            spans = sorted((max(panel["y"], r["y"]), min(panel["y"] + panel["h"], r["y"] + r["h"]))
+                           for r in (_line_rect(item) for item in texts)
+                           if r["x"] < panel["x"] + panel["w"] and r["x"] + r["w"] > panel["x"]
+                           and r["y"] < panel["y"] + panel["h"] and r["y"] + r["h"] > panel["y"])
+            edge, widest = panel["y"] + 24, 0.0
+            for top, bottom in spans:
+                widest, edge = max(widest, top - edge), max(edge, bottom)
+            widest = max(widest, panel["y"] + panel["h"] - 24 - edge)
+            if spans and widest > 0.4 * panel["h"]:
+                defects.append(Defect(
+                    "empty_panel", f"深色色块（{panel['w']:.0f}×{panel['h']:.0f}）里有 {widest:.0f} 像素高的一段是空的，"
+                    "像一块没有意义的重色。去掉色块，用细线、留白和字号分组；或者让色块只包住它要强调的内容。"))
         for figure in texts:
             size = max((run["size"] for run in figure["runs"] if run.get("t", "").strip()), default=0)
             if size < 48:

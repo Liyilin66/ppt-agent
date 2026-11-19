@@ -34,7 +34,7 @@ FORMS_FOR: dict[str, tuple[str, ...]] = {
     "timeline": ("timeline", "ledger"),
     "structure": ("matrix", "columns", "ledger"),
     "hierarchy": ("layers", "stairs", "ledger"),
-    "cause": ("flow", "margin", "split"),
+    "cause": ("flow", "margin"),
     "cases": ("ledger", "table", "margin", "columns"),
 }
 TIER_FORMS = {
@@ -144,8 +144,12 @@ def candidates(content: dict[str, Any]) -> list[str]:
             return 3 <= len(items) <= 5
         if form == "matrix":
             return len(items) == 4
-        if form in ("columns", "split"):
-            return 2 <= len(items) <= (3 if form == "columns" else 4)
+        if form == "split":
+            # Two halves, one dark, mean two sides: only a comparison of exactly two things takes it. Used
+            # for a game licence count or a port total, the dark half was a heavy block meaning nothing.
+            return relation == "comparison" and len(items) == 2
+        if form == "columns":
+            return 2 <= len(items) <= 3
         return True
 
     ordered = [form for form in FORMS_FOR.get(relation, FORMS_FOR["cases"]) if usable(form)]
