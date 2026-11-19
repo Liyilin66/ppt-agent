@@ -59,15 +59,23 @@ def conflicts(content: dict[str, Any], store: Any) -> list[dict[str, Any]]:
             for match in pattern.finditer(text):
                 start = max(text.rfind(mark, 0, match.start()) for mark in _CLAUSE_END) + 1
                 context = text[max(start, match.start() - MAX_CONTEXT):match.start()]
+                if re.search(r"[A-Za-z]{3}", context) and not re.search(r"[\u4e00-\u9fff]", context):
+                    # English says in about two characters what Chinese says in one; spaces are squashed out.
+                    context = text[max(start, match.start() - 2 * MAX_CONTEXT):match.start()]
                 unit = re.match(r"[^\d\s，,。；;]{0,2}", text[match.end():]).group(0)
-                if len(context) < MIN_CONTEXT or len(re.sub(r"[\d.%]", "", re.split(r"[,，:：、]", context)[-1])) < 2:
+                if len(context) < MIN_CONTEXT * (2 if re.search(r"[A-Za-z]{3}", context) and not re.search(r"[\u4e00-\u9fff]", context) else 1) or len(re.sub(r"[\d.%]", "", re.split(r"[,，:：、]", context)[-1])) < 2:
                     continue  # a figure straight after a separator is a chart label ("男,50.3%"), not a statement
+                if figure == str(number):
+                    continue  # the page's own number in its running footer ("PAGE | 100 IEA")
                 other = re.compile(rf"{re.escape(context)}(\d+(?:\.\d+)?){re.escape(unit)}")
-                for other_name, other_number, other_text in pages:
-                    for rival in other.finditer(other_text):
-                        value = rival.group(1)
-                        if value != figure and (figure, value) not in seen:
-                            seen.add((figure, value))
-                            found.append({"figure": figure + unit, "page": number, "other": value + unit,
-                                          "other_page": other_number, "context": context[-40:]})
+                rivals = [(other_number, rival.group(1)) for other_name, other_number, other_text in pages
+                          for rival in other.finditer(other_text)
+                          if rival.group(1) != figure and rival.group(1) != str(other_number)]
+                if len({value for _, value in rivals}) >= 2:
+                    continue  # one phrase with several other figures is a template (a list of truck models), not one fact told twice
+                for other_number, value in rivals:
+                    if (figure, value) not in seen:
+                        seen.add((figure, value))
+                        found.append({"figure": figure + unit, "page": number, "other": value + unit,
+                                      "other_page": other_number, "context": context[-40:]})
     return found

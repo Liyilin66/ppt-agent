@@ -29,3 +29,8 @@ def test_chart_labels_after_the_same_caption_are_not():
     one = "来源：中国互联网络发展状况统计调查2025.12男,50.3%女,49.7%"
     two = "来源：中国互联网络发展状况统计调查2025.12男,51.2%女,48.8%"
     assert conflicts({"items": ["男性占50.3%"]}, store((25, one), (50, two))) == []
+
+
+def test_running_footers_are_not_statements():
+    pages = [(n, f"Electric cars sold strongly.\nGlobal EV Outlook 2025 Outlook PAGE | {n} IEA. CC BY 4.0.") for n in (99, 100, 101, 102)]
+    assert conflicts({"lead": "第100页 100IE"}, store(*pages)) == []
