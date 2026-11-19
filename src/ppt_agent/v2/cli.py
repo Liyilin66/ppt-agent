@@ -50,6 +50,15 @@ def _add_build_arguments(parser: argparse.ArgumentParser, *, offline: bool) -> N
         "--no-html-review", action="store_true",
         help="Skip the step where the model looks at each rendered page.",
     )
+    parser.add_argument(
+        "--claim-audit", action="store_true",
+        help="A second model reads every finished page against its evidence; located repairs, then re-audit.",
+    )
+    parser.add_argument(
+        "--key-page-selection", action="store_true",
+        help="Design key pages twice and keep the one a blind reviewer prefers on PowerPoint's rendering "
+             "(needs Microsoft PowerPoint).",
+    )
     parser.add_argument("--language", default=None, help="Force slide language (e.g. zh-CN, en).")
     parser.add_argument(
         "--source",
@@ -128,6 +137,8 @@ def _build_request(args: argparse.Namespace, *, offline: bool) -> BuildRequest:
         style_profile=args.style_profile,
         html_theme=getattr(args, "html_theme", None),
         html_review=not getattr(args, "no_html_review", False),
+        claim_audit=bool(getattr(args, "claim_audit", False)),
+        key_page_selection=bool(getattr(args, "key_page_selection", False)),
         output_dir=args.output_dir,
         deck_name=args.deck_name,
         resume=args.resume,
