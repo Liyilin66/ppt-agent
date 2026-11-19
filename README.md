@@ -233,7 +233,7 @@ Agent：这次培训主要想让新员工达到什么效果？（给出 4 个选
 uv run pytest
 ```
 
-2290 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
+2291 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
 
 ## License
 
