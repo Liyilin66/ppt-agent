@@ -1331,7 +1331,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 moved = [content.items[index] for index in indices]
                 kept = [item for index, item in enumerate(content.items) if index not in indices]
                 note = '与本页论点无关、移出页面的事实：' + '；'.join(
-                    ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                    ' '.join(str(part) for part in (getattr(item, 'heading', None), getattr(item, 'value', None),
+                                             getattr(item, 'body', None) or getattr(item, 'text', None)) if part)
+                        for item in moved)  # a plain point has no value (crashed a 100-page run)
                 return content.model_copy(update={'items': kept, 'speaker_notes': (
                     (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
 
@@ -1394,7 +1396,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                     moved = [content.items[index] for index in decision['move_items']]
                     kept = [item for index, item in enumerate(content.items) if index not in decision['move_items']]
                     note = '与本页论点无关、移出页面的事实：' + '；'.join(
-                        ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                        ' '.join(str(part) for part in (getattr(item, 'heading', None), getattr(item, 'value', None),
+                                             getattr(item, 'body', None) or getattr(item, 'text', None)) if part)
+                        for item in moved)  # a plain point has no value (crashed a 100-page run)
                     content = content.model_copy(update={'items': kept, 'speaker_notes': (
                         (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
                 record = {**record, 'claim_audit': {**verdicts[number], 'decision': decision},
@@ -1572,7 +1576,9 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                 moved = [item for index, item in enumerate(content.items, 1) if index in verdict['unrelated']]
                 kept = [item for index, item in enumerate(content.items, 1) if index not in verdict['unrelated']]
                 note = '页面未展开（与本页论点无直接关系）：' + '；'.join(
-                    ' '.join(str(part) for part in (item.heading, item.value, item.body) if part) for item in moved)
+                    ' '.join(str(part) for part in (getattr(item, 'heading', None), getattr(item, 'value', None),
+                                             getattr(item, 'body', None) or getattr(item, 'text', None)) if part)
+                        for item in moved)  # a plain point has no value (crashed a 100-page run)
                 content = content.model_copy(update={'items': kept, 'speaker_notes': (
                     (content.speaker_notes + '\n') if content.speaker_notes else '') + note})
                 record = {**record, 'unrelated_items_moved': {'items': [item.heading for item in moved],
