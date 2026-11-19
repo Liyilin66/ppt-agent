@@ -41,3 +41,11 @@ def test_a_currency_before_the_amount_is_its_unit():
          "quote": "in 2030 it is expected to cost USD 31 200"}]}]
     kept, rejected = verify(raw, text)
     assert not [r for r in rejected if "单位" in r["why"] or "数字和单位" in r["why"]], rejected
+
+
+def test_financial_shorthand_is_a_measure_and_a_magnitude():
+    from ppt_agent.v2.evidence_check import _NUMBER, _magnitude
+
+    assert MEASURE.findall("800MM users, 5.5B searches and 27K startups") == ["800MM", "5.5B", "27K"]
+    assert _magnitude(_NUMBER.search("800MM").group()) == _magnitude("8亿")
+    assert not MEASURE.findall("a 3 m wide lane")

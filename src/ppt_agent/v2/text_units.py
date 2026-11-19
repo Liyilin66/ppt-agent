@@ -19,7 +19,10 @@ _CN_UNITS = r"%|％|个百分点|亿|万|倍|元|美元|人|家|个|项|款|笔"
 _EN_UNITS = (r"percentage points?|million|billion|trillion|thousand|bn|mn|"
              r"[GMkT]Wh|[GMk]W|tonnes?|Mt|kt|km|vehicles|cars|units|times|-fold|x(?![A-Za-z])")
 # A figure with the unit that makes it a measurement; English amounts may also lead with a currency.
-MEASURE = re.compile(rf"(?:(?:USD|EUR|CNY|RMB|US\$|\$|€|£)\s*)?\d+(?:[.,]\d+)*\s*(?:{_CN_UNITS}|{_EN_UNITS})"
+# Financial shorthand, written straight after the figure in capitals: 800MM, 5.5B, 27K, $3.3T (BOND, May 2025:
+# 252 such figures, fewer than half recognised, so a 340-page report looked like it held 36 pages of facts).
+_SHORT = r"(?:MM|[KMBT])(?![A-Za-z])"
+MEASURE = re.compile(rf"(?:(?:USD|EUR|CNY|RMB|US\$|\$|€|£)\s*)?\d+(?:[.,]\d+)*(?:\s*(?:{_CN_UNITS}|{_EN_UNITS})|{_SHORT})"
                      rf"|(?:USD|EUR|CNY|RMB|US\$|\$|€|£)\s*\d+(?:[.,  ]\d{{3}})*(?:\.\d+)?")
 
 

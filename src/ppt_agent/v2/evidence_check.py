@@ -14,11 +14,13 @@ from .visual.content import ArchetypeContent, StatementContent
 
 # Thousands may be grouped with commas or, in English reports (IEA), spaces: "27 000", "1 000 000".
 _NUMBER = re.compile(r'(?<![\d.])[-+]?\d+(?:,\d{3}(?!\d))*(?:[ \u00a0\u202f]\d{3}(?![\d,.]))*(?:\.\d+)?\s*'
-                     r'(?:[%％]|万亿|亿|万|千|百|pp|percentage points?|trillion|billion|million|thousand|bn\b|mn\b)?', re.I)
+                     r'(?:[%％]|万亿|亿|万|千|百|pp|percentage points?|trillion|billion|million|thousand|bn\b|mn\b|(?-i:MM|[KMBT])(?![A-Za-z]))?', re.I)
 # A figure is compared by magnitude, so "2,000万" (Chinese page) is the "20 million" of an English source.
 _SCALE = {'万亿': Decimal(10) ** 12, '亿': Decimal(10) ** 8, '万': Decimal(10) ** 4, '千': Decimal(1000), '百': Decimal(100),
           'trillion': Decimal(10) ** 12, 'billion': Decimal(10) ** 9, 'bn': Decimal(10) ** 9, 'million': Decimal(10) ** 6,
-          'mn': Decimal(10) ** 6, 'thousand': Decimal(1000)}
+          'mn': Decimal(10) ** 6, 'thousand': Decimal(1000),
+          # financial shorthand, kept in capitals by the pattern above (lowered in _magnitude)
+          'mm': Decimal(10) ** 6, 'k': Decimal(1000), 'b': Decimal(10) ** 9, 't': Decimal(10) ** 12}
 # Roadmap phases and bar positions are the deck's advice, not claims about a source.
 _SKIP = {'source', 'speaker_notes', 'ref', 'archetype', 'unit_format', 'chart', 'phases', 'start', 'end',
          'series', 'figure', 'diagram', 'visual'}  # checked by v2.data_series and v2.figures, more strictly than here
