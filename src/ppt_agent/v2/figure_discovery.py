@@ -116,6 +116,15 @@ def _clusters(page: Any, width: float, height: float) -> list[list[float]]:
             and c[3] - c[1] < height * 0.7 and c[5] < 0.9 * c[4]]
 
 
+def _credit(text: str) -> str:
+    """Who the figure is from, not its notes: the "Sources:" sentence (or the licence line), short."""
+
+    match = re.search(r"Sources?\s*:\s*(.+?)(?:\.\s|$)", text, re.I) or re.search(r"(?:资料|数据)?来源[:：]\s*(\S[^。]*)", text)
+    licence = re.search(r"IEA\.?\s*CC\s*BY\s*[\d.]+", text)
+    parts = [part for part in ((licence.group(0).rstrip(".") if licence else ""), (match.group(1).strip() if match else "")) if part]
+    return "；".join(parts)[:80]
+
+
 def regions(page: Any) -> list[dict[str, Any]]:
     """Each figure on one page: its extent (PDF points, origin bottom-left), title, credit and its text."""
 
@@ -142,7 +151,7 @@ def regions(page: Any) -> list[dict[str, Any]]:
             continue
         title = titled[0][4]
         caption = CAPTION.match(title)
-        credit = " ".join(line[4] for line in sorted(below, key=lambda line: -line[3])[:3])
+        credit = _credit(" ".join(line[4] for line in sorted(below, key=lambda line: -line[3])[:4]))
         box = [min(cluster[0], min((line[0] for line in inside), default=cluster[0])) - 4, bottom,
                max(cluster[2], max((line[2] for line in inside), default=cluster[2])) + 4, top]
         if any(box[1] < other["box"][3] and box[3] > other["box"][1] and box[0] < other["box"][2] and box[2] > other["box"][0]
