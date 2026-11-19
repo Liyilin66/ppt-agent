@@ -1,0 +1,852 @@
+{
+ "summary": {
+  "slides": 34,
+  "auto_pass": [
+   1,
+   2,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   11,
+   12,
+   16,
+   18,
+   19,
+   20,
+   22,
+   23,
+   25,
+   26,
+   27,
+   28,
+   30,
+   31,
+   33,
+   34
+  ],
+  "needs_review": {
+   "3": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "10": [
+    "orphan「跃。」after「IPv6规模部署已从地址储备⾛向真实⽤户活」"
+   ],
+   "13": [
+    "orphan「个。」after「截至2025年12月，10G PON端口较上年同期净增341.9万」"
+   ],
+   "14": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "15": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "17": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "21": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "24": [
+    "orphan「⼈」after「6.02亿」"
+   ],
+   "29": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "32": [
+    "content: needs review (claim audit or recovery)"
+   ]
+  },
+  "removed": [
+   "p016",
+   "p035"
+  ],
+  "pdf_findings": {
+   "10": [
+    {
+     "orphan": "跃。",
+     "after": "IPv6规模部署已从地址储备⾛向真实⽤户活"
+    }
+   ],
+   "13": [
+    {
+     "orphan": "个。",
+     "after": "截至2025年12月，10G PON端口较上年同期净增341.9万"
+    }
+   ],
+   "24": [
+    {
+     "orphan": "⼈",
+     "after": "6.02亿"
+    }
+   ]
+  },
+  "charts_read_back": 11
+ },
+ "slides": [
+  {
+   "slide_id": "p001",
+   "kind": "cover",
+   "planned_page": 1,
+   "final_page": 1,
+   "status": "cover",
+   "content_checkpoint": null,
+   "design_checkpoint": "html/page_001.json",
+   "evidence_chunks": [],
+   "claim_audit": null,
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p002",
+   "kind": "toc",
+   "planned_page": 2,
+   "final_page": 2,
+   "status": "toc",
+   "content_checkpoint": null,
+   "design_checkpoint": "html/page_002.json",
+   "evidence_chunks": [],
+   "claim_audit": null,
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p003",
+   "kind": "content",
+   "planned_page": 3,
+   "final_page": 3,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_003.json",
+   "design_checkpoint": "html/page_003.json",
+   "evidence_chunks": [
+    "doc1:c13",
+    "doc1:c12",
+    "doc1:c14",
+    "doc1:c15"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [
+    {
+     "figure": "17179万人",
+     "page": 19,
+     "other": "1717万人",
+     "other_page": 9,
+     "context": "网民规模达11.25亿人，较2024年12月增长"
+    }
+   ],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p004",
+   "kind": "content",
+   "planned_page": 4,
+   "final_page": 4,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_004.json",
+   "design_checkpoint": "html/page_004.json",
+   "evidence_chunks": [
+    "doc1:c13",
+    "doc1:c12",
+    "doc1:c15",
+    "doc1:c16"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p005",
+   "kind": "content",
+   "planned_page": 5,
+   "final_page": 5,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_005.json",
+   "design_checkpoint": "html/page_005.json",
+   "evidence_chunks": [
+    "doc1:c18",
+    "doc1:c20",
+    "doc1:c17",
+    "doc1:c14"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p006",
+   "kind": "content",
+   "planned_page": 6,
+   "final_page": 6,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_006.json",
+   "design_checkpoint": "html/page_006.json",
+   "evidence_chunks": [
+    "doc1:c18",
+    "doc1:c19",
+    "doc1:c20",
+    "doc1:c14"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p007",
+   "kind": "content",
+   "planned_page": 7,
+   "final_page": 7,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_007.json",
+   "design_checkpoint": "html/page_007.json",
+   "evidence_chunks": [
+    "doc1:c15",
+    "doc1:c16",
+    "doc1:c20",
+    "doc1:c14"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p008",
+   "kind": "content",
+   "planned_page": 8,
+   "final_page": 8,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_008.json",
+   "design_checkpoint": "html/page_008.json",
+   "evidence_chunks": [
+    "doc1:c17",
+    "doc1:c14",
+    "doc1:c15",
+    "doc1:c20"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p009",
+   "kind": "content",
+   "planned_page": 9,
+   "final_page": 9,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_009.json",
+   "design_checkpoint": "html/page_009.json",
+   "evidence_chunks": [
+    "doc1:c17",
+    "doc1:c14",
+    "doc1:c16",
+    "doc1:c15"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p010",
+   "kind": "content",
+   "planned_page": 10,
+   "final_page": 10,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_010.json",
+   "design_checkpoint": "html/page_010.json",
+   "evidence_chunks": [
+    "doc1:c9",
+    "doc1:c10",
+    "doc1:c11",
+    "doc1:c12"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "orphan「跃。」after「IPv6规模部署已从地址储备⾛向真实⽤户活」"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p011",
+   "kind": "content",
+   "planned_page": 11,
+   "final_page": 11,
+   "status": "CONTENT_RECOVERED",
+   "content_checkpoint": "typeset/content_011.json",
+   "design_checkpoint": "html/page_011.json",
+   "evidence_chunks": [
+    "doc1:c11",
+    "doc1:c10",
+    "doc1:c9",
+    "doc1:c12"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p012",
+   "kind": "content",
+   "planned_page": 12,
+   "final_page": 12,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_012.json",
+   "design_checkpoint": "html/page_012.json",
+   "evidence_chunks": [
+    "doc1:c11",
+    "doc1:c9",
+    "doc1:c12",
+    "doc1:c10"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p013",
+   "kind": "content",
+   "planned_page": 13,
+   "final_page": 13,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_013.json",
+   "design_checkpoint": "html/page_013.json",
+   "evidence_chunks": [
+    "doc1:c11",
+    "doc1:c9",
+    "doc1:c12",
+    "doc1:c10"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "orphan「个。」after「截至2025年12月，10G PON端口较上年同期净增341.9万」"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p014",
+   "kind": "content",
+   "planned_page": 14,
+   "final_page": 14,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_014.json",
+   "design_checkpoint": "html/page_014.json",
+   "evidence_chunks": [
+    "doc1:c12",
+    "doc1:c11",
+    "doc1:c9",
+    "doc1:c10"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 1,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p015",
+   "kind": "content",
+   "planned_page": 15,
+   "final_page": 15,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_015.json",
+   "design_checkpoint": "html/page_015.json",
+   "evidence_chunks": [
+    "doc1:c21",
+    "doc1:c27",
+    "doc1:c26",
+    "doc1:c30"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p016",
+   "kind": "content",
+   "planned_page": 16,
+   "final_page": null,
+   "status": "PAGE_REMOVED",
+   "content_checkpoint": "typeset/content_016.json",
+   "design_checkpoint": "html/page_016.json",
+   "evidence_chunks": [
+    "doc1:c26",
+    "doc1:c21",
+    "doc1:c27",
+    "doc1:c28"
+   ],
+   "claim_audit": null,
+   "source_conflicts": [],
+   "content_version": "typeset/content_016.rev-0dd2198e9434.json",
+   "acceptance": "REMOVED"
+  },
+  {
+   "slide_id": "p017",
+   "kind": "content",
+   "planned_page": 17,
+   "final_page": 16,
+   "status": "CONTENT_RECOVERED",
+   "content_checkpoint": "typeset/content_017.json",
+   "design_checkpoint": "html/page_017.json",
+   "evidence_chunks": [
+    "doc1:c25",
+    "doc1:c33",
+    "doc1:c29",
+    "doc1:c27"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p018",
+   "kind": "content",
+   "planned_page": 18,
+   "final_page": 17,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_018.json",
+   "design_checkpoint": "html/page_018.json",
+   "evidence_chunks": [
+    "doc1:c29",
+    "doc1:c31",
+    "doc1:c21",
+    "doc1:c28"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": "typeset/content_018.rev-c81ec5ecd667.json",
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p019",
+   "kind": "content",
+   "planned_page": 19,
+   "final_page": 18,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_019.json",
+   "design_checkpoint": "html/page_019.json",
+   "evidence_chunks": [
+    "doc1:c22",
+    "doc1:c30",
+    "doc1:c31",
+    "doc1:c21"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p020",
+   "kind": "content",
+   "planned_page": 20,
+   "final_page": 19,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_020.json",
+   "design_checkpoint": "html/page_020.json",
+   "evidence_chunks": [
+    "doc1:c44"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p021",
+   "kind": "content",
+   "planned_page": 21,
+   "final_page": 20,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_021.json",
+   "design_checkpoint": "html/page_021.json",
+   "evidence_chunks": [
+    "doc1:c37",
+    "doc1:c27",
+    "doc1:c19",
+    "doc1:c25"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p022",
+   "kind": "content",
+   "planned_page": 22,
+   "final_page": 21,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_022.json",
+   "design_checkpoint": "html/page_022.json",
+   "evidence_chunks": [
+    "doc1:c36",
+    "doc1:c19",
+    "doc1:c27",
+    "doc1:c20"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p023",
+   "kind": "content",
+   "planned_page": 23,
+   "final_page": 22,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_023.json",
+   "design_checkpoint": "html/page_023.json",
+   "evidence_chunks": [
+    "doc1:c36",
+    "doc1:c39",
+    "doc1:c37",
+    "doc1:c19"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p024",
+   "kind": "content",
+   "planned_page": 24,
+   "final_page": 23,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_024.json",
+   "design_checkpoint": "html/page_024.json",
+   "evidence_chunks": [
+    "doc1:c24",
+    "doc1:c39",
+    "doc1:c25",
+    "doc1:c26"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p025",
+   "kind": "content",
+   "planned_page": 25,
+   "final_page": 24,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_025.json",
+   "design_checkpoint": "html/page_025.json",
+   "evidence_chunks": [
+    "doc1:c34",
+    "doc1:c35",
+    "doc1:c8",
+    "doc1:c32"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "orphan「⼈」after「6.02亿」"
+   ],
+   "charts": 1,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p026",
+   "kind": "content",
+   "planned_page": 26,
+   "final_page": 25,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_026.json",
+   "design_checkpoint": "html/page_026.json",
+   "evidence_chunks": [
+    "doc1:c35",
+    "doc1:c34",
+    "doc1:c6",
+    "doc1:c5"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p027",
+   "kind": "content",
+   "planned_page": 27,
+   "final_page": 26,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_027.json",
+   "design_checkpoint": "html/page_027.json",
+   "evidence_chunks": [
+    "doc1:c6",
+    "doc1:c5",
+    "doc1:c36",
+    "doc1:c34"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p028",
+   "kind": "content",
+   "planned_page": 28,
+   "final_page": 27,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_028.json",
+   "design_checkpoint": "html/page_028.json",
+   "evidence_chunks": [
+    "doc1:c36",
+    "doc1:c19",
+    "doc1:c37",
+    "doc1:c18"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 1,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p029",
+   "kind": "content",
+   "planned_page": 29,
+   "final_page": 28,
+   "status": "CONTENT_RECOVERED",
+   "content_checkpoint": "typeset/content_029.json",
+   "design_checkpoint": "html/page_029.json",
+   "evidence_chunks": [
+    "doc1:c40",
+    "doc1:c35",
+    "doc1:c39",
+    "doc1:c36"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p030",
+   "kind": "content",
+   "planned_page": 30,
+   "final_page": 29,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_030.json",
+   "design_checkpoint": "html/page_030.json",
+   "evidence_chunks": [
+    "doc1:c43",
+    "doc1:c39",
+    "doc1:c35",
+    "doc1:c37"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 0,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p031",
+   "kind": "content",
+   "planned_page": 31,
+   "final_page": 30,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_031.json",
+   "design_checkpoint": "html/page_031.json",
+   "evidence_chunks": [
+    "doc1:c38",
+    "doc1:c40",
+    "doc1:c41",
+    "doc1:c39"
+   ],
+   "claim_audit": "ok",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p032",
+   "kind": "content",
+   "planned_page": 32,
+   "final_page": 31,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_032.json",
+   "design_checkpoint": "html/page_032.json",
+   "evidence_chunks": [
+    "doc1:c41",
+    "doc1:c42",
+    "doc1:c39",
+    "doc1:c40"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p033",
+   "kind": "content",
+   "planned_page": 33,
+   "final_page": 32,
+   "status": "NEEDS_CONTENT_REVIEW",
+   "content_checkpoint": "typeset/content_033.json",
+   "design_checkpoint": "html/page_033.json",
+   "evidence_chunks": [
+    "doc1:c8",
+    "doc1:c27",
+    "doc1:c21",
+    "doc1:c9"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [
+    "content: needs review (claim audit or recovery)"
+   ],
+   "charts": 1,
+   "acceptance": "NEEDS_REVIEW"
+  },
+  {
+   "slide_id": "p034",
+   "kind": "content",
+   "planned_page": 34,
+   "final_page": 33,
+   "status": "CONTENT_VALID",
+   "content_checkpoint": "typeset/content_034.json",
+   "design_checkpoint": "html/page_034.json",
+   "evidence_chunks": [
+    "doc1:c23",
+    "doc1:c30",
+    "doc1:c40",
+    "doc1:c27"
+   ],
+   "claim_audit": "fix",
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  },
+  {
+   "slide_id": "p035",
+   "kind": "content",
+   "planned_page": 35,
+   "final_page": null,
+   "status": "PAGE_REMOVED",
+   "content_checkpoint": "typeset/content_035.json",
+   "design_checkpoint": "html/page_035.json",
+   "evidence_chunks": [
+    "doc1:c29",
+    "doc1:c28",
+    "doc1:c27",
+    "doc1:c9"
+   ],
+   "claim_audit": null,
+   "source_conflicts": [],
+   "content_version": null,
+   "acceptance": "REMOVED"
+  },
+  {
+   "slide_id": "p036",
+   "kind": "closing",
+   "planned_page": 36,
+   "final_page": 34,
+   "status": "closing",
+   "content_checkpoint": null,
+   "design_checkpoint": "html/page_036.json",
+   "evidence_chunks": [],
+   "claim_audit": null,
+   "source_conflicts": [],
+   "content_version": null,
+   "problems": [],
+   "charts": 0,
+   "acceptance": "AUTO_PASS"
+  }
+ ]
+}
