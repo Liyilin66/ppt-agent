@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+from conftest import needs_office_fonts
+
 from ppt_agent.v2.htmldeck import browser, sanitize
 from ppt_agent.v2.htmldeck.checks import allowed_numbers, find_defects, numbers_in
 from ppt_agent.v2.htmldeck.document import wrap
@@ -99,6 +101,7 @@ def test_half_a_unit_under_its_figure_is_a_mistake_and_a_whole_one_is_a_choice()
 
 
 @needs_browser
+@needs_office_fonts
 def test_fix7_orphan_repeated_figure_and_glyph_overlap():
     css_page = '<div class="tall" style="position:relative">'
     orphan = css_page + '<p style="width:200px;font-size:20px">一二三四五六七八九十一二三四五六七八九十甲</p></div>'

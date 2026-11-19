@@ -252,7 +252,7 @@ uv run pytest
 
 2291 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
 
-GitHub Actions 在每次推送和合并请求时，用 Python 3.11 和 uv 运行测试（[`.github/workflows/tests.yml`](.github/workflows/tests.yml)），不使用任何 API Key：macOS 上运行完整测试集；Ubuntu 上运行除浏览器版面测量以外的全部测试。浏览器版面测试（54 个）的像素阈值按 macOS 字体校准，在 Ubuntu 的 Noto 字体下有一页间距差 2 像素，属于字体差异，所以只在 macOS 上运行，而不是放宽阈值。需要资料 PDF 的少数测试在仓库里没有该文件时会自动跳过。
+GitHub Actions 在每次推送和合并请求时，用 Python 3.11 和 uv 在 Ubuntu 和 macOS 上运行完整测试集（[`.github/workflows/tests.yml`](.github/workflows/tests.yml)），不使用任何 API Key。少数测试会注明原因后跳过：需要资料 PDF 而仓库里没有的；以及 2 个版面测试，它们的期望值依赖 Microsoft Office 中文字体的精确字宽（成品在 PowerPoint 里显示，版面按这些字体测量），CI 机器上没有 Office，换成替代字体后会有 2 像素级的差异。这 2 个测试在装有 Office 的机器上照常运行。
 
 ## License
 

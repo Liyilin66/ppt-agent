@@ -46,5 +46,5 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
 markers = [
-    "browser: measures pages in a real Chromium browser; pixel thresholds calibrated on macOS fonts",
+    "browser: measures pages in a real Chromium browser",
 ]

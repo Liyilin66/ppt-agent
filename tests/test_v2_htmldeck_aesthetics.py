@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import needs_office_fonts
+
 from ppt_agent.v2.htmldeck import aesthetics, browser, sanitize, themes
 from ppt_agent.v2.htmldeck.browser import Measured
 from ppt_agent.v2.htmldeck.document import wrap
@@ -45,6 +47,7 @@ def test_known_bad_pages_are_flagged(pages, name):
 
 
 @needs_browser
+@needs_office_fonts
 @pytest.mark.parametrize("name", GOOD)
 def test_known_good_pages_stay_clean(pages, name):
     assert [defect.message for defect in aesthetics.find(pages[name], tier=GOOD[name])] == []

@@ -2,13 +2,15 @@ name: tests
 
 # No real model calls and no API keys: the tests use mock clients.
 #
-# Two jobs, split by platform rather than by hiding anything:
-# - ubuntu: every test except those that measure pages in a real browser (marker `browser`).
-# - macos: the whole suite, browser tests included. Their pixel thresholds were calibrated on macOS
-#   fonts; on Ubuntu with Noto CJK one known-good page measured a 10px gap against a 12px threshold,
-#   a glyph-width difference rather than a code defect (first CI run, 2026-11-19).
-# The macOS job first checks that a Chromium browser is there, so the browser tests cannot skip silently.
-# Tests that need a source PDF not in the repository skip themselves with a stated reason (-rs).
+# The full suite runs on Ubuntu and on macOS. Each job first checks that a Chromium browser is
+# there, so the tests that measure pages in a browser cannot skip silently.
+# Tests skip themselves, with the reason printed (-rs), only where something they need is not in
+# the repository or on the runner:
+# - a source PDF (third-party reports are not committed);
+# - the Microsoft Office fonts that a few layout thresholds were measured with. Slides are shown in
+#   PowerPoint, so pages are measured with Office's Chinese fonts; runners have no Office, and with the
+#   stand-in fonts one known-good page measured a 10px gap against a 12px threshold and one line broke
+#   elsewhere (first CI runs, 2026-11-19). The other browser tests run everywhere.
 
 on:
   push:
@@ -21,28 +23,14 @@ permissions:
   contents: read
 
 jobs:
-  ubuntu:
-    name: tests (ubuntu, without browser layout tests)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install dependencies (Python 3.11, locked)
-        run: uv sync --locked --python 3.11
-
-      - name: Run the test suite except browser layout tests
-        run: uv run --python 3.11 pytest -p no:cacheprovider -q -rs -m "not browser"
-
-  macos:
-    name: tests (macos, full suite)
-    runs-on: macos-latest
+  pytest:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +38,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - name: Install CJK fonts (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
 
       - name: Install dependencies (Python 3.11, locked)
         run: uv sync --locked --python 3.11
