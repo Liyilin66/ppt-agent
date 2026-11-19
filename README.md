@@ -1,10 +1,27 @@
+<div align="center">
+
 # ppt-agent
 
-**面向长篇报告、有证据约束的演示文稿生成系统：把几百页的研究报告变成几十页的中文 PPT，每个数字都标着原文页码，配错的、资料自相矛盾的数字会被拦下，导出的是能直接改的 PowerPoint。**
+**Evidence-grounded generation of long PowerPoint decks from research reports**
+
+面向长篇报告、有证据约束的演示文稿生成系统：把几百页的研究报告变成几十页的中文 PPT，<br/>
+每个数字都标着原文页码，配错的、资料自相矛盾的数字会被拦下，导出的是能直接改的 PowerPoint。
+
+[![tests](https://github.com/Liyilin66/ppt-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Liyilin66/ppt-agent/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+[架构](#怎么做到的) · [规模验证](#长篇规模验证2026-11) · [快速开始](#快速开始) · [MCP 接入](#作为-mcp-工具接入-claude-codecodex-等-agent)
+
+</div>
 
 ![四页由 ppt-agent 根据信通院 64 页报告生成的幻灯片](docs/readme/showcase.png)
 
-<sub>上图四页（执行摘要、图表页、表格页、行动路线）来自 [样例 PPTX](examples/caict-2024-sample.pptx)：输入是一份 64 页行业报告，20 页成稿未经人工修改，生成方式见[样例说明](examples/caict-2024-sample.md)。页脚是引用的报告名与 PDF 页码。</sub>
+<sub>上图四页（执行摘要、图表页、表格页、行动路线）来自 [样例 PPTX](examples/caict-2024-sample.pptx)：默认排版路线的真实输出，输入是一份 64 页行业报告，20 页成稿未经人工修改，生成方式见[样例说明](examples/caict-2024-sample.md)。页脚是引用的报告名与 PDF 页码。</sub>
+
+| 单套最高成品 | 自动检查通过 | 自动化测试 | 资料语言 |
+|:---:|:---:|:---:|:---:|
+| **86 张**<br/><sub>340 页英文报告，请求 100 页</sub> | **105 / 123**<br/><sub>两套长篇成品合计</sub> | **2,291**<br/><sub>不调用真实模型</sub> | **中文 / 英文**<br/><sub>英文资料生成中文成稿</sub> |
 
 - **管理层能直接用的结构**：深色封面和章节页、结论式标题，内容页写完后再看着全稿生成执行摘要和行动路线。
 - **有出处**：资料按页码切分，每页只拿到与它相关的原文段落，页脚标注报告名和 PDF 页码，联网资料标注网站和标题；引用了没拿到的页会被剔除，数字在资料里但引错页时会改成正确的页。
@@ -234,6 +251,8 @@ uv run pytest
 ```
 
 2291 个测试，不调用真实模型，也不打开 PowerPoint。PowerPoint 渲染检查用 `scripts/pptx_snapshot.sh` 单独运行。
+
+GitHub Actions 在每次推送和合并请求时，用 Python 3.11 和 uv 运行完整测试集（[`.github/workflows/tests.yml`](.github/workflows/tests.yml)），不使用任何 API Key。需要资料 PDF 的少数测试在仓库里没有该文件时会自动跳过。
 
 ## License
 

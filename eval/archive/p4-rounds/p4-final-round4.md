@@ -34,7 +34,7 @@
 - 结论：IR 让程序真正接管了空间（重叠类缺陷基本消失），但版面比"模型自由构图 + 行求解器"朴素，且没达到采用门槛。
   **按约定不接入生产流程**，保留为实验路径；生产继续用 B。
 
-对照图：`docs/design/p4-fix4-abc.png`；盲评记录：`p4-final/blind-abc-12hard.json`。
+对照图：`docs/archive/p4-rounds/p4-fix4-abc.png`；盲评记录：`p4-final/blind-abc-12hard.json`。
 
 ## 未做
 

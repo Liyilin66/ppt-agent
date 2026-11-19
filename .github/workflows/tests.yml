@@ -1,0 +1,37 @@
+name: tests
+
+# The full test suite: no real model calls and no API keys (the tests use mock clients).
+# Browser-measured layout tests run when Chrome is present, as it is on GitHub's Ubuntu runners;
+# tests that need a source PDF not in the repository skip themselves. Nothing is marked
+# allowed-to-fail: a platform difference shows up as a failure to be recorded, not hidden.
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install CJK fonts for browser-measured layout tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
+      - name: Install dependencies (Python 3.11, locked)
+        run: uv sync --locked --python 3.11
+
+      - name: Run the test suite
+        run: uv run --python 3.11 pytest -p no:cacheprovider -q -rs
