@@ -15,9 +15,9 @@
 
 </div>
 
-![四页由 ppt-agent 根据信通院 64 页报告生成的幻灯片](docs/readme/showcase.png)
+![ppt-agent 根据两份英文研究报告生成的中文幻灯片](docs/readme/hero.png)
 
-<sub>上图四页（执行摘要、图表页、表格页、行动路线）来自 [样例 PPTX](examples/caict-2024-sample.pptx)：默认排版路线的真实输出，输入是一份 64 页行业报告，20 页成稿未经人工修改，生成方式见[样例说明](examples/caict-2024-sample.md)。页脚是引用的报告名与 PDF 页码。</sub>
+<sub>上图六页取自两次长篇规模测试的成品（未经人工修改，PowerPoint 实际渲染）：IEA《Global EV Outlook 2025》（173 页）生成的 37 页演示文稿——封面、章节页、数据页和原文图引用页；BOND《Trends – Artificial Intelligence》（340 页）生成的 86 页演示文稿——原生可编辑条形图和数据页。页脚标注引用的报告页码。</sub>
 
 | 单套最高成品 | 自动检查通过 | 自动化测试 | 资料语言 |
 |:---:|:---:|:---:|:---:|
@@ -79,10 +79,6 @@ flowchart TB
 
 同一套代码各一次端到端生成，英文资料 → 中文成稿，打开终审：
 
-![BOND 340 页报告生成的 86 页成品中的四页](docs/readme/scale-showcase.png)
-
-<sub>上图四页取自 BOND 测试的成品（未经人工修改）：原文图引用（左上）、原生可编辑条形图（右上）、数据页与案例页（下）。页脚是引用的报告页码。</sub>
-
 
 | 指标 | IEA 测试 | BOND 测试 |
 |---|---|---|
@@ -110,6 +106,11 @@ uv run ppt-agent v2 build --prompt "面向车企与能源企业管理层的全�
 ## 早期实测
 
 下表是更早版本的记录，生成流程与版式和上面不同。
+
+![四页由 ppt-agent 根据信通院 64 页报告生成的幻灯片](docs/readme/showcase.png)
+
+<sub>上图四页（执行摘要、图表页、表格页、行动路线）来自 [样例 PPTX](examples/caict-2024-sample.pptx)：早期默认排版路线的真实输出：输入是一份 64 页行业报告，20 页成稿未经人工修改，生成方式见[样例说明](examples/caict-2024-sample.md)。页脚是引用的报告名与 PDF 页码。</sub>
+
 
 | 场景 | 结果 | 记录 |
 |---|---|---|
