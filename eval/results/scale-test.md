@@ -36,3 +36,10 @@
 需要在写进简历前修掉的只有一处：空页没有被删除。
 
 文件：`eval/results/scale-iea-50.pptx`、`eval/results/scale-bond-100.pptx`；缩略图 `docs/design/scale-iea50-sheet.png`、`docs/design/scale-bond100-sheet.png`。
+
+## 交付前修复（同日）
+- 新增无效内容页删除：内容页在核对、恢复或删事实后已没有可展示的事实（核对失败后的占位页，或写作模型自己写下"页面未提供……数据""证据不足以判断"），
+  标为 INVALID_CONTENT 从成品删除并重排页码，原因记入运行报告。BOND 第 19 页、IEA 第 14 页建为回归测试（`2c3618c`）。
+- 从缓存重新组装（不重新生成内容）：IEA 删除规划页 14、30 → **37 张，自动通过 28**；BOND 删除规划页 19 → **86 张，自动通过 77**。
+  两套 P0 均为 0，PowerPoint 文字碰撞 0；字数极少的页只剩章节页。重新组装费用 $0.78 / $1.41。
+- 修复前的成品保留在 `data/html-pages/scale/iea50`、`bond100`；`eval/results/scale-*.pptx` 与缩略图已换成修复后的版本。
