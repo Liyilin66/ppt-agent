@@ -1,9 +1,14 @@
 name: tests
 
-# The full test suite: no real model calls and no API keys (the tests use mock clients).
-# Browser-measured layout tests run when Chrome is present, as it is on GitHub's Ubuntu runners;
-# tests that need a source PDF not in the repository skip themselves. Nothing is marked
-# allowed-to-fail: a platform difference shows up as a failure to be recorded, not hidden.
+# No real model calls and no API keys: the tests use mock clients.
+#
+# Two jobs, split by platform rather than by hiding anything:
+# - ubuntu: every test except those that measure pages in a real browser (marker `browser`).
+# - macos: the whole suite, browser tests included. Their pixel thresholds were calibrated on macOS
+#   fonts; on Ubuntu with Noto CJK one known-good page measured a 10px gap against a 12px threshold,
+#   a glyph-width difference rather than a code defect (first CI run, 2026-11-19).
+# The macOS job first checks that a Chromium browser is there, so the browser tests cannot skip silently.
+# Tests that need a source PDF not in the repository skip themselves with a stated reason (-rs).
 
 on:
   push:
@@ -16,7 +21,8 @@ permissions:
   contents: read
 
 jobs:
-  pytest:
+  ubuntu:
+    name: tests (ubuntu, without browser layout tests)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -27,11 +33,29 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install CJK fonts for browser-measured layout tests
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - name: Install dependencies (Python 3.11, locked)
+        run: uv sync --locked --python 3.11
+
+      - name: Run the test suite except browser layout tests
+        run: uv run --python 3.11 pytest -p no:cacheprovider -q -rs -m "not browser"
+
+  macos:
+    name: tests (macos, full suite)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies (Python 3.11, locked)
         run: uv sync --locked --python 3.11
 
-      - name: Run the test suite
+      - name: Require a Chromium browser for the layout tests
+        run: uv run --python 3.11 python -c "from ppt_agent.v2.htmldeck import browser; assert browser.available(), 'no Chromium-based browser on this runner'"
+
+      - name: Run the full test suite
         run: uv run --python 3.11 pytest -p no:cacheprovider -q -rs

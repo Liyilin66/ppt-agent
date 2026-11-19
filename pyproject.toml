@@ -45,3 +45,6 @@ ppt_agent = ["webui/*", "v2/htmldeck/*.js", "v2/htmldeck/themes/*/*", "v2/htmlde
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+markers = [
+    "browser: measures pages in a real Chromium browser; pixel thresholds calibrated on macOS fonts",
+]
