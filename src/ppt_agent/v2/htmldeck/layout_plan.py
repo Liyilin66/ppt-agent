@@ -10,6 +10,7 @@ rules here have the last word.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -101,6 +102,21 @@ def _percent(value: str | None) -> float | None:
         return None
 
 
+_CHANGE = re.compile(r"增|减|涨|降|提升|提高|变化|同比|环比|净|growth|increase|decrease|decline|change|rise|fall", re.I)
+
+
+def _two_sides(items: list[dict[str, Any]]) -> bool:
+    """Two things measured alike: both carry a value in the same unit, and neither is the other's change.
+    A total and its yearly increase ("3162万个" / "净增341.9万个") is one thing, not two sides."""
+
+    values = [str(item.get("value") or "") for item in items]
+    if not all(re.search(r"\d", value) for value in values):
+        return False
+    units = {re.sub(r"[\d.,\s约超近逾+\-]", "", value) for value in values}
+    said = " ".join(f"{item.get('heading') or ''} {item.get('value') or ''}" for item in items)
+    return len(units) == 1 and not _CHANGE.search(said)
+
+
 def candidates(content: dict[str, Any]) -> list[str]:
     """Forms that can honestly draw this page, best fit first."""
 
@@ -147,7 +163,7 @@ def candidates(content: dict[str, Any]) -> list[str]:
         if form == "split":
             # Two halves, one dark, mean two sides: only a comparison of exactly two things takes it. Used
             # for a game licence count or a port total, the dark half was a heavy block meaning nothing.
-            return relation == "comparison" and len(items) == 2
+            return relation == "comparison" and len(items) == 2 and _two_sides(items)
         if form == "columns":
             return 2 <= len(items) <= 3
         return True
