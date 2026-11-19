@@ -85,6 +85,9 @@ class BuildRequest(StrictModel):
         "pages that fail fall back to the code-driven layout.",
     )
     html_review: bool = Field(default=True, description="Let the model look at each rendered page once.")
+    key_page_selection: bool = Field(default=False, description="Design about a fifth of the pages (section openers, "
+                                     "pages built on a visual) a second time in another form and keep whichever a blind "
+                                     "reviewer prefers on PowerPoint's rendering (needs Microsoft PowerPoint).")
     claim_audit: bool = Field(default=False, description="Have a second model read every finished page against "
                               "its evidence and rewrite once a page whose facts do not support its claim.")
     prompt: str = Field(..., min_length=1)

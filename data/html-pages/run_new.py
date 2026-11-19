@@ -9,7 +9,7 @@ out, source, pages, prompt = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), s
 req = BuildRequest(layout_engine="typeset", style_profile="consulting", html_theme="studio", html_review=False, prompt=prompt,
                    page_count=pages, source_paths=[str(Path(source).resolve())], enable_search=False, output_dir=str(out),
                    deck_name="deck", resume="--resume" in sys.argv, concurrency=4, budget_usd=8.0, qa_gate="strict",
-                   claim_audit="--claim-audit" in sys.argv)
+                   claim_audit="--claim-audit" in sys.argv, key_page_selection="--select" in sys.argv)
 client = deck_jobs.create_v2_model_client()
 t = time.time()
 result = build_deck(req, client, progress=lambda m: print(f"{time.time()-t:6.0f}s {m}", flush=True))

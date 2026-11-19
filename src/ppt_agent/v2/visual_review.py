@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 CRITERIA = {
-    "hierarchy": "信息层级与视觉焦点：第一眼落在哪里是否明确，主次是否分明",
+    "hierarchy": "信息层级与视觉焦点：第一眼落在哪里是否明确，主次是否分明；同一个数字在标题、大字和说明里重复出现，"
+                 "没有带来新信息，要扣分",
     "polish": "版式高级感：是否像专业编辑设计，而不是普通报告排版",
     "fit": "内容与视觉表达的匹配度：图、表、图解画的是不是这一页的论点",
     "legibility": "投影可读性：最小的字在会议室投影上能不能看清，有没有折断、截断、挤压",

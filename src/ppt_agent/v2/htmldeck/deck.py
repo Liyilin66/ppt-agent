@@ -251,6 +251,7 @@ async def design_deck(
     look: bool = True,
     progress: Callable[[str], None] = lambda message: None,
     extra_css: str = "",
+    judge: Any = None,
 ) -> tuple[dict[int, PageResult], dict[str, Any]]:
     """Return a result per page number, and a summary for the run report.
 
@@ -464,8 +465,10 @@ async def design_deck(
             return hashlib.sha1(json.dumps(drawn, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
         reviewed = checkpoints.load("html/deck_review.json") if checkpoints is not None else None
+        selected: list[dict[str, Any]] = []
         if reviewed and reviewed.get("final") == deck_state():
             redesigned = list(reviewed.get("redesigned") or [])
+            selected = list(reviewed.get("selected") or [])
             progress("[design] deck review reused: every page is as the last review left it")
         elif theme.vocabulary == 2:
             by_page = {job.page_number: job for job in jobs}
@@ -601,9 +604,14 @@ async def design_deck(
                     job = by_page.get(entry["page"])
                     if job is not None:
                         await redo(job, entry["problem"], new_form=False, form=entry.get("form"))
+            if judge is not None:
+                selected = await _select_key_pages(
+                    client, session, theme, font_css, jobs, results, plan, held, gate, judge, checkpoints,
+                    _other_forms, outlines, compositions, progress)
             if checkpoints is not None:
                 checkpoints.save("html/layout_plan.json", layout_plan.as_dicts(plan))
-                checkpoints.save("html/deck_review.json", {"final": deck_state(), "redesigned": redesigned})
+                checkpoints.save("html/deck_review.json", {"final": deck_state(), "redesigned": redesigned,
+                                                           "selected": selected})
 
     remade = sorted(accepted & {job.page_number for job in jobs} - held)
     if remade and checkpoints is not None:
@@ -633,6 +641,7 @@ async def design_deck(
         "reviewed_pages": sum(results[job.page_number].reviewed for job in jobs),
         "review_flagged_pages": sum(bool(results[job.page_number].review_problems) for job in jobs),
         "ideas": {str(job.page_number): job.idea for job in jobs},
+        "key_page_selection": selected,
     }
     if theme.vocabulary == 2:
         final = {job.page_number: signature.silhouette(results[job.page_number].page)
@@ -662,3 +671,72 @@ def renumber(page: Any, shown: int) -> Any:
             element = element.model_copy(update={"runs": runs})
         elements.append(element)
     return page.model_copy(update={"elements": elements, "page_number": shown})
+
+
+async def _select_key_pages(client, session, theme, font_css, jobs, results, plan, held, gate, judge, checkpoints,
+                            other_forms, outlines, compositions, progress) -> list[dict[str, Any]]:
+    """Key pages designed a second time in another form; PowerPoint's rendering and a blind reviewer decide
+    (``selection``). The page in place stays unless clearly better beaten, and a winner that would make the
+    page look like a neighbour is not taken."""
+
+    import copy
+
+    from ppt_agent.v2.htmldeck import selection
+
+    by_page = {job.page_number: job for job in jobs}
+    numbers = selection.key_pages(jobs, {item.page: item for item in plan}, held)
+    progress(f"[design] key pages for a second design: {numbers}")
+
+    async def candidate(number: int) -> tuple[int, Any, Any, Any] | None:
+        current = results[number]
+        options = other_forms(number)
+        if not current.ok or current.templated or not options:
+            return None
+        before = next(item for item in plan if item.page == number)
+        fingerprint = layout_plan.Fingerprint(page=number, form=options[0],
+                                              focus="right" if before.focus == "left" else "left", ratio="wide")
+        alternative = copy.deepcopy(by_page[number])
+        _apply(alternative, fingerprint)
+        async with gate:
+            made = await design_page(client, session, theme, font_css, alternative, look=False)
+        return number, alternative, fingerprint, made
+
+    made = [item for item in await asyncio.gather(*(candidate(number) for number in numbers)) if item is not None]
+    records: list[dict[str, Any]] = []
+
+    def pairs_with(number: int) -> set[tuple[int, int]]:
+        found = {(a, b) for a, b, _ in signature.lookalikes(outlines())}
+        found |= {(item[0], item[1]) for item in composition.close_pairs(compositions())}
+        return {pair for pair in found if number in pair}
+
+    verdicts = await asyncio.gather(*(
+        judge(number, {"current": results[number].page, "form": result.page},
+              selection.facts_of(by_page[number].content)) if result.ok else asyncio.sleep(0, None)
+        for number, _, _, result in made))
+    for (number, alternative, fingerprint, result), verdict in zip(made, verdicts):
+        record = {"page": number, "form": fingerprint.form, "candidate_ok": result.ok,
+                  **({"defects": result.defects[:2]} if not result.ok else {}), **(verdict or {})}
+        if result.ok and verdict and verdict.get("keep") == "form":
+            before_pairs, old = pairs_with(number), results[number]
+            results[number] = result
+            new_pairs = pairs_with(number) - before_pairs
+            if new_pairs:
+                results[number] = old
+                record.update(kept="current", why_not=f"换上后和相邻页构图相近：{sorted(new_pairs)}")
+            else:
+                job = by_page[number]
+                job.__dict__.update(alternative.__dict__)
+                index = next(i for i, item in enumerate(plan) if item.page == number)
+                plan[index] = fingerprint
+                record.update(kept="form")
+                if checkpoints is not None:
+                    checkpoints.save(f"html/page_{number:03d}.json",
+                                     {"html": result.html, "content": _fingerprint(job), "attempts": result.attempts,
+                                      "idea": job.idea, "review_problems": [], "trace": result.trace,
+                                      "repair_tried": "repaired", "selected_over_current": True})
+        else:
+            record.setdefault("kept", "current")
+        records.append(record)
+        progress(f"[design] page {number} key-page selection: kept {record['kept']} "
+                 f"({record.get('why') or record.get('why_not') or ''})"[:200])
+    return records

@@ -1629,11 +1629,23 @@ async def build_typeset_deck(request, client, checkpoints, brief, skeleton, *, p
                               'section_title': slot.section_title})
         for job in jobs:
             job.type_roles = type_roles
+        judge = None
+        if getattr(request, 'key_page_selection', False):
+            from ppt_agent.v2.htmldeck import selection
+            if selection.powerpoint_available():
+                from ppt_agent import deck_jobs as _jobs
+                judge = selection.powerpoint_judge(
+                    _jobs.create_v2_review_client(),
+                    {'deck_title': skeleton.deck_title, 'subtitle': skeleton.subtitle, 'language': brief.language,
+                     'theme': theme.model_dump(mode='json')},
+                    output_dir / 'assets', checkpoints.root / 'html' / 'selection')
+            else:
+                progress('[design] key-page selection skipped: Microsoft PowerPoint is not available to render the candidates')
         try:
             html_pages, html_summary = await design_deck(
                 client, html_theme, jobs, fixed, checkpoints=checkpoints,
                 concurrency=request.concurrency, look=getattr(request, 'html_review', True), progress=progress,
-                extra_css=html_themes.studio_roles_css() if type_roles and html_theme == 'studio' else '')
+                extra_css=html_themes.studio_roles_css() if type_roles and html_theme == 'studio' else '', judge=judge)
         except html_browser.BrowserUnavailable as exc:
             progress(f'[design] no browser available, using the layout engine instead: {exc}')
             html_summary = {'theme': html_theme, 'unavailable': str(exc)}
