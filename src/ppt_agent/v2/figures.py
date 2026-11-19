@@ -85,13 +85,19 @@ def extract(source_paths: list[str | Path], assets_dir: Path) -> list[dict[str, 
                     # what the report says around the figure: the only check on what the figure is read to mean
                     "context": "\n".join(texts.get(near, "") for near in (number - 1, number, number + 1)),
                 })
+        # Figures drawn as vector paths, or captioned another way ("Sources:", "IEA. CC BY"), on pages
+        # where no embedded picture was paired with a caption (P5: the IEA report's charts).
+        from ppt_agent.v2 import figure_discovery
+
+        have = {item["page"] for item in found if item["document"] == path.name}
+        found += [item for item in figure_discovery.discover(path, doc_index, assets_dir) if item["page"] not in have]
     return found
 
 
 def caption(figure: dict[str, Any]) -> str:
     """The line under a reproduced figure: its own caption, credit and page."""
 
-    parts = [f"{figure['label']} {figure['title']}"]
+    parts = [f"{figure['label']} {figure['title']}".strip()]
     if figure.get("credit"):
         parts.append("来源：" + figure["credit"])
     parts.append(f"原文第 {figure['page']} 页")
@@ -141,7 +147,9 @@ def assign(figures: list[dict[str, Any]], contents: dict[int, dict[str, Any]],
 # --- reading a figure: is it fit to show, and can it be redrawn without guessing? -------------
 
 LEGIBLE_PX = 10.0      # the smallest text of a figure, as it would stand on the slide (about 7.5pt)
-PLATE_WIDTH = 680.0    # the widest a figure is shown: seven of the page's twelve columns
+PLATE_WIDTH = 680.0    # a figure beside text: seven of the page's twelve columns
+WIDE_PLATE = 960.0     # a figure across the page, title above and reading below (P5: a wide report chart
+                       # whose axis labels are unreadable at seven columns reads at this width)
 MAX_ENLARGE = 1.25     # a picture stretched further than this goes soft
 MAX_ELEMENTS = 24      # more boxes and labels than this cannot be taken in from a slide
 MAX_LEVELS, MAX_LEVEL_ITEMS, MAX_STEPS, MAX_BARS = 5, 8, 6, 16
@@ -369,12 +377,14 @@ async def assess(client: Any, checkpoints: Any, figure: dict[str, Any], image_pa
     enlarged = enlarged if enlarged > 1.05 else 1.0
     small = min((float(read.get("smallest_text_px") or 0) / enlarged for read in readings
                  if read.get("smallest_text_px")), default=0.0)
-    shown = small * min(MAX_ENLARGE, PLATE_WIDTH / max(figure["width"], 1)) if small else 0.0
+    shown = small * min(MAX_ENLARGE, WIDE_PLATE / max(figure["width"], 1)) if small else 0.0
     elements = max(int(read.get("elements") or 0) for read in readings)
     result.update(kind=first.get("kind"), elements=elements, smallest_text_px=round(small, 1), shown_text_px=round(shown, 1),
-                  legible=bool(shown) and shown >= LEGIBLE_PX and elements <= MAX_ELEMENTS,
+                  # A chart is read by its shape, not label by label: the element count limits diagrams only
+                  # (P5: IEA's stacked bars have ~90 marks and read fine; their text size still has to).
+                  legible=bool(shown) and shown >= LEGIBLE_PX and (elements <= MAX_ELEMENTS or first.get("kind") == "chart"),
                   # the narrowest the figure may be shown with its smallest text still readable
-                  min_width=round(min(PLATE_WIDTH, LEGIBLE_PX / small * figure["width"])) if small else None)
+                  min_width=round(min(WIDE_PLATE, LEGIBLE_PX / small * figure["width"])) if small else None)
     one = agreement()
     agreed = one is not None
     if one is not None and one["kind"] == "levels":
@@ -406,7 +416,7 @@ async def assess(client: Any, checkpoints: Any, figure: dict[str, Any], image_pa
                "数值没有印在图上，重画只能靠估计" if first.get("kind") == "chart" else "结构超出可重画的范围或没有读全")
         result.update(use="original", why=why + "；原图放到页面上字还看得清，可以直接用")
     else:
-        reason = (f"原图有约 {elements} 个框和标签，放在一页上读不过来" if elements > MAX_ELEMENTS
+        reason = (f"原图有约 {elements} 个框和标签，放在一页上读不过来" if elements > MAX_ELEMENTS and first.get("kind") != "chart"
                   else f"原图放到页面上最小的字只有约 {shown:.0f} 像素，看不清")
         result.update(use="evidence", why=reason + "，而且无法可靠重画；只作为出处保留，不放上页面")
     result["readings_agree"] = agreed

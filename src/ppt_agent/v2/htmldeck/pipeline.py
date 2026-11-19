@@ -116,7 +116,8 @@ def _required(job: DesignJob, measured: Measured) -> list[Defect]:
     picture = next((item for item in measured.items if item["kind"] == "image"), None)
     if need and picture is not None and picture["w"] < need - 4:
         missing.append(Defect("bad_chart", f"原文图只有 {picture['w']:.0f} 像素宽，图里最小的字会看不清；至少要 {need:.0f} 像素宽，"
-                                           "请让它所在的区域占 7 列并给足行数，其余内容放在剩下的 5 列里。"))
+                                           + ("请让图通栏（占 11 到 12 列），标题和焦点数字放在图上方，解读放在图下方。" if need > 700 else
+                                              "请让它所在的区域占 7 列并给足行数，其余内容放在剩下的 5 列里。")))
     diagram = job.content.get("diagram")
     if diagram:
         # A redrawn figure carries every word of the original, in the original's order.

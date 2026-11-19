@@ -24,6 +24,7 @@ dependencies = [
     "uvicorn>=0.38,<1",
     "mcp>=1.28,<2",
     "playwright>=1.48,<2",
+    "pypdfium2>=4.30,<5",
 ]
 
 [project.scripts]

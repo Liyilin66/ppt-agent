@@ -199,9 +199,14 @@ def _figure_brief(content: dict[str, Any], idea: str) -> list[str]:
     figure = content.get("figure")
     if not figure or not idea.startswith("figure"):
         return []
+    from ppt_agent.v2.figures import PLATE_WIDTH
+
+    wide = (figure.get("min_width") or 0) > PLATE_WIDTH
+    place = ("这张图要通栏才看得清（这一条优先于形式说明和示范页里「原图在一侧」的排法）：图所在的区域占 11 到 12 列、5 到 6 行；标题和一个焦点数字放在图上方一行，"
+             "两三条解读排成图下方一行（或放进备注）。" if wide else "这个区域至少占 6 列、5 行。")
     return [
         "这一页要放资料里的一张原图。把下面两行原样放进同一个区域（先图后图注），属性一个字符都不要改；"
-        "这个区域至少占 6 列、5 行，里面不要再放别的东西：\n"
+        + place + "这个区域里面不要再放别的东西：\n"
         f'<div class="plate" data-figure="{figure["id"]}" data-ratio="{figure["ratio"]}"></div>\n'
         f'<div class="c">{figure["caption"]}</div>\n'
         "图里已经有的数据不要再抄一遍；旁边的文字说这张图说明了什么。"
